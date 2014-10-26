@@ -1,5 +1,9 @@
 language: cpp
 
+compiler:
+    - gcc
+    - clang
+
 os:
     - linux
     - osx
@@ -10,6 +14,8 @@ before_install:
     - sudo apt-get install -qq doxygen
 
 install:
+    - eval `./config/travis/versionVariables.py`
+    - export BUILD_NAME=gaffer-${GAFFER_MILESTONE_VERSION}.${GAFFER_MAJOR_VERSION}.${GAFFER_MINOR_VERSION}.${GAFFER_PATCH_VERSION}-3delight-linux
     - python ./config/travis/installDependencies.py
     - export DELIGHT_PACKAGE=3delight-11.0.85-Linux-x86_64
     - curl -A Mozilla/4.0 http://www.3delight.com/downloads/free/$DELIGHT_PACKAGE.tar.gz > $DELIGHT_PACKAGE.tar.gz
@@ -21,14 +27,24 @@ install:
     - export PATH=$DELIGHT/bin:$PATH
 
 script:
-    - scons install CXX=$CXX ENV_VARS_TO_IMPORT=PATH RMAN_ROOT=$DELIGHT
-    - ./install/gaffer-*/bin/gaffer test GafferTest
-    - ./install/gaffer-*/bin/gaffer test GafferCortexTest
-    - ./install/gaffer-*/bin/gaffer test GafferImageTest
-    - ./install/gaffer-*/bin/gaffer test GafferSceneTest
-    - ./install/gaffer-*/bin/gaffer test GafferOSLTest
-    - ./install/gaffer-*/bin/gaffer test GafferRenderManTest
+    - scons install BUILD_DIR=./build/$BUILD_NAME INSTALL_DIR=./install/$BUILD_NAME CXX=$CXX ENV_VARS_TO_IMPORT=PATH RMAN_ROOT=$DELIGHT
+    - ./install/$BUILD_NAME/bin/gaffer test GafferTest
+    - ./install/$BUILD_NAME/bin/gaffer test GafferCortexTest
+    - ./install/$BUILD_NAME/bin/gaffer test GafferImageTest
+    - ./install/$BUILD_NAME/bin/gaffer test GafferSceneTest
+    - ./install/$BUILD_NAME/bin/gaffer test GafferOSLTest
+    - ./install/$BUILD_NAME/bin/gaffer test GafferRenderManTest
 
-compiler:
-    - gcc
-    - clang
+before_deploy:
+    - scons package BUILD_DIR=./build/$BUILD_NAME INSTALL_DIR=./install/$BUILD_NAME CXX=$CXX ENV_VARS_TO_IMPORT=PATH RMAN_ROOT=$DELIGHT
+
+deploy:
+    provider: releases
+    api-key:
+        secure: "eE1+IpCeD05J/EwAmIQ5L6OTTKUv8dA3nsAQ+mfMWLtrByGy1znjzLjYqDBM1ELa8WMMCMftTf+hSDgthUblOf9o1di8hUfhof29aVgNXbvfUZQ1eRsgLoeZkEe4Aqypz6SH0jXcTxQgrd/k9H3XFTI5eD+mkH2xovNEMFwua1A="
+    file: ./install/$BUILD_NAME.tar.gz
+    skip_cleanup: true
+    on:
+        tags: true
+        all_branches: true
+        condition: "$CC = gcc"

@@ -1576,7 +1576,6 @@ if env.subst( "$PACKAGE_FILE" ).endswith( ".dmg" ) :
 	# if the packaging will make a disk image, then build an os x app bundle
 
 	install = env.Command( "$INSTALL_DIR/Gaffer.app/Contents/Resources", "$BUILD_DIR", installer, MANIFEST=gafferManifest )
-	env.AlwaysBuild( install )
 	env.NoCache( install )
 	env.Alias( "install", install )
 
@@ -1589,13 +1588,11 @@ if env.subst( "$PACKAGE_FILE" ).endswith( ".dmg" ) :
 else :
 
 	install = env.Command( "$INSTALL_DIR", "$BUILD_DIR", installer, MANIFEST=gafferManifest )
-	env.AlwaysBuild( install )
 	env.NoCache( install )
 
 	env.Alias( "install", install )
 
 dependenciesInstall = env.Command( "$DEPENDENCIES_INSTALL_DIR", "$BUILD_DIR", installer, MANIFEST=dependenciesManifest )
-env.AlwaysBuild( dependenciesInstall )
 env.NoCache( dependenciesInstall )
 env.Alias( "dependenciesInstall", dependenciesInstall )
 
