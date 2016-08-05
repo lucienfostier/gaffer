@@ -393,6 +393,16 @@ bool ImageView::keyPress( const GafferUI::KeyEvent &event )
 				);
 				return true;
 			}
+			if( event.key == "1")
+			{
+				std::cout<<"bound: "<<viewportGadget()->getTransform()<<std::endl;
+				const IECore::Camera* viewportCamera = viewportGadget()->getCamera();
+				const IECore::CameraController cameraController(viewportCamera);
+				std::cout<<"camera screen window: "<<cameraController.getResolution()<<std::endl;
+				viewportGadget()->frame(m_imageGadget->transformedBound());
+				std::cout<<"event press 1 key"<<std::endl;
+				return true;
+			}
 		}
 	}
 
