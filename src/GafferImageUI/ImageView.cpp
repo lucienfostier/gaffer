@@ -399,8 +399,8 @@ bool ImageView::keyPress( const GafferUI::KeyEvent &event )
 			}
 			if( event.key == "1")
 			{
-				computeZoomLevel();
-				std::cout<<"zoom level: "<<m_zoomLevel<<std::endl;
+				float zoomLevel = computeZoomLevel();
+				std::cout<<"zoom level: "<<zoomLevel<<std::endl;
 				//Imath::V2i viewport = viewportGadget()->getViewport();
 				//Imath::V2i center(viewport.x / 2, viewport.y / 2);
 				//IECore::LineSegment3f centerWorld = viewportGadget()->rasterToWorldSpace(center);
@@ -434,14 +434,15 @@ void ImageView::preRender()
 	m_framed = true;
 }
 
-void ImageView::computeZoomLevel()
+float ImageView::computeZoomLevel()
 {
 
-	Imath::V2i viewport = viewportGadget()->getViewport();
 	Imath::Box3f imageBound = m_imageGadget->bound();
-	float horizontalRatio = viewport.x / (imageBound.max.x - imageBound.min.x);
-	float verticalRatio = viewport.y / (imageBound.max.y - imageBound.min.y);
-	m_zoomLevel = std::max(horizontalRatio, verticalRatio);
+	Imath::V2i imageSize((imageBound.max.x - imageBound.min.x), (imageBound.max.y - imageBound.min.y));
+	Imath::V2i imageRasterSize = viewportGadget()->gadgetToRasterSpace(Imath::V3f(imageSize.x, imageSize.y, 0 ), m_imageGadget.get());
+	float horizontalRatio = imageSize.x / float(imageRasterSize.x);
+	float verticalRatio = imageSize.y / float(imageRasterSize.y);
+	return std::max(horizontalRatio, verticalRatio);
 
 }
 
