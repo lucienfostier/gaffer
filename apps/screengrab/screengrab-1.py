@@ -215,7 +215,7 @@ class screengrab( Gaffer.Application ) :
 		script = Gaffer.ScriptNode()
 		if args["script"].value :
 			script["fileName"].setValue( os.path.abspath( args["script"].value ) )
-			script.load()
+			script.load(continueOnError=True)
 		self.root()["scripts"].addChild( script )
 
 		# Choose the widget we'll grab by default. This can be overridden

@@ -253,6 +253,8 @@ ImageView::ImageView( const std::string &name )
 	m_imageGadget->setContext( getContext() );
 	viewportGadget()->setPrimaryChild( m_imageGadget );
 
+	computeZoomLevel();
+
 	m_colorInspector = shared_ptr<ColorInspector>( new ColorInspector( this ) );
 }
 
@@ -381,6 +383,8 @@ void ImageView::plugSet( Gaffer::Plug *plug )
 
 bool ImageView::keyPress( const GafferUI::KeyEvent &event )
 {
+	std::cout<<"key pressed"<<std::endl;
+	std::cout<<event.key<<std::endl;
 	if( !event.modifiers )
 	{
 		const char *rgba[4] = { "R", "G", "B", "A" };
@@ -395,12 +399,16 @@ bool ImageView::keyPress( const GafferUI::KeyEvent &event )
 			}
 			if( event.key == "1")
 			{
-				std::cout<<"bound: "<<viewportGadget()->getTransform()<<std::endl;
-				const IECore::Camera* viewportCamera = viewportGadget()->getCamera();
-				const IECore::CameraController cameraController(viewportCamera);
-				std::cout<<"camera screen window: "<<cameraController.getResolution()<<std::endl;
-				viewportGadget()->frame(m_imageGadget->transformedBound());
-				std::cout<<"event press 1 key"<<std::endl;
+				computeZoomLevel();
+				std::cout<<"zoom level: "<<m_zoomLevel<<std::endl;
+				//Imath::V2i viewport = viewportGadget()->getViewport();
+				//Imath::V2i center(viewport.x / 2, viewport.y / 2);
+				//IECore::LineSegment3f centerWorld = viewportGadget()->rasterToWorldSpace(center);
+				//Imath::V3f centerFrame = centerWorld.p0;
+				//Imath::Box3f frame(Imath::V3f(centerFrame.x - center.x, centerFrame.y - center.y, 0), Imath::V3f(centerFrame.x + center.x, centerFrame.y + center.y, 0));
+				//std::cout<<"frame: "<<frame<<std::endl;
+				//viewportGadget()->frame(frame);
+				//std::cout<<"event press 1 key"<<std::endl;
 				return true;
 			}
 		}
@@ -424,6 +432,17 @@ void ImageView::preRender()
 
 	viewportGadget()->frame( b );
 	m_framed = true;
+}
+
+void ImageView::computeZoomLevel()
+{
+
+	Imath::V2i viewport = viewportGadget()->getViewport();
+	Imath::Box3f imageBound = m_imageGadget->bound();
+	float horizontalRatio = viewport.x / (imageBound.max.x - imageBound.min.x);
+	float verticalRatio = viewport.y / (imageBound.max.y - imageBound.min.y);
+	m_zoomLevel = std::max(horizontalRatio, verticalRatio);
+
 }
 
 void ImageView::insertDisplayTransform()
