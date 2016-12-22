@@ -142,6 +142,8 @@ class ImageView : public GafferUI::View
 		boost::shared_ptr<ChannelChooser> m_channelChooser;
 		class ColorInspector;
 		boost::shared_ptr<ColorInspector> m_colorInspector;
+		class ZoomLevel;
+		boost::shared_ptr<ZoomLevel> m_zoomLevel;
 
 		typedef std::map<std::string, DisplayTransformCreator> DisplayTransformCreatorMap;
 		static DisplayTransformCreatorMap &displayTransformCreators();

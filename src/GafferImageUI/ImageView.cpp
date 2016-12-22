@@ -73,6 +73,7 @@
 #include "GafferImageUI/ImageGadget.h"
 #include "GafferImageUI/ImageView.h"
 
+using namespace std;
 using namespace boost;
 using namespace IECoreGL;
 using namespace IECore;
@@ -81,6 +82,133 @@ using namespace Gaffer;
 using namespace GafferUI;
 using namespace GafferImage;
 using namespace GafferImageUI;
+
+//////////////////////////////////////////////////////////////////////////
+/// Implementation of ImageView::ZoomLevel
+//////////////////////////////////////////////////////////////////////////
+
+class ImageView::ZoomLevel : public boost::signals::trackable
+{
+
+	public :
+
+		ZoomLevel( ImageView *view )
+			:	m_view( view )
+		{
+			view->addChild(
+				new IntPlug(
+					"zoomLevel",
+					Plug::In,
+					/* defaultValue = */ 1,
+					/* minValue = */ .01,
+					/* maxValue = */ 100
+				)
+			);
+			m_viewportGadget = m_view->viewportGadget();
+			m_imageGadget = static_cast<ImageGadget *>(
+				m_viewportGadget->getPrimaryChild()
+			);
+
+			m_view->plugSetSignal().connect( boost::bind( &ZoomLevel::plugSet, this, ::_1 ) );
+			m_view->viewportGadget()->keyPressSignal().connect( boost::bind( &ZoomLevel::keyPress, this, ::_2 ) );
+
+			m_zoomLevels.push_back(1);
+			m_zoomLevels.push_back(2);
+			m_zoomLevels.push_back(4);
+			m_zoomLevels.push_back(6);
+			m_zoomLevels.push_back(8);
+			m_zoomLevels.push_back(10);
+			m_zoomLevels.push_back(20);
+			m_zoomLevels.push_back(30);
+			m_zoomLevels.push_back(40);
+			m_zoomLevels.push_back(50);
+			m_zoomLevels.push_back(60);
+			m_zoomLevels.push_back(70);
+			m_zoomLevels.push_back(80);
+			m_zoomLevels.push_back(90);
+			m_zoomLevels.push_back(100);
+			for (unsigned i=0; i<m_zoomLevels.size(); i++)
+			{
+				cout<<"zoom levels :"<<m_zoomLevels[i]<<endl;
+			}
+		}
+
+	private :
+
+		IntPlug *zoomLevelPlug()
+		{
+			return m_view->getChild<IntPlug>( "zoomLevel" );
+		}
+
+		void plugSet( const Gaffer::Plug *plug )
+		{
+			if( plug == zoomLevelPlug() )
+			{
+				cout<<"ZoomLevel plug set"<<endl;
+				cout<<"current zoom level: "<<computeZoomLevel()<<endl;
+			}
+		}
+
+		bool keyPress( const GafferUI::KeyEvent &event )
+		{
+			if( event.modifiers )
+			{
+				return false;
+			}
+
+			if( event.key == "Plus" )
+			{
+				cout<<"+ key pressed"<<endl;
+				float current = computeZoomLevel();
+				cout<<"current zoom level: "<<current<<endl;
+				std::vector<int>::iterator updated;
+				updated = upper_bound(m_zoomLevels.begin(), m_zoomLevels.end(), current);
+				cout<<"updated zoom level: "<<m_zoomLevels[updated - m_zoomLevels.begin()]<<endl;
+				return true;
+			}
+			if( event.key == "Minus" )
+			{
+				cout<<"- key pressed"<<endl;
+				float current = 1.0 / computeZoomLevel();
+				cout<<"current zoom level: 1/ "<<current<<endl;
+				std::vector<int>::iterator updated;
+				updated = upper_bound(m_zoomLevels.begin(), m_zoomLevels.end(), current);
+				cout<<"updated zoom level: "<<m_zoomLevels[updated - m_zoomLevels.begin()]<<endl;
+				return true;
+			
+			}
+
+			return false;
+		}
+		float computeZoomLevel()
+		{
+			
+			const Box3f imageGadgetBound = m_imageGadget->bound();
+			const float imageGadgetSizeX = imageGadgetBound.max.x - imageGadgetBound.min.x;
+			const V2f c0 = m_viewportGadget->gadgetToRasterSpace( imageGadgetBound.min, m_imageGadget );
+			const V2f c1 = m_viewportGadget->gadgetToRasterSpace( imageGadgetBound.max, m_imageGadget );
+			const V2f rasterSize = c1 - c0;
+			return rasterSize.x / imageGadgetSizeX;
+		}
+		void setZoomLevel(float zoomLevel)
+		{
+			V2i viewport = m_viewportGadget->getViewport()* (1 / zoomLevel);
+			V3f halfViewportSize(viewport.x / 2, viewport.y / 2, 0);
+			V3f imageCenter = m_imageGadget->bound().center();
+			m_viewportGadget->frame(
+				Box3f(
+					V3f(imageCenter.x - halfViewportSize.x, imageCenter.y - halfViewportSize.y, 0),
+					V3f(imageCenter.x + halfViewportSize.x, imageCenter.y + halfViewportSize.y, 0)
+				)
+			);
+		}
+
+		ImageGadget * m_imageGadget;
+		ViewportGadget * m_viewportGadget;
+		ImageView *m_view;
+		vector<int> m_zoomLevels;
+
+};
 
 //////////////////////////////////////////////////////////////////////////
 /// Implementation of ImageView::ChannelChooser
@@ -327,6 +455,7 @@ ImageView::ImageView( const std::string &name )
 
 	m_channelChooser = shared_ptr<ChannelChooser>( new ChannelChooser( this ) );
 	m_colorInspector = shared_ptr<ColorInspector>( new ColorInspector( this ) );
+	m_zoomLevel = shared_ptr<ZoomLevel>( new ZoomLevel( this ) );
 }
 
 void ImageView::insertConverter( Gaffer::NodePtr converter )
