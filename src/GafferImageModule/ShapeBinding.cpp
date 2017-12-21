@@ -38,6 +38,7 @@
 
 #include "GafferImage/Shape.h"
 #include "GafferImage/Text.h"
+#include "GafferImage/Rectangle.h"
 
 #include "ShapeBinding.h"
 
@@ -51,6 +52,7 @@ void GafferImageModule::bindShape()
 	DependencyNodeClass<Shape>();
 
 	{
+		GafferBindings::DependencyNodeClass<Rectangle>();
 		scope s = GafferBindings::DependencyNodeClass<Text>();
 
 		enum_<Text::HorizontalAlignment>( "HorizontalAlignment" )
