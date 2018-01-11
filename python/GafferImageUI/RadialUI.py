@@ -1,7 +1,6 @@
 ##########################################################################
 #
-#  Copyright (c) 2012, John Haddon. All rights reserved.
-#  Copyright (c) 2012-2015, Image Engine Design Inc. All rights reserved.
+#  Copyright (c) 2015, Image Engine Design Inc. All rights reserved.
 #
 #  Redistribution and use in source and binary forms, with or without
 #  modification, are permitted provided that the following conditions are
@@ -35,70 +34,75 @@
 #
 ##########################################################################
 
-__import__( "GafferUI" )
+import IECore
 
-from _GafferImageUI import *
+import Gaffer
+import GafferImage
 
-import DisplayUI
-from FormatPlugValueWidget import FormatPlugValueWidget
-from ChannelMaskPlugValueWidget import ChannelMaskPlugValueWidget
-from RGBAChannelsPlugValueWidget import RGBAChannelsPlugValueWidget
-from ChannelPlugValueWidget import ChannelPlugValueWidget
+## A function suitable as the postCreator in a NodeMenu.append() call. It
+# sets the region of interest for the node to cover the entire format.
+def postCreate( node, menu ) :
 
-import ImageReaderPathPreview
+	with node.scriptNode().context() :
+		if node["in"].getInput() :
+			format = node["in"]["format"].getValue()
+		else:
+			format = GafferImage.FormatPlug.getDefaultFormat( node.scriptNode().context() )
+	minWidth = int( format.width() / 4.0 )
+	minHeight = int( format.height() / 4.0 )
+	node['area'].setValue( IECore.Box2i( IECore.V2i( minWidth, minHeight ), IECore.V2i( format.width() - minWidth, format.height() - minHeight ) ) )
 
-import OpenImageIOReaderUI
-import ImageReaderUI
-import ImageViewUI
-import ImageTransformUI
-import ConstantUI
-import ImageSwitchUI
-import ColorSpaceUI
-import ImageContextVariablesUI
-import DeleteImageContextVariablesUI
-import ImageStatsUI
-import DeleteChannelsUI
-import ObjectToImageUI
-import ClampUI
-import ImageWriterUI
-import GradeUI
-import ImageTimeWarpUI
-import ImageSamplerUI
-import MergeUI
-import ImageNodeUI
-import ChannelDataProcessorUI
-import ImageProcessorUI
-import ImageMetadataUI
-import DeleteImageMetadataUI
-import CopyImageMetadataUI
-import ImageLoopUI
-import ShuffleUI
-import PremultiplyUI
-import UnpremultiplyUI
-import CropUI
-import ResizeUI
-import ResampleUI
-import LUTUI
-import CDLUI
-import DisplayTransformUI
-import OpenColorIOTransformUI
-import OffsetUI
-import BlurUI
-import ShapeUI
-import TextUI
-import RadialUI
-import WarpUI
-import VectorWarpUI
-import MirrorUI
-import CopyChannelsUI
-import MedianUI
-import RankFilterUI
-import ErodeUI
-import DilateUI
-import ColorProcessorUI
-import MixUI
-import CatalogueUI
-import CollectImagesUI
-import CatalogueSelectUI
+Gaffer.Metadata.registerNode(
 
-__import__( "IECore" ).loadConfig( "GAFFER_STARTUP_PATHS", {}, subdirectory = "GafferImageUI" )
+	GafferImage.Radial,
+
+	"description",
+	"""
+	Renders rectangle over an input image.
+	""",
+
+	plugs = {
+
+		"color" : [
+
+			"description",
+			"""
+			The colour of the rectangle.
+			""",
+		],
+
+		"area" : [
+
+			"description",
+			"""
+			The area of the image within which the rectangle is rendered.
+			""",
+
+		],
+
+		"softness" : [
+
+			"description",
+			"""
+			Width of the gradient on the edge of the radial shape,
+			0 is maximum softness and 1 is maximum sharpness.
+			""",
+		],
+
+		"transform" : [
+
+			"description",
+			"""
+			A transformation applied to the entire radial area.
+			The translate and pivot values are specified in pixels,
+			and the rotate value is specified in degrees.
+			""",
+
+			"plugValueWidget:type", "GafferUI.LayoutPlugValueWidget",
+			"layout:section", "Transform",
+
+		],
+
+	}
+
+)

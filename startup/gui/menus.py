@@ -345,6 +345,7 @@ import GafferImageUI
 nodeMenu.append( "/Image/File/Reader", GafferImage.ImageReader, searchText = "ImageReader" )
 nodeMenu.append( "/Image/File/Writer", GafferImage.ImageWriter, searchText = "ImageWriter" )
 nodeMenu.append( "/Image/Shape/Text", GafferImage.Text, postCreator = GafferImageUI.TextUI.postCreate )
+nodeMenu.append( "/Image/Shape/Radial", GafferImage.Radial, postCreator = GafferImageUI.RadialUI.postCreate )
 nodeMenu.append( "/Image/Color/Clamp", GafferImage.Clamp )
 nodeMenu.append( "/Image/Color/Constant", GafferImage.Constant )
 nodeMenu.append( "/Image/Color/Grade", GafferImage.Grade )
