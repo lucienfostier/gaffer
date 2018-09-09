@@ -1,6 +1,6 @@
 ##########################################################################
 #
-#  Copyright (c) 2015, John Haddon. All rights reserved.
+#  Copyright (c) 2018, Image Engine Design Inc. All rights reserved.
 #
 #  Redistribution and use in source and binary forms, with or without
 #  modification, are permitted provided that the following conditions are
@@ -15,7 +15,7 @@
 #        disclaimer in the documentation and/or other materials provided with
 #        the distribution.
 #
-#      * Neither the name of John Haddon nor the names of
+#      * Neither the name of Image Engine Design Inc nor the names of
 #        any other contributors to this software may be used to endorse or
 #        promote products derived from this software without specific prior
 #        written permission.
@@ -34,27 +34,49 @@
 #
 ##########################################################################
 
-from _GafferVDBUI import *
+import GafferUI
+import GafferVDB
 
-import LevelSetToMeshUI
-import MeshToLevelSetUI
-import LevelSetOffsetUI
-import PointsGridToPointsUI
-import DeleteGridsUI
-import ScatterPointsUI
-import AdvectGridsUI
-import MathOpUI
-import StatisticsUI
-import CSGGridsUI
-import TransformGridsUI
-import PointsToLevelSetUI
-import VDBObjectUI
-import SampleUI
-import FilterGridsUI
-import LevelSetMeasureUI
-import LevelSetFilterUI
-import VolumeToSpheresUI
-import ClipUI
-import LevelSetToFogUI
+GafferUI.Metadata.registerNode(
+    GafferVDB.ScatterPoints,
+    'description',
+    """Scatter points into active voxels of VDB grid""",
+    plugs={
 
-__import__( "IECore" ).loadConfig( "GAFFER_STARTUP_PATHS", subdirectory = "GafferVDBUI" )
+        'outputType' : [
+            'description',
+            """
+            Type of primitive to generate 
+            """,
+            "plugValueWidget:type", "GafferUI.PresetsPlugValueWidget",
+            "preset:Points Primitive", 0,
+            "preset:VDB Points", 1
+        ],
+        'grid' : [
+            'description',
+            """
+            Name of grid in VDBObject in which points will be scattered
+            """,
+        ],
+
+        'nonuniform' : [
+            'description',
+            """
+            If nonuniform the grid value is used to weight the number of points
+            """,
+        ],
+        'pointCount' : [
+            'description',
+            """
+            If 'uniform' the total number of points to generate.
+            """,
+        ],
+        'probability' : [
+            'description',
+            """
+            If 'nonuniform' the global probability which is used with the voxel value to weight the number of points.
+            """,
+        ],
+
+    }
+)

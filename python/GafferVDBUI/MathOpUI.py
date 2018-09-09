@@ -1,6 +1,6 @@
 ##########################################################################
 #
-#  Copyright (c) 2015, John Haddon. All rights reserved.
+#  Copyright (c) 2018, Image Engine Design Inc. All rights reserved.
 #
 #  Redistribution and use in source and binary forms, with or without
 #  modification, are permitted provided that the following conditions are
@@ -15,7 +15,7 @@
 #        disclaimer in the documentation and/or other materials provided with
 #        the distribution.
 #
-#      * Neither the name of John Haddon nor the names of
+#      * Neither the name of Image Engine Design Inc nor the names of
 #        any other contributors to this software may be used to endorse or
 #        promote products derived from this software without specific prior
 #        written permission.
@@ -34,27 +34,34 @@
 #
 ##########################################################################
 
-from _GafferVDBUI import *
+import GafferUI
+import GafferVDB
 
-import LevelSetToMeshUI
-import MeshToLevelSetUI
-import LevelSetOffsetUI
-import PointsGridToPointsUI
-import DeleteGridsUI
-import ScatterPointsUI
-import AdvectGridsUI
-import MathOpUI
-import StatisticsUI
-import CSGGridsUI
-import TransformGridsUI
-import PointsToLevelSetUI
-import VDBObjectUI
-import SampleUI
-import FilterGridsUI
-import LevelSetMeasureUI
-import LevelSetFilterUI
-import VolumeToSpheresUI
-import ClipUI
-import LevelSetToFogUI
+GafferUI.Metadata.registerNode(
+    GafferVDB.MathOp,
+    'description',
+    """Perform Mathematical operation on field""",
+    plugs={
+        'grids' : [
+            'description',
+            """
+            Names of the grids to be operated on
+            """
+        ],
+        'type' : [
+            'description',
+            """
+            Type of operation
+            """,
+            "plugValueWidget:type", "GafferUI.PresetsPlugValueWidget",
+            "preset:gadient", 0,
+            "preset:lapacian", 1,
+            "preset:divergence", 2,
+            "preset:curl", 3,
+            "preset:magnitude", 4,
+            "preset:normalize", 5,
+            "preset:meanCurvature", 6,
+        ],
 
-__import__( "IECore" ).loadConfig( "GAFFER_STARTUP_PATHS", subdirectory = "GafferVDBUI" )
+    }
+)

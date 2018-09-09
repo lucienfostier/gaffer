@@ -1,6 +1,6 @@
 //////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (c) 2017, John Haddon. All rights reserved.
+//  Copyright (c) 2013, Image Engine Design Inc. All rights reserved.
 //
 //  Redistribution and use in source and binary forms, with or without
 //  modification, are permitted provided that the following conditions are
@@ -34,39 +34,46 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFERVDB_TYPEIDS_H
-#define GAFFERVDB_TYPEIDS_H
+#ifndef GAFFERSCENE_VDBOBJECT_H
+#define GAFFERSCENE_VDBOBJECT_H
+
+#include "GafferScene/ObjectSource.h"
+
+#include "Gaffer/CompoundNumericPlug.h"
+
+#include "GafferVDB/TypeIds.h"
 
 namespace GafferVDB
 {
 
-enum TypeId
-{
-	ClipTypeId = 110950,
-	VDBObjectTypeId = 110951,
-	LevelSetMorphTypeId = 110952,
-	MeshToLevelSetTypeId = 110953,
-	LevelSetToMeshTypeId = 110954,
-	LevelSetOffsetTypeId = 110955,
-	PointsGridToPointsId = 110956,
-	DeleteGridsTypeId = 110957,
-	ScatterPointsTypeId = 110958,
-	AdvectGridsTypeId = 110959,
-	MathOpTypeId = 110960,
-	StatisticsTypeId = 110961,
-	CSGGridsTypeId = 110962,
-	TransformGridsTypeId = 110963,
-	LevelSetFractureTypeId = 110964,
-	PointsToLevelSetTypeId = 110965,
-	SampleTypeId = 110966,
-	FilterGridsTypeId = 110967,
-	LevelSetMeasureTypeId = 110968,
-	LevelSetFilterTypeId = 110969,
-	VolumeToSpheresTypeId = 110970,
-	LevelSetToFogTypeId = 110971,
-	LastTypeId = 110974
-};
+	class GAFFERSCENE_API VDBObject : public GafferScene::ObjectSource
+	{
+
+	public :
+
+		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferVDB::VDBObject, GafferVDB::VDBObjectTypeId, ObjectSource );
+
+		VDBObject( const std::string &name=defaultName<VDBObject>() );
+		~VDBObject() override;
+
+		Gaffer::V3iPlug *dimensionsPlug();
+		const Gaffer::V3iPlug *dimensionsPlug() const;
+
+		void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const override;
+
+	protected :
+
+		void hashSource( const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		IECore::ConstObjectPtr computeSource( const Gaffer::Context *context ) const override;
+
+	private :
+
+		static size_t g_firstPlugIndex;
+
+	};
+
+	IE_CORE_DECLAREPTR( VDBObject )
 
 } // namespace GafferVDB
 
-#endif // GAFFERVDB_TYPEIDS_H
+#endif // GAFFERSCENE_VDBOBJECT_H

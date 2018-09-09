@@ -1,6 +1,6 @@
 ##########################################################################
 #
-#  Copyright (c) 2015, John Haddon. All rights reserved.
+#  Copyright (c) 2018, Image Engine Design Inc. All rights reserved.
 #
 #  Redistribution and use in source and binary forms, with or without
 #  modification, are permitted provided that the following conditions are
@@ -15,7 +15,7 @@
 #        disclaimer in the documentation and/or other materials provided with
 #        the distribution.
 #
-#      * Neither the name of John Haddon nor the names of
+#      * Neither the name of Image Engine Design Inc nor the names of
 #        any other contributors to this software may be used to endorse or
 #        promote products derived from this software without specific prior
 #        written permission.
@@ -34,27 +34,31 @@
 #
 ##########################################################################
 
-from _GafferVDBUI import *
+import GafferUI
+import GafferVDB
 
-import LevelSetToMeshUI
-import MeshToLevelSetUI
-import LevelSetOffsetUI
-import PointsGridToPointsUI
-import DeleteGridsUI
-import ScatterPointsUI
-import AdvectGridsUI
-import MathOpUI
-import StatisticsUI
-import CSGGridsUI
-import TransformGridsUI
-import PointsToLevelSetUI
-import VDBObjectUI
-import SampleUI
-import FilterGridsUI
-import LevelSetMeasureUI
-import LevelSetFilterUI
-import VolumeToSpheresUI
-import ClipUI
-import LevelSetToFogUI
-
-__import__( "IECore" ).loadConfig( "GAFFER_STARTUP_PATHS", subdirectory = "GafferVDBUI" )
+GafferUI.Metadata.registerNode(
+    GafferVDB.LevelSetFilter,
+    'description',
+    """Filter VDB LevelSets""",
+    plugs={
+        'grids' : [
+            'description',
+            """
+            Names of grids to filter (info about matching rules? )
+            """
+        ],
+        'filterType' : [
+            'description',
+            """
+            Type of filter
+            """,
+            "plugValueWidget:type", "GafferUI.PresetsPlugValueWidget",
+            "preset:mean", 0,
+            "preset:gaussian", 1,
+            "preset:median", 2,
+            "preset:laplacian", 3,
+            "preset:meanCurvature", 4
+        ],
+    }
+)

@@ -466,6 +466,22 @@ nodeMenu.append( "/VDB/Level Set To Mesh", GafferVDB.LevelSetToMesh, searchText 
 nodeMenu.append( "/VDB/Mesh To Level Set", GafferVDB.MeshToLevelSet, searchText = "MeshToLevelSet" )
 nodeMenu.append( "/VDB/Level Set Offset", GafferVDB.LevelSetOffset, searchText = "LevelSetOffset" )
 nodeMenu.append( "/VDB/Points Grid To Points", GafferVDB.PointsGridToPoints, searchText = "PointsGridToPoints" )
+nodeMenu.append( "/VDB/Delete Grids", GafferVDB.DeleteGrids, searchText = "DeleteGrids" )
+nodeMenu.append( "/VDB/Scatter Points", GafferVDB.ScatterPoints, searchText = "ScatterPoints" )
+nodeMenu.append( "/VDB/Advect Grids", GafferVDB.AdvectGrids, searchText = "AdvectGrids" )
+nodeMenu.append( "/VDB/Math Op", GafferVDB.MathOp, searchText = "MathOp" )
+nodeMenu.append( "/VDB/Statistics", GafferVDB.Statistics, searchText = "Statistics" )
+nodeMenu.append( "/VDB/CSGGrids", GafferVDB.CSGGrids, searchText = "CSGGrids" )
+nodeMenu.append( "/VDB/TransformGrids", GafferVDB.TransformGrids, searchText = "TransformGrids" )
+nodeMenu.append( "/VDB/PointsToLevelSet", GafferVDB.PointsToLevelSet, searchText = "PointsToLevelSet" )
+nodeMenu.append( "/VDB/VDBObject", GafferVDB.VDBObject, searchText = "VDBObject" )
+nodeMenu.append( "/VDB/Sample", GafferVDB.Sample, searchText = "Sample" )
+nodeMenu.append( "/VDB/FilterGrids", GafferVDB.FilterGrids, searchText = "FilterGrids" )
+nodeMenu.append( "/VDB/LevelSetMeasure", GafferVDB.LevelSetMeasure, searchText = "LevelSetMeasure" )
+nodeMenu.append( "/VDB/LevelSetFilter", GafferVDB.LevelSetFilter, searchText = "LevelSetFilter" )
+nodeMenu.append( "/VDB/VolumeToSpheres", GafferVDB.VolumeToSpheres, searchText = "VolumeToSpheres" )
+nodeMenu.append( "/VDB/Clip", GafferVDB.Clip, searchText = "Clip" )
+nodeMenu.append( "/VDB/LevelSetToFog", GafferVDB.LevelSetToFog, searchText="LevelSetToFog")
 
 # Dispatch nodes
 

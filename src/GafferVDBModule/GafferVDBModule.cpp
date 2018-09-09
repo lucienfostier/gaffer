@@ -40,6 +40,23 @@
 #include "GafferVDB/LevelSetToMesh.h"
 #include "GafferVDB/MeshToLevelSet.h"
 #include "GafferVDB/PointsGridToPoints.h"
+#include "GafferVDB/DeleteGrids.h"
+#include "GafferVDB/ScatterPoints.h"
+#include "GafferVDB/AdvectGrids.h"
+#include "GafferVDB/MathOp.h"
+#include "GafferVDB/Statistics.h"
+#include "GafferVDB/CsgGrids.h"
+#include "GafferVDB/TransformGrids.h"
+#include "GafferVDB/PointsToLevelSet.h"
+#include "GafferVDB/VDBObject.h"
+#include "GafferVDB/Sample.h"
+#include "GafferVDB/FilterGrids.h"
+#include "GafferVDB/LevelSetMeasure.h"
+#include "GafferVDB/LevelSetFilter.h"
+#include "GafferVDB/VolumeToSpheres.h"
+#include "GafferVDB/Clip.h"
+#include "GafferVDB/LevelSetToFog.h"
+
 
 #include "GafferBindings/DependencyNodeBinding.h"
 
@@ -53,5 +70,20 @@ BOOST_PYTHON_MODULE( _GafferVDB )
 	GafferBindings::DependencyNodeClass<LevelSetToMesh>();
 	GafferBindings::DependencyNodeClass<LevelSetOffset>();
 	GafferBindings::DependencyNodeClass<PointsGridToPoints>();
-
+	GafferBindings::DependencyNodeClass<DeleteGrids>();
+	GafferBindings::DependencyNodeClass<ScatterPoints>();
+    GafferBindings::DependencyNodeClass<AdvectGrids>();
+	GafferBindings::DependencyNodeClass<MathOp>();
+	GafferBindings::DependencyNodeClass<Statistics>();
+	GafferBindings::DependencyNodeClass<CSGGrids>();
+	GafferBindings::DependencyNodeClass<TransformGrids>();
+	GafferBindings::DependencyNodeClass<PointsToLevelSet>();
+	GafferBindings::DependencyNodeClass<VDBObject>();
+	GafferBindings::DependencyNodeClass<Sample>();
+	GafferBindings::DependencyNodeClass<FilterGrids>();
+	GafferBindings::DependencyNodeClass<LevelSetMeasure>();
+	GafferBindings::DependencyNodeClass<LevelSetFilter>();
+	GafferBindings::DependencyNodeClass<VolumeToSpheres>();
+	GafferBindings::DependencyNodeClass<Clip>();
+	GafferBindings::DependencyNodeClass<LevelSetToFog>();
 }
