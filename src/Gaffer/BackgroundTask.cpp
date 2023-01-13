@@ -139,6 +139,7 @@ struct BackgroundTask::TaskData : public boost::noncopyable
 BackgroundTask::BackgroundTask( const Plug *subject, const Function &function )
 	:	m_function( function ), m_taskData( std::make_shared<TaskData>( &m_function ) )
 {
+	//std::cout << "background task const: " << subject->getName() << std::endl;
 	activeTasks().insert( ActiveTask{ this, scriptNode( subject ) } );
 
 	// Enqueue task into current arena.
@@ -281,6 +282,12 @@ BackgroundTask::Status BackgroundTask::status() const
 
 void BackgroundTask::cancelAffectedTasks( const GraphComponent *actionSubject )
 {
+	//std::cout << "cancel affectedTasks: " << actionSubject->getName() << std::endl;
+	//if ( auto p = actionSubject->parent() )
+	//{
+	//	std::cout << "cancel affectedTasks: " << actionSubject->getName() << " parent : " << p->getName() << std::endl;
+	//}
+
 	const ActiveTasks &a = activeTasks();
 	if( !a.size() )
 	{

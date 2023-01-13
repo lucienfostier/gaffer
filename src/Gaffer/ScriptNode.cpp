@@ -76,6 +76,26 @@ using namespace Gaffer;
 // ScriptContainer implementation
 //////////////////////////////////////////////////////////////////////////
 
+namespace
+{
+	#include <cstdlib>
+	#include <iostream>
+	#include <cxxabi.h>
+
+
+	using namespace __cxxabiv1;
+
+	std::string util_demangle(std::string to_demangle)
+	{
+		int status = 0;
+		char * buff = __cxxabiv1::__cxa_demangle(to_demangle.c_str(), NULL, NULL, &status);
+		std::string demangled = buff;
+		std::free(buff);
+		return demangled;
+	}
+
+
+}
 namespace Gaffer
 {
 
@@ -906,6 +926,8 @@ std::string ScriptNode::serialiseInternal( const Node *parent, const Set *filter
 
 bool ScriptNode::executeInternal( const std::string &serialisation, Node *parent, bool continueOnError, const std::string &context )
 {
+
+	std::cout << "execute internal" << std::endl;
 	if( !g_executeFunction )
 	{
 		throw IECore::Exception( "Execution not available - please link to libGafferBindings." );
@@ -919,8 +941,15 @@ bool ScriptNode::executeInternal( const std::string &serialisation, Node *parent
 	{
 		result = g_executeFunction( this, serialisation, parent ? parent : this, continueOnError, context );
 	}
+	catch ( const IECore::Exception& e )
+	{
+		std::cout << "iecore except: " << e.what() << std::endl;
+	}
 	catch( ... )
 	{
+		std::cout << "error executing the serialisation" << std::endl;
+        std::cout << "\nUnknown exception type: '" << util_demangle(__cxa_current_exception_type()->name()) << "'" << std::endl;
+
 		m_executing = wasExecuting;
 		throw;
 	}

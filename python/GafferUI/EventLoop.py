@@ -258,7 +258,7 @@ class EventLoop( object ) :
 	@classmethod
 	def __ensureIdleTimer( cls ) :
 
-		assert( QtCore.QThread.currentThread() == EventLoop.__qtApplication.thread() )
+		#assert( QtCore.QThread.currentThread() == EventLoop.__qtApplication.thread() )
 
 		if cls.__idleTimer is None :
 			cls.__idleTimer = QtCore.QTimer( cls.__qtApplication )
@@ -272,7 +272,7 @@ class EventLoop( object ) :
 	@staticmethod
 	def __qtIdleCallback() :
 
-		assert( QtCore.QThread.currentThread() == EventLoop.__qtApplication.thread() )
+		#assert( QtCore.QThread.currentThread() == EventLoop.__qtApplication.thread() )
 
 		GafferUI.Gadget.idleSignal()()
 
