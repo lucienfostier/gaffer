@@ -1576,7 +1576,7 @@ std::shared_ptr<void> OpenImageIOReader::retrieveFile( const Context *context, b
 	{
 		// For some outputs, like "format", we need to hold the value of an adjacent frame when we're
 		// going to return black pixels
-		mode = Hold;
+		//mode = Hold;
 	}
 	ImageReader::ChannelInterpretation channelNaming = (ImageReader::ChannelInterpretation)channelInterpretationPlug()->getValue();
 
@@ -1619,7 +1619,15 @@ std::shared_ptr<void> OpenImageIOReader::retrieveFile( const Context *context, b
 			// if we got here, there was no suitable file sequence, or we weren't able to open the held frame
 			if( !cacheEntry.file )
 			{
-				throw IECore::Exception( *(cacheEntry.error) );
+				// if we are trying to hold the format but no suitable frame is available to hold, we use the ImagePlug default fallback.
+				if( holdForBlack )
+				{
+					return nullptr;
+				}
+				else
+				{
+					throw IECore::Exception( *(cacheEntry.error) );
+				}
 			}
 		}
 		else
