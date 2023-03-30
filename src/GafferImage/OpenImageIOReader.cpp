@@ -1197,7 +1197,16 @@ void OpenImageIOReader::compute( ValuePlug *output, const Context *context ) con
 	if( output == availableFramesPlug() )
 	{
 		FileSequencePtr fileSequence = nullptr;
-		IECore::ls( fileNamePlug()->getValue(), fileSequence, /* minSequenceSize */ 1 );
+		try
+		{
+			IECore::ls( fileNamePlug()->getValue(), fileSequence, /* minSequenceSize */ 1 );
+		}
+		catch ( const std::exception& e )
+		{
+			std::cout << "available frames compute: " << e.what() << std::endl;
+			static_cast<IntVectorDataPlug *>( output )->setToDefault();
+			return;
+		}
 
 		if( fileSequence )
 		{
