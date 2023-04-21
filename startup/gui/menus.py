@@ -537,14 +537,11 @@ nodeMenu.append( "/VDB/Points Grid To Points", GafferVDB.PointsGridToPoints, sea
 nodeMenu.append( "/VDB/Sphere Level Set", GafferVDB.SphereLevelSet, searchText="SphereLevelSet")
 
 # USD nodes
-try:
-	import GafferUSD
-	import GafferUSDUI
+import GafferUSD
+import GafferUSDUI
 
-	nodeMenu.append( "/USD/Attributes", GafferUSD.USDAttributes, searchText = "USDAttributes" )
-	nodeMenu.append( "/USD/Layer Writer", GafferUSD.USDLayerWriter, searchText = "USDLayerWriter" )
-except Exception as e:
-	print( e )
+nodeMenu.append( "/USD/Attributes", GafferUSD.USDAttributes, searchText = "USDAttributes" )
+nodeMenu.append( "/USD/Layer Writer", GafferUSD.USDLayerWriter, searchText = "USDLayerWriter" )
 
 # Dispatch nodes
 
