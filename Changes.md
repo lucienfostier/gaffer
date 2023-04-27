@@ -20,6 +20,7 @@ Fixes
 
 - UVInspector : Removed display transform from UV wireframes and grid.
 - Viewer : Gamma is now applied after the display transform, not before.
+- GLWidget: Restore support for sharing OpenGL context with the native host application OpenGL.
 
 API
 ---
