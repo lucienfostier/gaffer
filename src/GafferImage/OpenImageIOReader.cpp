@@ -1289,11 +1289,22 @@ void OpenImageIOReader::hashViewNames( const GafferImage::ImagePlug *parent, con
 
 IECore::ConstStringVectorDataPtr OpenImageIOReader::computeViewNames( const Gaffer::Context *context, const ImagePlug *parent ) const
 {
-	FilePtr file = std::static_pointer_cast<File>( retrieveFile( context ) );
+	std::cout << "compute view names start" << std::endl;
+	FilePtr file;
+	try
+	{
+		file = std::static_pointer_cast<File>( retrieveFile( context ) );
+	}
+	catch ( const std::exception& e )
+	{
+		std::cout << "error reading file for view names: " << e.what() << std::endl;
+	}
+	std::cout << "compute view names: " << file << std::endl;
 	if( !file )
 	{
 		return ImagePlug::defaultViewNames();
 	}
+	std::cout << "reading view names data" << std::endl;
 	return file->viewNamesData();
 }
 
