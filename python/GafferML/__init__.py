@@ -36,6 +36,7 @@
 
 __import__( "Gaffer" )
 __import__( "GafferImage" )
+__import__( "GafferScene" )
 
 from ._GafferML import *
 

@@ -39,6 +39,7 @@ from .TensorPlugTest import TensorPlugTest
 from .ImageToTensorTest import ImageToTensorTest
 from .InferenceTest import InferenceTest
 from .TensorToImageTest import TensorToImageTest
+from .TensorToSceneTest import TensorToSceneTest
 
 if __name__ == "__main__":
 	import unittest
