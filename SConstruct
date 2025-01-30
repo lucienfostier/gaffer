@@ -1150,14 +1150,14 @@ libraries = {
 
 	"GafferOFX" : {
 		"envAppends" : {
-			"CPPPATH" : [ "$OFX_ROOT/include" ],
-			"LIBPATH" : [ "$OFXX_ROOT/lib" ],
-			"LIBS" : [ "Gaffer", "GafferImage", "OfxHost", "OfxSupport" ],
+			"CXXFLAGS" : [ systemIncludeArgument, "$OFX_ROOT/include/openfx" ],
+			"LIBPATH" : [ "$OFX_ROOT/lib" ],
+			"LIBS" : [ "Gaffer", "GafferImage", "OfxHost", "OfxSupport", "expat" ],
 		},
 		"pythonEnvAppends" : {
-			"CPPPATH" : [ "$OFX_ROOT/include" ],
+			"CXXFLAGS" : [ systemIncludeArgument, "$OFX_ROOT/include/openfx" ],
 			"LIBPATH" : [ "$OFX_ROOT/lib" ],
-			"LIBS" : [ "GafferBindings", "GafferImage", "GafferML", "OfxHost", "OfxSupport" ],
+			"LIBS" : [ "GafferBindings", "GafferImage", "GafferML", "OfxHost", "OfxSupport", "expat" ],
 		},
 		"requiredOptions" : [ "OFX_ROOT" ],
 	},
@@ -1490,12 +1490,12 @@ for library in ( "GafferUI", ) :
 
 if env["PLATFORM"] == "win32" :
 
-	for library in ( "Gaffer", "GafferCycles", ) :
+	for library in ( "Gaffer", "GafferCycles", "GafferOFX" ) :
 
 		libraries[library].setdefault( "envAppends", {} )
 		libraries[library]["envAppends"].setdefault( "LIBS", [] ).extend( [ "Advapi32" ] )
 
-	for library in ( "GafferCycles", ) :
+	for library in ( "GafferCycles", "GafferOFX" ) :
 
 		libraries[library].setdefault( "pythonEnvAppends", {} )
 		libraries[library]["pythonEnvAppends"].setdefault( "LIBS", [] ).extend( [ "Advapi32" ] )
@@ -1503,6 +1503,7 @@ if env["PLATFORM"] == "win32" :
 else :
 
 	libraries["GafferCycles"]["envAppends"]["LIBS"].extend( [ "dl" ] )
+	libraries["GafferOFX"]["envAppends"]["LIBS"].extend( [ "dl" ] )
 
 # Optionally add vTune requirements
 
