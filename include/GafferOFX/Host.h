@@ -34,6 +34,8 @@
 
 #pragma once
 
+#include "GafferOFX/Export.h"
+
 // ofx host
 #include "HostSupport/ofxhPluginCache.h"
 #include "HostSupport/ofxhImageEffectAPI.h"
@@ -42,7 +44,7 @@
 namespace GafferOFX
 {
 
-class Host : public OFX::Host::ImageEffect::Host
+class GAFFEROFX_API Host : public OFX::Host::ImageEffect::Host
 {
 	public :
 

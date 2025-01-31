@@ -31,7 +31,7 @@
 //  SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //
 //////////////////////////////////////////////////////////////////////////
-#include "GafferOFX/OfxHost.h"
+#include "GafferOFX/Host.h"
 
 #include <cstring>
 

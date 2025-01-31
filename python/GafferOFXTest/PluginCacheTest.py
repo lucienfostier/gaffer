@@ -33,8 +33,20 @@
 #  SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 ##########################################################################
-from .PluginCacheTest import PluginCacheTest
 
-if __name__ == "__main__":
-	import unittest
+import unittest
+
+import imath
+
+import IECore
+import GafferTest
+import GafferOFX
+
+class PluginCacheTest( GafferTest.TestCase ) :
+	def testFindPlugins(self):
+		import GafferOFX
+		self.assertTrue(GafferOFX.pluginCache())
+
+if __name__ == "__main__" :
 	unittest.main()
+

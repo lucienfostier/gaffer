@@ -1157,7 +1157,7 @@ libraries = {
 		"pythonEnvAppends" : {
 			"CXXFLAGS" : [ systemIncludeArgument, "$OFX_ROOT/include/openfx" ],
 			"LIBPATH" : [ "$OFX_ROOT/lib" ],
-			"LIBS" : [ "GafferBindings", "GafferImage", "GafferML", "OfxHost", "OfxSupport", "expat" ],
+			"LIBS" : [ "GafferBindings", "GafferImage", "GafferOFX", "OfxHost", "OfxSupport", "expat" ],
 		},
 		"requiredOptions" : [ "OFX_ROOT" ],
 	},
