@@ -4,6 +4,9 @@
 *.moc
 *.pyc
 *.swp
+*.swo
+*.swm
+*.swn
 *.so
 *.tmp
 *.desktop
