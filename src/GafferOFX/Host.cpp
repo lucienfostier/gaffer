@@ -32,6 +32,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 #include "GafferOFX/Host.h"
+#include "GafferOFX/EffectImageInstance.h"
 
 #include <cstring>
 

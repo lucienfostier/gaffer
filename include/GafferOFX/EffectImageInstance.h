@@ -31,61 +31,25 @@
 //  SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //
 //////////////////////////////////////////////////////////////////////////
-
-#pragma once
-
 #include "GafferOFX/Export.h"
 
-#include "HostSupport/ofxhPluginCache.h"
-#include "HostSupport/ofxhImageEffectAPI.h"
+#include "HostSupport/ofxhImageEffect.h"
 
 
 namespace GafferOFX
 {
 
-class GAFFEROFX_API Host : public OFX::Host::ImageEffect::Host
+class GAFFEROFX_API EffectImageInstance : public OFX::Host::ImageEffect::Instance
 {
 	public :
 
-		Host();
-
-		OFX::Host::ImageEffect::Instance* newInstance(
-			void* clientData,
+		EffectImageInstance(
 			OFX::Host::ImageEffect::ImageEffectPlugin* plugin,
-			OFX::Host::ImageEffect::Descriptor& desc,
-			const std::string& context
-		) override;
+            OFX::Host::ImageEffect::Descriptor& desc,
+            const std::string& context
+			);
 
-		OFX::Host::ImageEffect::Descriptor* makeDescriptor(OFX::Host::ImageEffect::ImageEffectPlugin* plugin) override;
-		OFX::Host::ImageEffect::Descriptor* makeDescriptor(
-			const OFX::Host::ImageEffect::Descriptor& rootContext,
-			OFX::Host::ImageEffect::ImageEffectPlugin* plugin
-		) override;
-		OFX::Host::ImageEffect::Descriptor* makeDescriptor(
-			const std::string& bundlePath,
-			OFX::Host::ImageEffect::ImageEffectPlugin* plugin
-		) override;
-
-		OfxStatus vmessage(
-			const char* type,
-			const char* id,
-			const char* format,
-			va_list args
-		) override;
-
-		OfxStatus setPersistentMessage(
-			const char* type,
-			const char* id,
-			const char* format,
-			va_list args
-		) override;
-
-		OfxStatus clearPersistentMessage() override;
 };
-
-	// TODO do I need this and why?
-	extern Host gOfxHost;
-
 
 }
 
