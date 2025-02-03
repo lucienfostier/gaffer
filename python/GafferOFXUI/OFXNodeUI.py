@@ -34,6 +34,29 @@
 #
 ##########################################################################
 
-from . import OFXNodeUI
+import Gaffer
+import GafferOFX
 
-__import__( "IECore" ).loadConfig( "GAFFER_STARTUP_PATHS", subdirectory = "GafferOFXUI" )
+Gaffer.Metadata.registerNode(
+
+	GafferOFX.OFXNode,
+
+	"description",
+	"""
+	Load an OFX Image Effect plugin.
+	""",
+
+	plugs = {
+
+		"pluginId" : [
+
+			"description",
+			"""
+			The OFX id of the plugin to load.
+			""",
+
+		],
+
+	}
+
+)

@@ -36,12 +36,19 @@
 
 #include "boost/python.hpp"
 
+#include "GafferBindings/DependencyNodeBinding.h"
+
 #include "GafferOFX/PluginCache.h"
+#include "GafferOFX/OFXNode.h"
 
 using namespace boost::python;
+using namespace GafferBindings;
 using namespace GafferOFX;
 
 BOOST_PYTHON_MODULE( _GafferOFX )
 {
 	def("pluginCache", pluginCache);
+
+	DependencyNodeClass<OFXNode>();
+
 }
