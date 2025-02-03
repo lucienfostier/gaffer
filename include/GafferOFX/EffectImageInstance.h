@@ -54,5 +54,5 @@ class GAFFEROFX_API EffectImageInstance : public OFX::Host::ImageEffect::Instanc
 
 };
 
-}
+} // GafferOFX
 

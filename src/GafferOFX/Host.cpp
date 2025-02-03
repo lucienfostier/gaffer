@@ -81,7 +81,7 @@ OFX::Host::ImageEffect::Instance* Host::newInstance(
 )
 {
 	return nullptr;
-	//return new MyEffectInstance(plugin, desc, context);
+	//return new EffectImageInstance(plugin, desc, context);
 }
 
 OFX::Host::ImageEffect::Descriptor *Host::makeDescriptor(
@@ -164,4 +164,10 @@ OfxStatus Host::setPersistentMessage(const char* type,
 OfxStatus Host::clearPersistentMessage()
 {
 	return kOfxStatOK;
+}
+
+Host& Host::instance()
+{
+	static Host instance;
+	return instance;
 }

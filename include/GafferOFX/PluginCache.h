@@ -40,4 +40,4 @@
 namespace GafferOFX
 {
 	void GAFFEROFX_API pluginCache();
-}
+} // GafferOFX

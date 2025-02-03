@@ -33,6 +33,8 @@
 //////////////////////////////////////////////////////////////////////////
 #include "GafferOFX/EffectImageInstance.h"
 
+#include <iostream>
+
 using namespace GafferOFX;
 
 EffectImageInstance::EffectImageInstance(
@@ -41,4 +43,5 @@ EffectImageInstance::EffectImageInstance(
 	const std::string& context)
 : OFX::Host::ImageEffect::Instance(plugin,desc,context,false)
 {
+	std::cout << "GafferOFX Effect Image Instance ctor" << std::endl;
 }

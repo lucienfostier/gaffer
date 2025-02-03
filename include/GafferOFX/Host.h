@@ -81,11 +81,9 @@ class GAFFEROFX_API Host : public OFX::Host::ImageEffect::Host
 		) override;
 
 		OfxStatus clearPersistentMessage() override;
+
+		static Host& instance();
 };
 
-	// TODO do I need this and why?
-	extern Host gOfxHost;
-
-
-}
+} // GafferOFX
 
