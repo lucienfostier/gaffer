@@ -35,6 +35,7 @@
 //////////////////////////////////////////////////////////////////////////
 
 #include "GafferOFX/OFXNode.h"
+#include "GafferOFX/Host.h"
 
 using namespace std;
 using namespace Imath;
@@ -64,7 +65,14 @@ OFXNode::~OFXNode()
 
 void OFXNode::createPluginInstance()
 {
-	std::cout << "createPluginInstance()" << std::endl;
+	Host& host = Host::instance();
+	OFX::Host::ImageEffect::PluginCache imageEffectPluginCache(host);
+	OFX::Host::PluginCache::getPluginCache()->setCacheVersion("GafferOFX");
+	imageEffectPluginCache.registerInCache(*OFX::Host::PluginCache::getPluginCache());
+	OFX::Host::PluginCache::getPluginCache()->scanPluginFiles();
+	OFX::Host::ImageEffect::ImageEffectPlugin* plugin = imageEffectPluginCache.getPluginById("net.sf.openfx:invertPlugin");
+	imageEffectPluginCache.dumpToStdOut();
+	std::cout << "createPluginInstance() : " << plugin << std::endl;
 }
 
 Gaffer::StringPlug* OFXNode::pluginIdPlug()

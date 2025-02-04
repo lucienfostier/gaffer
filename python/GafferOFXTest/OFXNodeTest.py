@@ -33,9 +33,27 @@
 #  SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 ##########################################################################
-from .PluginCacheTest import PluginCacheTest
-from .OFXNodeTest import OFXNodeTest
 
-if __name__ == "__main__":
-	import unittest
+import unittest
+
+import imath
+
+import IECore
+import GafferTest
+import GafferOFX
+
+class OFXNodeTest( GafferTest.TestCase ) :
+	def testCreatePluginInstance(self):
+		import Gaffer
+		import GafferOFX
+
+		scriptNode = Gaffer.ScriptNode()
+		node = GafferOFX.OFXNode()
+		scriptNode.addChild( node )
+
+		self.assertTrue(node.createPluginInstance())
+
+if __name__ == "__main__" :
 	unittest.main()
+
+
