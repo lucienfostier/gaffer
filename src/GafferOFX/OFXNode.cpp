@@ -62,6 +62,11 @@ OFXNode::~OFXNode()
 {
 }
 
+void OFXNode::createPluginInstance()
+{
+	std::cout << "createPluginInstance()" << std::endl;
+}
+
 Gaffer::StringPlug* OFXNode::pluginIdPlug()
 {
 	return getChild<StringPlug>( g_firstPlugIndex );

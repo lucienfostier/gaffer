@@ -53,6 +53,8 @@ class GAFFEROFX_API OFXNode : public GafferImage::ImageNode
 
 		explicit OFXNode( const std::string &name=defaultName<OFXNode>() );
 		~OFXNode() override;
+		
+		void createPluginInstance();
 
 		Gaffer::StringPlug* pluginIdPlug();
 		const Gaffer::StringPlug* pluginIdPlug() const;

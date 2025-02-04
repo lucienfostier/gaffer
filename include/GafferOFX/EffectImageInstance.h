@@ -52,6 +52,48 @@ class GAFFEROFX_API EffectImageInstance : public OFX::Host::ImageEffect::Instanc
             const std::string& context
 			);
 
+		const std::string &getDefaultOutputFielding() const override;
+		
+		OFX::Host::ImageEffect::ClipInstance* newClipInstance(
+			OFX::Host::ImageEffect::Instance* plugin,
+			OFX::Host::ImageEffect::ClipDescriptor* descriptor,
+			int index
+			) override;
+	
+		OfxStatus vmessage(const char* type,
+								   const char* id,
+								   const char* format,
+								   va_list args) override;       
+		
+		OfxStatus setPersistentMessage(const char* type,
+											   const char* id,
+											   const char* format,
+											   va_list args) override;
+	
+		OfxStatus clearPersistentMessage() override;
+
+		void getProjectSize(double& xSize, double& ySize) const override;
+		void getProjectOffset(double& xOffset, double& yOffset) const override;
+		void getProjectExtent(double& xSize, double& ySize) const override;
+		double getProjectPixelAspectRatio() const override;
+		double getEffectDuration() const override;
+		double getFrameRate() const override;
+		double getFrameRecursive() const override;
+		void getRenderScaleRecursive(double &x, double &y) const override;
+	
+	
+		OFX::Host::Param::Instance* newParam(const std::string& name, OFX::Host::Param::Descriptor& Descriptor) override;
+		
+		OfxStatus editBegin(const std::string& name) override;
+		OfxStatus editEnd() override;
+	
+		void progressStart(const std::string &message, const std::string &messageid) override;
+		void progressEnd() override;
+		bool progressUpdate(double t) override;        
+	
+		double timeLineGetTime() override;
+		void timeLineGotoTime(double t) override;
+		void timeLineGetBounds(double &t1, double &t2) override;    
 };
 
 } // GafferOFX

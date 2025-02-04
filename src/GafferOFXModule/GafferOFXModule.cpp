@@ -41,14 +41,29 @@
 #include "GafferOFX/PluginCache.h"
 #include "GafferOFX/OFXNode.h"
 
+#include "IECorePython/RunTimeTypedBinding.h"
+
 using namespace boost::python;
 using namespace GafferBindings;
 using namespace GafferOFX;
+
+namespace
+{
+
+void createPluginInstanceWrapper( OFXNode& node )
+{
+	IECorePython::ScopedGILRelease gilRelease;
+	node.createPluginInstance();
+
+}
+
+}
 
 BOOST_PYTHON_MODULE( _GafferOFX )
 {
 	def("pluginCache", pluginCache);
 
-	DependencyNodeClass<OFXNode>();
-
+	DependencyNodeClass<OFXNode>()
+		.def( "createPluginInstance", &createPluginInstanceWrapper )
+	;
 }

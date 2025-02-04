@@ -80,8 +80,7 @@ OFX::Host::ImageEffect::Instance* Host::newInstance(
 	const std::string& context
 )
 {
-	return nullptr;
-	//return new EffectImageInstance(plugin, desc, context);
+	return new EffectImageInstance(plugin, desc, context);
 }
 
 OFX::Host::ImageEffect::Descriptor *Host::makeDescriptor(

@@ -37,11 +37,151 @@
 
 using namespace GafferOFX;
 
-EffectImageInstance::EffectImageInstance(
-	OFX::Host::ImageEffect::ImageEffectPlugin* plugin,
-	OFX::Host::ImageEffect::Descriptor& desc,
-	const std::string& context)
-: OFX::Host::ImageEffect::Instance(plugin,desc,context,false)
+EffectImageInstance::EffectImageInstance( OFX::Host::ImageEffect::ImageEffectPlugin* plugin, OFX::Host::ImageEffect::Descriptor& desc, const std::string& context): OFX::Host::ImageEffect::Instance(plugin,desc,context,false)
 {
 	std::cout << "GafferOFX Effect Image Instance ctor" << std::endl;
+}
+
+OFX::Host::ImageEffect::ClipInstance* EffectImageInstance::newClipInstance(OFX::Host::ImageEffect::Instance* plugin, OFX::Host::ImageEffect::ClipDescriptor* descriptor, int index)
+{
+	return nullptr;
+	//return new MyClipInstance(this,descriptor);
+}
+
+
+const std::string &EffectImageInstance::getDefaultOutputFielding() const
+{
+	static const std::string v(kOfxImageFieldNone);
+	return v;    
+}
+
+OfxStatus EffectImageInstance::vmessage(const char* type, const char* id, const char* format, va_list args)
+{
+	printf("%s %s ",type,id);
+	vprintf(format,args);
+	return kOfxStatOK;
+}
+
+OfxStatus EffectImageInstance::setPersistentMessage(const char* type, const char* id, const char* format, va_list args)
+{
+	return vmessage(type, id, format, args);
+}
+
+OfxStatus EffectImageInstance::clearPersistentMessage()
+{
+	return kOfxStatOK;
+}
+
+void EffectImageInstance::getProjectSize(double& xSize, double& ySize) const
+{
+	xSize = 768;
+	ySize = 576;
+}
+
+void EffectImageInstance::getProjectOffset(double& xOffset, double& yOffset) const
+{
+	xOffset = 0;
+	yOffset = 0;
+}
+
+void EffectImageInstance::getProjectExtent(double& xSize, double& ySize) const
+{
+	xSize = 768;
+	ySize = 576;
+}
+
+double EffectImageInstance::getProjectPixelAspectRatio() const
+{
+	return double(768)/double(720);
+}
+
+double EffectImageInstance::getEffectDuration() const
+{
+	return 25.0;
+}
+
+double EffectImageInstance::getFrameRate() const
+{
+	return 25.0;
+}
+
+double EffectImageInstance::getFrameRecursive() const
+{
+	return 0.0;
+}
+
+void EffectImageInstance::getRenderScaleRecursive(double &x, double &y) const
+{
+	x = y = 1.0;
+}
+
+// make a parameter instance
+OFX::Host::Param::Instance* EffectImageInstance::newParam(const std::string& name, OFX::Host::Param::Descriptor& descriptor)
+{
+	return nullptr;
+	/*
+	if(descriptor.getType()==kOfxParamTypeInteger)
+	  return new MyIntegerInstance(this,name,descriptor);
+	else if(descriptor.getType()==kOfxParamTypeDouble)
+	  return new MyDoubleInstance(this,name,descriptor);
+	else if(descriptor.getType()==kOfxParamTypeBoolean)
+	  return new MyBooleanInstance(this,name,descriptor);
+	else if(descriptor.getType()==kOfxParamTypeChoice)
+	  return new MyChoiceInstance(this,name,descriptor);
+	else if(descriptor.getType()==kOfxParamTypeRGBA)
+	  return new MyRGBAInstance(this,name,descriptor);
+	else if(descriptor.getType()==kOfxParamTypeRGB)
+	  return new MyRGBInstance(this,name,descriptor);
+	else if(descriptor.getType()==kOfxParamTypeDouble2D)
+	  return new MyDouble2DInstance(this,name,descriptor);
+	else if(descriptor.getType()==kOfxParamTypeInteger2D)
+	  return new MyInteger2DInstance(this,name,descriptor);
+	else if(descriptor.getType()==kOfxParamTypePushButton)
+	  return new MyPushbuttonInstance(this,name,descriptor);
+	else if(descriptor.getType()==kOfxParamTypeGroup)
+	  return new OFX::Host::Param::GroupInstance(descriptor,this);
+	else if(descriptor.getType()==kOfxParamTypePage)
+	  return new OFX::Host::Param::PageInstance(descriptor,this);
+	else
+	  return 0;
+	*/
+}
+
+OfxStatus EffectImageInstance::editBegin(const std::string& name)
+{
+	return kOfxStatErrMissingHostFeature;
+}
+
+OfxStatus EffectImageInstance::editEnd()
+{
+	return kOfxStatErrMissingHostFeature;
+}
+
+void  EffectImageInstance::progressStart(const std::string &message, const std::string &messageid)
+{
+}
+
+void  EffectImageInstance::progressEnd()
+{
+}
+
+bool  EffectImageInstance::progressUpdate(double t)
+{
+	return true;
+}
+
+
+double  EffectImageInstance::timeLineGetTime()
+{
+	return 0;
+}
+
+void  EffectImageInstance::timeLineGotoTime(double t)
+{
+}
+
+void  EffectImageInstance::timeLineGetBounds(double &t1, double &t2)
+{
+	t1 = 0;
+	t2 = 25;
 }
