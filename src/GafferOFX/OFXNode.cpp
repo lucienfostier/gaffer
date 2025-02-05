@@ -96,6 +96,12 @@ void OFXNode::createPluginInstance()
 	imageEffectPluginCache.dumpToStdOut();
 	std::cout << "createPluginInstance() : " << plugin << std::endl;
 
+	if( plugin )
+	{
+		std::cout << "debug node address: " << this << std::endl;
+		std::unique_ptr<OFX::Host::ImageEffect::Instance> instance(plugin->createInstance(kOfxImageEffectContextFilter, this));
+	}
+
 }
 
 Gaffer::StringPlug* OFXNode::pluginIdPlug()

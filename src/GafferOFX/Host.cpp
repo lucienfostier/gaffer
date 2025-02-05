@@ -80,7 +80,7 @@ OFX::Host::ImageEffect::Instance* Host::newInstance(
 	const std::string& context
 )
 {
-	std::cout << "host new instance" << std::endl;
+	std::cout << "host new instance: " << clientData << std::endl;
 	return new EffectImageInstance(plugin, desc, context);
 }
 
