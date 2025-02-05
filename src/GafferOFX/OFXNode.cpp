@@ -37,6 +37,9 @@
 #include "GafferOFX/OFXNode.h"
 #include "GafferOFX/Host.h"
 
+
+#include <fstream>
+
 using namespace std;
 using namespace Imath;
 using namespace IECore;
@@ -66,13 +69,33 @@ OFXNode::~OFXNode()
 void OFXNode::createPluginInstance()
 {
 	Host& host = Host::instance();
+	std::cout  << "host: " << &host << std::endl;
 	OFX::Host::ImageEffect::PluginCache imageEffectPluginCache(host);
+
+
 	OFX::Host::PluginCache::getPluginCache()->setCacheVersion("GafferOFX");
+
+
+
 	imageEffectPluginCache.registerInCache(*OFX::Host::PluginCache::getPluginCache());
+
+
+	// try to read an old cache
+	std::ifstream ifs("hostDemoPluginCache.xml");
+	OFX::Host::PluginCache::getPluginCache()->readCache(ifs);
 	OFX::Host::PluginCache::getPluginCache()->scanPluginFiles();
-	OFX::Host::ImageEffect::ImageEffectPlugin* plugin = imageEffectPluginCache.getPluginById("net.sf.openfx:invertPlugin");
+	ifs.close();
+	
+	/// flush out the current cache
+	std::ofstream of("hostDemoPluginCache.xml");
+	OFX::Host::PluginCache::getPluginCache()->writePluginCache(of);
+	of.close();
+
+	OFX::Host::ImageEffect::ImageEffectPlugin* plugin = imageEffectPluginCache.getPluginById("net.sf.openfx.invertPlugin");
+
 	imageEffectPluginCache.dumpToStdOut();
 	std::cout << "createPluginInstance() : " << plugin << std::endl;
+
 }
 
 Gaffer::StringPlug* OFXNode::pluginIdPlug()

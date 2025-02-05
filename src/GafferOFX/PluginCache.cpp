@@ -39,12 +39,12 @@ using namespace GafferOFX;
 void GafferOFX::pluginCache()
 {
 	OFX::Host::PluginCache::getPluginCache()->setCacheVersion("GafferOFXCache");
-	Host host;
 
-	OFX::Host::ImageEffect::PluginCache imageEffectPluginCache(host);
+	OFX::Host::ImageEffect::PluginCache imageEffectPluginCache(Host::instance());
 
 	imageEffectPluginCache.registerInCache(*OFX::Host::PluginCache::getPluginCache());
-	OFX::Host::PluginCache::getPluginCache()->scanPluginFiles();
+	//OFX::Host::PluginCache::getPluginCache()->scanPluginFiles();
+	std::cout << "debug: " << OFX::Host::PluginCache::getPluginCache() << std::endl;
 	
 	imageEffectPluginCache.dumpToStdOut();
 }
