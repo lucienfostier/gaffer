@@ -42,13 +42,13 @@ import IECore
 import GafferTest
 import GafferOFX
 
-class OFXNodeTest( GafferTest.TestCase ) :
+class OFXImageNodeTest( GafferTest.TestCase ) :
 	def testCreatePluginInstance(self):
 		import Gaffer
 		import GafferOFX
 
 		scriptNode = Gaffer.ScriptNode()
-		node = GafferOFX.OFXNode()
+		node = GafferOFX.OFXImageNode()
 		scriptNode.addChild( node )
 
 		self.assertTrue(node.createPluginInstance())
