@@ -34,17 +34,34 @@
 #include "GafferOFX/PluginCache.h"
 #include "GafferOFX/Host.h"
 
+#include <fstream>
+
 using namespace GafferOFX;
 
-void GafferOFX::pluginCache()
+void GafferOFX::findOFXPlugins()
 {
-	OFX::Host::PluginCache::getPluginCache()->setCacheVersion("GafferOFXCache");
+	std::cout << "find OFX plugins" << std::endl;
+	Host& host = Host::instance();
+	OFX::Host::ImageEffect::PluginCache imageEffectPluginCache(host);
 
-	OFX::Host::ImageEffect::PluginCache imageEffectPluginCache(Host::instance());
+	OFX::Host::PluginCache::getPluginCache()->setCacheVersion("GafferOFX");
 
 	imageEffectPluginCache.registerInCache(*OFX::Host::PluginCache::getPluginCache());
-	//OFX::Host::PluginCache::getPluginCache()->scanPluginFiles();
-	std::cout << "debug: " << OFX::Host::PluginCache::getPluginCache() << std::endl;
+
+	// try to read an old cache
+	std::ifstream ifs("GafferOFXPluginCache.xml");
+	OFX::Host::PluginCache::getPluginCache()->readCache(ifs);
+	OFX::Host::PluginCache::getPluginCache()->scanPluginFiles();
+	ifs.close();
 	
-	imageEffectPluginCache.dumpToStdOut();
+	/// flush out the current cache
+	std::ofstream of("GafferOFXPluginCache.xml");
+	OFX::Host::PluginCache::getPluginCache()->writePluginCache(of);
+	of.close();
+
+	for(const auto* p : imageEffectPluginCache.getPlugins() )
+	{
+		std::cout << "find ofx plugins: " << p->getIdentifier() << std::endl;
+	}
+
 }

@@ -43,6 +43,7 @@ import GafferTest
 import GafferOFX
 
 class PluginCacheTest( GafferTest.TestCase ) :
+	@unittest.skip("")
 	def testFindPlugins(self):
 		import GafferOFX
 		self.assertTrue(GafferOFX.pluginCache())

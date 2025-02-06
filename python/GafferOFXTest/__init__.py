@@ -36,6 +36,10 @@
 from .PluginCacheTest import PluginCacheTest
 from .OFXImageNodeTest import OFXImageNodeTest
 
+import GafferOFX
+
+GafferOFX.findOFXPlugins()
+
 if __name__ == "__main__":
 	import unittest
 	unittest.main()

@@ -61,7 +61,7 @@ void createPluginInstanceWrapper( OFXImageNode& node )
 
 BOOST_PYTHON_MODULE( _GafferOFX )
 {
-	def("pluginCache", pluginCache);
+	def("findOFXPlugins", findOFXPlugins);
 
 	DependencyNodeClass<OFXImageNode>()
 		.def( "createPluginInstance", &createPluginInstanceWrapper )
