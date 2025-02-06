@@ -34,7 +34,7 @@
 #
 ##########################################################################
 from .PluginCacheTest import PluginCacheTest
-from .OFXNodeTest import OFXNodeTest
+from .OFXImageNodeTest import OFXImageNodeTest
 
 if __name__ == "__main__":
 	import unittest

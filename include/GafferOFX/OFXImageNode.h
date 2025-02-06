@@ -46,20 +46,20 @@
 namespace GafferOFX
 {
 
-class GAFFEROFX_API OFXNode : public GafferImage::ImageNode
+class GAFFEROFX_API OFXImageNode : public GafferImage::ImageNode
 {
 
 	public :
 
-		explicit OFXNode( const std::string &name=defaultName<OFXNode>() );
-		~OFXNode() override;
+		explicit OFXImageNode( const std::string &name=defaultName<OFXImageNode>() );
+		~OFXImageNode() override;
 		
 		void createPluginInstance();
 
 		Gaffer::StringPlug* pluginIdPlug();
 		const Gaffer::StringPlug* pluginIdPlug() const;
 
-		GAFFER_NODE_DECLARE_TYPE( GafferOFX::OFXNode, OFXNodeTypeId, GafferImage::ImageNode );
+		GAFFER_NODE_DECLARE_TYPE( GafferOFX::OFXImageNode, OFXImageNodeTypeId, GafferImage::ImageNode );
 
 		void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const override;
 
@@ -87,6 +87,6 @@ class GAFFEROFX_API OFXNode : public GafferImage::ImageNode
 
 };
 
-IE_CORE_DECLAREPTR( OFXNode )
+IE_CORE_DECLAREPTR( OFXImageNode )
 
 } // namespace GafferOFX

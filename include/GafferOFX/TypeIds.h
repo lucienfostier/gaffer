@@ -41,7 +41,7 @@ namespace GafferOFX
 
 enum TypeId
 {
-	OFXNodeTypeId = 120001,
+	OFXImageNodeTypeId = 120001,
 	LastTypeId = 120050
 };
 

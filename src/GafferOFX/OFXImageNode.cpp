@@ -34,7 +34,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "GafferOFX/OFXNode.h"
+#include "GafferOFX/OFXImageNode.h"
 #include "GafferOFX/Host.h"
 
 
@@ -48,25 +48,25 @@ using namespace Gaffer;
 using namespace GafferOFX;
 
 //////////////////////////////////////////////////////////////////////////
-// OFXNode implementation
+// OFXImageNode implementation
 //////////////////////////////////////////////////////////////////////////
 
-GAFFER_NODE_DEFINE_TYPE( OFXNode );
+GAFFER_NODE_DEFINE_TYPE( OFXImageNode );
 
-size_t OFXNode::g_firstPlugIndex = 0;
+size_t OFXImageNode::g_firstPlugIndex = 0;
 
-OFXNode::OFXNode( const std::string &name )
+OFXImageNode::OFXImageNode( const std::string &name )
 	: ImageNode( name )
 {
 	storeIndexOfNextChild( g_firstPlugIndex );
 	addChild( new StringPlug( "pluginId" ) );
 }
 
-OFXNode::~OFXNode()
+OFXImageNode::~OFXImageNode()
 {
 }
 
-void OFXNode::createPluginInstance()
+void OFXImageNode::createPluginInstance()
 {
 	Host& host = Host::instance();
 	std::cout  << "host: " << &host << std::endl;
@@ -104,87 +104,87 @@ void OFXNode::createPluginInstance()
 
 }
 
-Gaffer::StringPlug* OFXNode::pluginIdPlug()
+Gaffer::StringPlug* OFXImageNode::pluginIdPlug()
 {
 	return getChild<StringPlug>( g_firstPlugIndex );
 }
 
-const Gaffer::StringPlug* OFXNode::pluginIdPlug() const
+const Gaffer::StringPlug* OFXImageNode::pluginIdPlug() const
 {
 	return getChild<StringPlug>( g_firstPlugIndex );
 }
 
-void OFXNode::affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const
+void OFXImageNode::affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const
 {
 	ImageNode::affects( input, outputs );
 }
 
-void OFXNode::hashViewNames( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const
+void OFXImageNode::hashViewNames( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const
 {
 	ImageNode::hashViewNames( output, context, h );
 }
 
-IECore::ConstStringVectorDataPtr OFXNode::computeViewNames( const Gaffer::Context *context, const ImagePlug *parent ) const
+IECore::ConstStringVectorDataPtr OFXImageNode::computeViewNames( const Gaffer::Context *context, const ImagePlug *parent ) const
 {
 	return ImagePlug::defaultViewNames();
 }
 
-void OFXNode::hashFormat( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const
+void OFXImageNode::hashFormat( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const
 {
 	ImageNode::hashFormat( output, context, h );
 }
 
-GafferImage::Format OFXNode::computeFormat( const Gaffer::Context *context, const ImagePlug *parent ) const
+GafferImage::Format OFXImageNode::computeFormat( const Gaffer::Context *context, const ImagePlug *parent ) const
 {
 	return GafferImage::Format();
 }
 
-void OFXNode::hashDataWindow( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const
+void OFXImageNode::hashDataWindow( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const
 {
 	ImageNode::hashDataWindow( output, context, h );
 }
 
-Imath::Box2i OFXNode::computeDataWindow( const Gaffer::Context *context, const ImagePlug *parent ) const
+Imath::Box2i OFXImageNode::computeDataWindow( const Gaffer::Context *context, const ImagePlug *parent ) const
 {
 	return Box2i();
 }
 
-IECore::ConstCompoundDataPtr OFXNode::computeMetadata( const Gaffer::Context *context, const ImagePlug *parent ) const
+IECore::ConstCompoundDataPtr OFXImageNode::computeMetadata( const Gaffer::Context *context, const ImagePlug *parent ) const
 {
 	return outPlug()->metadataPlug()->defaultValue();
 }
 
-bool OFXNode::computeDeep( const Gaffer::Context *context, const ImagePlug *parent ) const
+bool OFXImageNode::computeDeep( const Gaffer::Context *context, const ImagePlug *parent ) const
 {
 	return true;
 }
 
-void OFXNode::hashSampleOffsets( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const
+void OFXImageNode::hashSampleOffsets( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const
 {
 	h = ImagePlug::emptyTileSampleOffsets()->Object::hash();
 }
 
-IECore::ConstIntVectorDataPtr OFXNode::computeSampleOffsets( const Imath::V2i &tileOrigin, const Gaffer::Context *context, const ImagePlug *parent ) const
+IECore::ConstIntVectorDataPtr OFXImageNode::computeSampleOffsets( const Imath::V2i &tileOrigin, const Gaffer::Context *context, const ImagePlug *parent ) const
 {
 	return ImagePlug::emptyTileSampleOffsets();
 }
 
-void OFXNode::hashChannelNames( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const
+void OFXImageNode::hashChannelNames( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const
 {
 	ImageNode::hashChannelNames( output, context, h );
 }
 
-IECore::ConstStringVectorDataPtr OFXNode::computeChannelNames( const Gaffer::Context *context, const ImagePlug *parent ) const
+IECore::ConstStringVectorDataPtr OFXImageNode::computeChannelNames( const Gaffer::Context *context, const ImagePlug *parent ) const
 {
 	return new IECore::StringVectorData();
 }
 
-void OFXNode::hashChannelData( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const
+void OFXImageNode::hashChannelData( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const
 {
 	h = ImagePlug::emptyTile()->Object::hash();
 }
 
-IECore::ConstFloatVectorDataPtr OFXNode::computeChannelData( const std::string &channelName, const Imath::V2i &tileOrigin, const Gaffer::Context *context, const ImagePlug *parent ) const
+IECore::ConstFloatVectorDataPtr OFXImageNode::computeChannelData( const std::string &channelName, const Imath::V2i &tileOrigin, const Gaffer::Context *context, const ImagePlug *parent ) const
 {
 	return ImagePlug::emptyTile();
 }
