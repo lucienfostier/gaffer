@@ -39,7 +39,7 @@ import GafferOFX
 
 Gaffer.Metadata.registerNode(
 
-	GafferOFX.OFXNode,
+	GafferOFX.OFXImageNode,
 
 	"description",
 	"""
