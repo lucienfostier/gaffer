@@ -38,7 +38,7 @@ from .OFXImageNodeTest import OFXImageNodeTest
 
 import GafferOFX
 
-GafferOFX.findOFXPlugins()
+GafferOFX.Host.findOFXPlugins()
 
 if __name__ == "__main__":
 	import unittest

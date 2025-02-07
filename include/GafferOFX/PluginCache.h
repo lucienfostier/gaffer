@@ -39,5 +39,4 @@
 
 namespace GafferOFX
 {
-	void GAFFEROFX_API findOFXPlugins();
 } // GafferOFX

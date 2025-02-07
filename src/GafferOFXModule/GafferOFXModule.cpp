@@ -38,7 +38,7 @@
 
 #include "GafferBindings/DependencyNodeBinding.h"
 
-#include "GafferOFX/PluginCache.h"
+#include "GafferOFX/Host.h"
 #include "GafferOFX/OFXImageNode.h"
 
 #include "IECorePython/RunTimeTypedBinding.h"
@@ -61,7 +61,11 @@ void createPluginInstanceWrapper( OFXImageNode& node )
 
 BOOST_PYTHON_MODULE( _GafferOFX )
 {
-	def("findOFXPlugins", findOFXPlugins);
+
+	class_<Host>("Host", no_init)
+		.def("findOFXPlugins", &Host::findOFXPlugins)
+		.staticmethod("findOFXPlugins")
+	;
 
 	DependencyNodeClass<OFXImageNode>()
 		.def( "createPluginInstance", &createPluginInstanceWrapper )

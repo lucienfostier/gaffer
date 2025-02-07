@@ -1,3 +1,3 @@
 import GafferOFX
 
-GafferOFX.findOFXPlugins()
+GafferOFX.Host.findOFXPlugins()

@@ -36,6 +36,8 @@
 
 #include <cstring>
 
+#include <fstream>
+
 using namespace GafferOFX;
 
 Host::Host()
@@ -171,3 +173,27 @@ Host& Host::instance()
 	static Host instance;
 	return instance;
 }
+
+void Host::findOFXPlugins()
+{
+	OFX::Host::PluginCache::getPluginCache()->setCacheVersion("GafferOFXCache");
+
+	m_pluginCache = OFX::Host::ImageEffect::PluginCache(Host::instance());
+	m_pluginCache.registerInCache(*OFX::Host::PluginCache::getPluginCache());
+
+	// try to read an old cache
+	std::ifstream ifs("GafferOFXPluginCache.xml");
+	OFX::Host::PluginCache::getPluginCache()->readCache(ifs);
+	OFX::Host::PluginCache::getPluginCache()->scanPluginFiles();
+	ifs.close();
+	
+	/// flush out the current cache
+	std::ofstream of("GafferOFXPluginCache.xml");
+	OFX::Host::PluginCache::getPluginCache()->writePluginCache(of);
+	of.close();
+
+	m_pluginCache.dumpToStdOut();
+
+}
+
+OFX::Host::ImageEffect::PluginCache GafferOFX::Host::m_pluginCache(instance());

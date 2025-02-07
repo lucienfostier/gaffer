@@ -66,17 +66,14 @@ OFXImageNode::~OFXImageNode()
 void OFXImageNode::createPluginInstance()
 {
 	Host& host = Host::instance();
-	OFX::Host::ImageEffect::PluginCache imageEffectPluginCache(host);
-
-	OFX::Host::ImageEffect::ImageEffectPlugin* plugin = imageEffectPluginCache.getPluginById("net.sf.openfx.invertPlugin");
-
-	std::cout << "createPluginInstance() : " << plugin << std::endl;
-
+	auto plugin = host.m_pluginCache.getPluginById("net.sf.openfx.invertPlugin");
 	if( plugin )
 	{
 		std::cout << "debug node address: " << this << std::endl;
 		std::unique_ptr<OFX::Host::ImageEffect::Instance> instance(plugin->createInstance(kOfxImageEffectContextFilter, this));
 	}
+
+
 
 }
 

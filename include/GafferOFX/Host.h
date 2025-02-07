@@ -83,6 +83,8 @@ class GAFFEROFX_API Host : public OFX::Host::ImageEffect::Host
 		OfxStatus clearPersistentMessage() override;
 
 		static Host& instance();
+		static void findOFXPlugins();
+		static OFX::Host::ImageEffect::PluginCache m_pluginCache;
 };
 
 } // GafferOFX

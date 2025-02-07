@@ -38,30 +38,3 @@
 
 using namespace GafferOFX;
 
-void GafferOFX::findOFXPlugins()
-{
-	std::cout << "find OFX plugins" << std::endl;
-	Host& host = Host::instance();
-	OFX::Host::ImageEffect::PluginCache imageEffectPluginCache(host);
-
-	OFX::Host::PluginCache::getPluginCache()->setCacheVersion("GafferOFX");
-
-	imageEffectPluginCache.registerInCache(*OFX::Host::PluginCache::getPluginCache());
-
-	// try to read an old cache
-	std::ifstream ifs("GafferOFXPluginCache.xml");
-	OFX::Host::PluginCache::getPluginCache()->readCache(ifs);
-	OFX::Host::PluginCache::getPluginCache()->scanPluginFiles();
-	ifs.close();
-	
-	/// flush out the current cache
-	std::ofstream of("GafferOFXPluginCache.xml");
-	OFX::Host::PluginCache::getPluginCache()->writePluginCache(of);
-	of.close();
-
-	for(const auto* p : imageEffectPluginCache.getPlugins() )
-	{
-		std::cout << "find ofx plugins: " << p->getIdentifier() << std::endl;
-	}
-
-}

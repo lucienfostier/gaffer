@@ -38,6 +38,7 @@
 
 #include "GafferOFX/Export.h"
 #include "GafferOFX/TypeIds.h"
+#include "GafferOFX/EffectImageInstance.h"
 
 #include "Gaffer/StringPlug.h"
 
@@ -84,6 +85,8 @@ class GAFFEROFX_API OFXImageNode : public GafferImage::ImageNode
 	private :
 
 		static size_t g_firstPlugIndex;
+
+		GafferOFX::EffectImageInstance* instance;
 
 };
 
