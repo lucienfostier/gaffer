@@ -38,6 +38,7 @@
 
 #include "HostSupport/ofxhImageEffect.h"
 
+#include "Gaffer/Node.h"
 
 namespace GafferOFX
 {
@@ -93,7 +94,17 @@ class GAFFEROFX_API EffectImageInstance : public OFX::Host::ImageEffect::Instanc
 	
 		double timeLineGetTime() override;
 		void timeLineGotoTime(double t) override;
-		void timeLineGetBounds(double &t1, double &t2) override;    
+		void timeLineGetBounds(double &t1, double &t2) override;
+
+		void setNode(const Gaffer::Node* node);
+
+		protected:
+
+		const Gaffer::Node* node() const;
+
+		private:
+
+		const Gaffer::Node* m_node;
 };
 
 } // GafferOFX

@@ -33,6 +33,10 @@
 //////////////////////////////////////////////////////////////////////////
 #include "GafferOFX/EffectImageInstance.h"
 
+#include "Gaffer/Context.h"
+
+#include "GafferImage/FormatPlug.h"
+
 #include <iostream>
 
 using namespace GafferOFX;
@@ -74,8 +78,9 @@ OfxStatus EffectImageInstance::clearPersistentMessage()
 
 void EffectImageInstance::getProjectSize(double& xSize, double& ySize) const
 {
-	xSize = 768;
-	ySize = 576;
+	auto gafferFormat = GafferImage::FormatPlug::getDefaultFormat(Gaffer::Context::current());
+	xSize = gafferFormat.width();
+	ySize = gafferFormat.height();
 }
 
 void EffectImageInstance::getProjectOffset(double& xOffset, double& yOffset) const
@@ -86,13 +91,17 @@ void EffectImageInstance::getProjectOffset(double& xOffset, double& yOffset) con
 
 void EffectImageInstance::getProjectExtent(double& xSize, double& ySize) const
 {
-	xSize = 768;
-	ySize = 576;
+	auto gafferFormat = GafferImage::FormatPlug::getDefaultFormat(Gaffer::Context::current());
+	xSize = gafferFormat.width();
+	ySize = gafferFormat.height();
 }
 
 double EffectImageInstance::getProjectPixelAspectRatio() const
 {
-	return double(768)/double(720);
+	auto gafferFormat = GafferImage::FormatPlug::getDefaultFormat(Gaffer::Context::current());
+	auto width = gafferFormat.width();
+	auto height = gafferFormat.height();
+	return double(width)/double(height);
 }
 
 double EffectImageInstance::getEffectDuration() const
@@ -184,4 +193,14 @@ void  EffectImageInstance::timeLineGetBounds(double &t1, double &t2)
 {
 	t1 = 0;
 	t2 = 25;
+}
+
+const Gaffer::Node* EffectImageInstance::node() const
+{
+	return m_node;
+}
+
+void EffectImageInstance::setNode(const Gaffer::Node* node)
+{
+	m_node = node;
 }

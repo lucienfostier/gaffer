@@ -574,7 +574,7 @@ if os.environ.get( "OFX_ROOT" ) and moduleSearchPath.find( "GafferOFX" ) :
 	import GafferOFX
 	import GafferOFXUI
 
-	nodeMenu.append( "/OFX/OFXNode", GafferOFX.OFXNode, searchText = "OFXNode" )
+	nodeMenu.append( "/OFX/OFXImageNode", GafferOFX.OFXImageNode, searchText = "OFXNode" )
 
 # Utility nodes
 
