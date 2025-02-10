@@ -55,7 +55,7 @@ class GAFFEROFX_API OFXImageNode : public GafferImage::ImageNode
 		explicit OFXImageNode( const std::string &name=defaultName<OFXImageNode>() );
 		~OFXImageNode() override;
 		
-		void createPluginInstance();
+		bool createPluginInstance();
 
 		Gaffer::StringPlug* pluginIdPlug();
 		const Gaffer::StringPlug* pluginIdPlug() const;
@@ -63,6 +63,8 @@ class GAFFEROFX_API OFXImageNode : public GafferImage::ImageNode
 		GAFFER_NODE_DECLARE_TYPE( GafferOFX::OFXImageNode, OFXImageNodeTypeId, GafferImage::ImageNode );
 
 		void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const override;
+
+		const GafferOFX::EffectImageInstance* effectInstance() const;
 
 	protected :
 
@@ -85,8 +87,8 @@ class GAFFEROFX_API OFXImageNode : public GafferImage::ImageNode
 	private :
 
 		static size_t g_firstPlugIndex;
+		std::unique_ptr<GafferOFX::EffectImageInstance> m_instance;
 
-		GafferOFX::EffectImageInstance* instance;
 
 };
 

@@ -63,18 +63,20 @@ OFXImageNode::~OFXImageNode()
 {
 }
 
-void OFXImageNode::createPluginInstance()
+bool OFXImageNode::createPluginInstance()
 {
 	Host& host = Host::instance();
-	auto plugin = host.m_pluginCache.getPluginById("net.sf.openfx.invertPlugin");
+	auto plugin = host.m_pluginCache.getPluginById(pluginIdPlug()->getValue());
 	if( plugin )
 	{
-		std::cout << "debug node address: " << this << std::endl;
-		std::unique_ptr<OFX::Host::ImageEffect::Instance> instance(plugin->createInstance(kOfxImageEffectContextFilter, this));
+		m_instance.reset(
+			static_cast<EffectImageInstance*>(
+				plugin->createInstance(kOfxImageEffectContextFilter, this)
+				)
+		);
+		return true;
 	}
-
-
-
+	return false;
 }
 
 Gaffer::StringPlug* OFXImageNode::pluginIdPlug()
@@ -160,4 +162,9 @@ void OFXImageNode::hashChannelData( const GafferImage::ImagePlug *output, const 
 IECore::ConstFloatVectorDataPtr OFXImageNode::computeChannelData( const std::string &channelName, const Imath::V2i &tileOrigin, const Gaffer::Context *context, const ImagePlug *parent ) const
 {
 	return ImagePlug::emptyTile();
+}
+
+const GafferOFX::EffectImageInstance* OFXImageNode::effectInstance() const
+{
+	return m_instance.get();
 }

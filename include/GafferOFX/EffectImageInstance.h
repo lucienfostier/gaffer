@@ -38,6 +38,7 @@
 
 #include "HostSupport/ofxhImageEffect.h"
 
+#include "Gaffer/ScriptNode.h"
 #include "Gaffer/Node.h"
 
 namespace GafferOFX
@@ -101,10 +102,12 @@ class GAFFEROFX_API EffectImageInstance : public OFX::Host::ImageEffect::Instanc
 		protected:
 
 		const Gaffer::Node* node() const;
+		const Gaffer::ScriptNode* scriptNode() const;
 
 		private:
 
 		const Gaffer::Node* m_node;
+		
 };
 
 } // GafferOFX

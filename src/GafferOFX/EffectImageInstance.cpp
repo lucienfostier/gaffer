@@ -106,17 +106,26 @@ double EffectImageInstance::getProjectPixelAspectRatio() const
 
 double EffectImageInstance::getEffectDuration() const
 {
-	return 25.0;
+	
+	auto start = 1;
+	auto end = 100;
+	if( auto sn = scriptNode() )
+	{
+		start = sn->frameStartPlug()->getValue();
+		end = sn->frameEndPlug()->getValue();
+	}
+	return end - start;
 }
 
 double EffectImageInstance::getFrameRate() const
 {
-	return 25.0;
+	return Gaffer::Context::current()->getFramesPerSecond();
 }
 
 double EffectImageInstance::getFrameRecursive() const
 {
-	return 0.0;
+	return Gaffer::Context::current()->getFrame();
+;
 }
 
 void EffectImageInstance::getRenderScaleRecursive(double &x, double &y) const
@@ -182,7 +191,7 @@ bool  EffectImageInstance::progressUpdate(double t)
 
 double  EffectImageInstance::timeLineGetTime()
 {
-	return 0;
+	return Gaffer::Context::current()->getFrame();
 }
 
 void  EffectImageInstance::timeLineGotoTime(double t)
@@ -191,13 +200,24 @@ void  EffectImageInstance::timeLineGotoTime(double t)
 
 void  EffectImageInstance::timeLineGetBounds(double &t1, double &t2)
 {
-	t1 = 0;
-	t2 = 25;
+
+	t1 = 1;
+	t2 = 100;
+	if( auto sn = scriptNode() )
+	{
+		t1 = sn->frameStartPlug()->getValue();
+		t2 = sn->frameEndPlug()->getValue();
+	}
 }
 
 const Gaffer::Node* EffectImageInstance::node() const
 {
 	return m_node;
+}
+
+const Gaffer::ScriptNode* EffectImageInstance::scriptNode() const
+{
+	return m_node->ancestor<Gaffer::ScriptNode>();
 }
 
 void EffectImageInstance::setNode(const Gaffer::Node* node)

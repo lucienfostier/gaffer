@@ -51,7 +51,22 @@ class OFXImageNodeTest( GafferTest.TestCase ) :
 		node = GafferOFX.OFXImageNode()
 		scriptNode.addChild( node )
 
+		self.assertFalse(node.createPluginInstance())
+		node["pluginId"].setValue("net.sf.openfx.invertPlugin")
 		self.assertTrue(node.createPluginInstance())
+
+
+	def testEffectInstanceProjectSize(self):
+		import Gaffer
+		import GafferOFX
+
+		scriptNode = Gaffer.ScriptNode()
+		node = GafferOFX.OFXImageNode()
+		node["pluginId"].setValue("net.sf.openfx.invertPlugin")
+		scriptNode.addChild( node )
+		node.createPluginInstance()
+
+		self.assertEqual(node.effectInstanceProjectSize(), (1920.0, 1080.0))
 
 if __name__ == "__main__" :
 	unittest.main()

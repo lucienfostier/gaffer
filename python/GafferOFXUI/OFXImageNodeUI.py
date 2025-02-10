@@ -35,6 +35,7 @@
 ##########################################################################
 
 import Gaffer
+import GafferUI
 import GafferOFX
 
 Gaffer.Metadata.registerNode(
@@ -46,17 +47,47 @@ Gaffer.Metadata.registerNode(
 	Load an OFX Image Effect plugin.
 	""",
 
+	"layout:customWidget:loadButton:widgetType", "GafferOFXUI.OFXImageNodeUI._LoadButton",
+	"layout:customWidget:loadButton:section", "Settings",
+	"layout:customWidget:loadButton:accessory", True,
+	"layout:customWidget:loadButton:index", 1,
+
 	plugs = {
 
 		"pluginId" : [
 
 			"description",
 			"""
-			The OFX id of the plugin to load.
+			OFX id of the plugin to load.
+			Call `createPluginInstance()` or press the reload button to configure
+			the `in` and `parameters` plugs to match the plugin.
 			""",
 
+			"nodule:type", "",
 		],
 
 	}
 
 )
+
+class _LoadButton( GafferUI.PlugValueWidget ) :
+
+	def __init__( self, node, **kw ) :
+
+		button = GafferUI.Button( image = "refresh.png", hasFrame = False )
+		GafferUI.PlugValueWidget.__init__( self, button, node["pluginId"], **kw )
+
+		button.clickedSignal().connect( Gaffer.WeakMethod( self.__clicked ) )
+
+	def __clicked( self, button ) :
+
+		with self.context() :
+			if self.getPlug().getValue() :
+				with GafferUI.ErrorDialogue.ErrorHandler(
+					title = "Error loading plugin",
+					parentWindow = self.ancestor( GafferUI.Window )
+				) :
+					with Gaffer.UndoScope( self.scriptNode() ) :
+						print("button create instance plugin")
+						self.getPlug().node().createPluginInstance()
+

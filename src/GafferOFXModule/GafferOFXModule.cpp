@@ -49,18 +49,37 @@ using namespace GafferOFX;
 
 namespace
 {
+struct PairToTuple
+{
+    static PyObject* convert(const std::pair<double, double>& p)
+	{
+        return boost::python::incref(
+            boost::python::make_tuple(p.first, p.second).ptr()
+        );
+    }
+};
 
-void createPluginInstanceWrapper( OFXImageNode& node )
+bool createPluginInstanceWrapper( OFXImageNode& node )
 {
 	IECorePython::ScopedGILRelease gilRelease;
-	node.createPluginInstance();
+	return node.createPluginInstance();
 
+}
+
+std::pair<double, double> effectInstanceProjectSizeWrapper( OFXImageNode& node )
+{
+	node.createPluginInstance();
+	double xsize, ysize;
+	node.effectInstance()->getProjectSize(xsize, ysize);
+	std::cout << "project size: " << xsize << " " << ysize << std::endl;
+	return std::make_pair(xsize, ysize);
 }
 
 }
 
 BOOST_PYTHON_MODULE( _GafferOFX )
 {
+	to_python_converter<std::pair<double, double>, PairToTuple>();
 
 	class_<Host>("Host", no_init)
 		.def("findOFXPlugins", &Host::findOFXPlugins)
@@ -69,5 +88,6 @@ BOOST_PYTHON_MODULE( _GafferOFX )
 
 	DependencyNodeClass<OFXImageNode>()
 		.def( "createPluginInstance", &createPluginInstanceWrapper )
+		.def( "effectInstanceProjectSize", &effectInstanceProjectSizeWrapper )
 	;
 }
