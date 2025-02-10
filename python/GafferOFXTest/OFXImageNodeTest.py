@@ -59,6 +59,7 @@ class OFXImageNodeTest( GafferTest.TestCase ) :
 	def testEffectInstanceProjectSize(self):
 		import Gaffer
 		import GafferOFX
+		import GafferImage
 
 		scriptNode = Gaffer.ScriptNode()
 		node = GafferOFX.OFXImageNode()
@@ -66,7 +67,15 @@ class OFXImageNodeTest( GafferTest.TestCase ) :
 		scriptNode.addChild( node )
 		node.createPluginInstance()
 
-		self.assertEqual(node.effectInstanceProjectSize(), (1920.0, 1080.0))
+		with scriptNode.context():
+			self.assertEqual(node.effectInstanceProjectSize(), (1920.0, 1080.0))
+
+			# override default format
+			defaultFormatPlug = GafferImage.FormatPlug.acquireDefaultFormatPlug( scriptNode )
+			f = GafferImage.Format( 100, 200, 2 )
+			defaultFormatPlug.setValue( f )	
+
+			self.assertEqual(node.effectInstanceProjectSize(), (100.0, 200.0))
 
 if __name__ == "__main__" :
 	unittest.main()

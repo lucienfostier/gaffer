@@ -71,7 +71,6 @@ std::pair<double, double> effectInstanceProjectSizeWrapper( OFXImageNode& node )
 	node.createPluginInstance();
 	double xsize, ysize;
 	node.effectInstance()->getProjectSize(xsize, ysize);
-	std::cout << "project size: " << xsize << " " << ysize << std::endl;
 	return std::make_pair(xsize, ysize);
 }
 

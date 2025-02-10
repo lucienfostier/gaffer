@@ -82,7 +82,6 @@ OFX::Host::ImageEffect::Instance* Host::newInstance(
 	const std::string& context
 )
 {
-	std::cout << "host new instance: " << clientData << std::endl;
 	auto instance = new EffectImageInstance(plugin, desc, context);
 	instance->setNode(reinterpret_cast<Gaffer::Node*>(clientData));
 	return instance;
