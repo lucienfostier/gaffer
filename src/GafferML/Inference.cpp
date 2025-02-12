@@ -62,27 +62,20 @@ namespace
 
 std::vector<std::string> customOpLibraryPaths()
 {
-	std::vector<std::string> path_list;
+	std::vector<std::string> pathList;
 
-	const char* env_var = std::getenv( "ONNX_CUSTOM_OP_LIBRARY" );
+	const char* envVar = std::getenv( "GAFFERML_CUSTOM_OPS_LIBRARIES" );
 
-	if ( !env_var )
+	if ( !envVar )
 	{
 		// silent return because this is optional only when using model
 		// that might requires some components from the onnx runtime extensions
-		return path_list;
+		return pathList;
 	}
 
-	std::string paths( env_var );
-	std::stringstream ss( paths );
-	std::string path;
+	StringAlgo::tokenize( envVar, ',', pathList );
 
-	while ( std::getline( ss, path, ':' ) )
-	{
-		path_list.push_back( path );
-	}
-
-	return path_list;
+	return pathList;
 }
 
 Ort::Env &acquireEnv()
@@ -123,14 +116,9 @@ Ort::Session &acquireSession( const std::string &fileName )
 	auto customLibraryPaths = customOpLibraryPaths();
 	for ( const auto& customLibraryPath : customLibraryPaths )
 	{
-		Ort::ThrowOnError(
-			Ort::GetApi().RegisterCustomOpsLibrary_V2(
-				static_cast<OrtSessionOptions*>( sessionOpt ),
-				customLibraryPath.c_str()
-			)
-		);
+		sessionOpt.RegisterCustomOpsLibrary( customLibraryPath.c_str() );
 	}
-	it = g_map.try_emplace( fileName, acquireEnv(), path.generic_string().c_str(), sessionOpt ).first;
+	it = g_map.try_emplace( fileName, acquireEnv(), path.string().c_str(), sessionOpt ).first;
 	return it->second;
 }
 
