@@ -126,7 +126,7 @@ void dispatchTensorData( const Ort::Value &value, F &&functor )
 			functor( value.GetTensorData<int64_t>() );
 			break;
 		case ONNX_TENSOR_ELEMENT_DATA_TYPE_STRING :
-			functor( value.GetTensorData<std::string>() );
+			functor( value.GetTensorData<char>() );
 			break;
 		default :
 			throw IECore::Exception( fmt::format( "Unsupported element type {}", elementType ) );

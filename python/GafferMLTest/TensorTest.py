@@ -44,6 +44,17 @@ import GafferML
 
 class TensorTest( GafferTest.TestCase ) :
 
+	def testString( self ) :
+
+		d = IECore.StringVectorData( [ "person", "sky", "clouds" ] )
+		tensor = GafferML.Tensor( d , [ 1, 3 ] )
+		# 1 D indexing
+		for i in range( len( d ) ):
+			self.assertEqual( tensor[i], d[i] )
+		# N D indexing
+		for i in range( len( d ) ):
+			self.assertEqual( tensor[0,i], d[i] )
+
 	def testAsData( self ) :
 
 		for data in [
