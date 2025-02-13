@@ -42,12 +42,12 @@
 
 #include "Gaffer/StringPlug.h"
 
-#include "GafferImage/ImageNode.h"
+#include "GafferImage/ImageProcessor.h"
 
 namespace GafferOFX
 {
 
-class GAFFEROFX_API OFXImageNode : public GafferImage::ImageNode
+class GAFFEROFX_API OFXImageNode : public GafferImage::ImageProcessor
 {
 
 	public :
@@ -60,7 +60,7 @@ class GAFFEROFX_API OFXImageNode : public GafferImage::ImageNode
 		Gaffer::StringPlug* pluginIdPlug();
 		const Gaffer::StringPlug* pluginIdPlug() const;
 
-		GAFFER_NODE_DECLARE_TYPE( GafferOFX::OFXImageNode, OFXImageNodeTypeId, GafferImage::ImageNode );
+		GAFFER_NODE_DECLARE_TYPE( GafferOFX::OFXImageNode, OFXImageNodeTypeId, GafferImage::ImageProcessor );
 
 		void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const override;
 

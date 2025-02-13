@@ -45,32 +45,40 @@
 
 namespace GafferOFX
 {
-	class ClipInstance;
+	class MyClipInstance;
 
-	class Image : public OFX::Host::ImageEffect::Image 
+	class MyImage : public OFX::Host::ImageEffect::Image 
 	{
 		using OfxRGBAColourFPtr = std::unique_ptr<OfxRGBAColourF>;
+
 		protected :
+
 			OfxRGBAColourFPtr m_data;
 
 		public :
-			explicit Image( ClipInstance &clip, OfxTime t, int view = 0 );
+
+			explicit MyImage( MyClipInstance &clip, OfxTime t, int view = 0 );
 			OfxRGBAColourF* pixel( int x, int y ) const;
-			~Image();
+			~MyImage();
 	};
 
-	class ClipInstance : public OFX::Host::ImageEffect::ClipInstance
+	class MyClipInstance : public OFX::Host::ImageEffect::ClipInstance
 	{
-		protected:
+		protected :
+
 			GafferOFX::EffectImageInstance*	m_effect;
 			std::string	m_name;
-			Image*	m_outputImage;
+			MyImage*	m_outputImage;
 
-		public:
-			ClipInstance(GafferOFX::EffectImageInstance* effect, OFX::Host::ImageEffect::ClipDescriptor* desc);
+		public :
 
-			 ~ClipInstance();
-			Image* getOutputImage() { return m_outputImage; }
+			MyClipInstance(
+				GafferOFX::EffectImageInstance* effect,
+				OFX::Host::ImageEffect::ClipDescriptor* desc
+			);
+
+			 ~MyClipInstance();
+			MyImage* getOutputImage() { return m_outputImage; }
 
 			///    - kOfxBitDepthFloat
 			const std::string &getUnmappedBitDepth() const override;

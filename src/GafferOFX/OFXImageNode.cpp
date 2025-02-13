@@ -37,6 +37,9 @@
 #include "GafferOFX/OFXImageNode.h"
 #include "GafferOFX/Host.h"
 
+#include "Gaffer/Metadata.h"
+#include "Gaffer/ArrayPlug.h"
+
 using namespace std;
 using namespace Imath;
 using namespace IECore;
@@ -53,7 +56,7 @@ GAFFER_NODE_DEFINE_TYPE( OFXImageNode );
 size_t OFXImageNode::g_firstPlugIndex = 0;
 
 OFXImageNode::OFXImageNode( const std::string &name )
-	: ImageNode( name )
+	: ImageProcessor( name, 0, 1000 )
 {
 	storeIndexOfNextChild( g_firstPlugIndex );
 	addChild( new StringPlug( "pluginId" ) );
@@ -76,10 +79,20 @@ bool OFXImageNode::createPluginInstance()
 		);
 		const auto& instanceDesc = m_instance->getDescriptor();
 		const auto& clips = instanceDesc.getClips();
+		size_t numInputs = 0;
 		for ( const auto& clip : clips )
 		{
 			std::cout << "clip: " << clip.first << std::endl;
+
+		
+			numInputs++;
+			std::cout << "debug: " << inPlugs() << std::endl;
+			inPlugs()->resize( std::max( inPlugs()->children().size(), numInputs ) ); // Add new plug if needed.
+			IECore::ConstStringDataPtr label = new StringData( clip.first );
+			Metadata::registerValue( inPlugs()->getChild( numInputs - 1 ), "label", label );
+			Metadata::registerValue( inPlugs()->getChild( numInputs - 1 ), "noduleLayout:label", label );
 		}
+		inPlugs()->resize( numInputs );
 		return true;
 	}
 	return false;
@@ -97,12 +110,12 @@ const Gaffer::StringPlug* OFXImageNode::pluginIdPlug() const
 
 void OFXImageNode::affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const
 {
-	ImageNode::affects( input, outputs );
+	ImageProcessor::affects( input, outputs );
 }
 
 void OFXImageNode::hashViewNames( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const
 {
-	ImageNode::hashViewNames( output, context, h );
+	ImageProcessor::hashViewNames( output, context, h );
 }
 
 IECore::ConstStringVectorDataPtr OFXImageNode::computeViewNames( const Gaffer::Context *context, const ImagePlug *parent ) const
@@ -112,7 +125,7 @@ IECore::ConstStringVectorDataPtr OFXImageNode::computeViewNames( const Gaffer::C
 
 void OFXImageNode::hashFormat( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const
 {
-	ImageNode::hashFormat( output, context, h );
+	ImageProcessor::hashFormat( output, context, h );
 }
 
 GafferImage::Format OFXImageNode::computeFormat( const Gaffer::Context *context, const ImagePlug *parent ) const
@@ -122,7 +135,7 @@ GafferImage::Format OFXImageNode::computeFormat( const Gaffer::Context *context,
 
 void OFXImageNode::hashDataWindow( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const
 {
-	ImageNode::hashDataWindow( output, context, h );
+	ImageProcessor::hashDataWindow( output, context, h );
 }
 
 Imath::Box2i OFXImageNode::computeDataWindow( const Gaffer::Context *context, const ImagePlug *parent ) const
@@ -152,7 +165,7 @@ IECore::ConstIntVectorDataPtr OFXImageNode::computeSampleOffsets( const Imath::V
 
 void OFXImageNode::hashChannelNames( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const
 {
-	ImageNode::hashChannelNames( output, context, h );
+	ImageProcessor::hashChannelNames( output, context, h );
 }
 
 IECore::ConstStringVectorDataPtr OFXImageNode::computeChannelNames( const Gaffer::Context *context, const ImagePlug *parent ) const
