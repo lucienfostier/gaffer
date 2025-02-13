@@ -74,6 +74,12 @@ bool OFXImageNode::createPluginInstance()
 				plugin->createInstance(kOfxImageEffectContextFilter, this)
 				)
 		);
+		const auto& instanceDesc = m_instance->getDescriptor();
+		const auto& clips = instanceDesc.getClips();
+		for ( const auto& clip : clips )
+		{
+			std::cout << "clip: " << clip.first << std::endl;
+		}
 		return true;
 	}
 	return false;
