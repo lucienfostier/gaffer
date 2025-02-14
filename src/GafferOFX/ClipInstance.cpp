@@ -45,7 +45,7 @@ namespace
   const OfxRectI  kPalRegionPixels = {0, 0, kPalSizeXPixels, kPalSizeYPixels};
 }
 
-GafferOFX::MyImage::MyImage( MyClipInstance &clip, OfxTime time, int view )
+GafferOFX::Image::Image( ClipInstance &clip, OfxTime time, int view )
 	: OFX::Host::ImageEffect::Image( clip )
 	, m_data(nullptr)
 {
@@ -73,7 +73,7 @@ GafferOFX::MyImage::MyImage( MyClipInstance &clip, OfxTime time, int view )
 	setIntProperty(kOfxImagePropRowBytes, kPalSizeXPixels * sizeof(OfxRGBAColourF));
 }
 
-OfxRGBAColourF* MyImage::pixel( int x, int y ) const
+OfxRGBAColourF* Image::pixel( int x, int y ) const
 {
 	OfxRectI bounds = getBounds();
 
@@ -88,18 +88,18 @@ OfxRGBAColourF* MyImage::pixel( int x, int y ) const
 	return 0;
 }
 
-MyImage::~MyImage() 
+Image::~Image() 
 {
 }
 
-GafferOFX::MyClipInstance::MyClipInstance(
+GafferOFX::ClipInstance::ClipInstance(
   GafferOFX::EffectImageInstance* effect,
   OFX::Host::ImageEffect::ClipDescriptor* desc )
   : OFX::Host::ImageEffect::ClipInstance( effect, *desc ), m_effect( effect ), m_name( desc->getName() ), m_outputImage( nullptr )
 {
 }
 
-GafferOFX::MyClipInstance::~MyClipInstance()
+GafferOFX::ClipInstance::~ClipInstance()
 {
 	if( m_outputImage )
 	{
@@ -107,69 +107,69 @@ GafferOFX::MyClipInstance::~MyClipInstance()
 	}
 }
 
-const std::string &MyClipInstance::getUnmappedBitDepth() const
+const std::string &ClipInstance::getUnmappedBitDepth() const
 {
 	static const std::string v( kOfxBitDepthFloat );
 	return v;
 }
 
-const std::string &MyClipInstance::getUnmappedComponents() const
+const std::string &ClipInstance::getUnmappedComponents() const
 {
 	static const std::string v( kOfxImageComponentRGBA );
 	return v;
 }
 
-const std::string &MyClipInstance::getPremult() const
+const std::string &ClipInstance::getPremult() const
 {
 	static const std::string v( kOfxImagePreMultiplied );
 	return v;
 }
 
-double MyClipInstance::getAspectRatio() const
+double ClipInstance::getAspectRatio() const
 {
 	return 1.0;
 }
 
-double MyClipInstance::getFrameRate() const
+double ClipInstance::getFrameRate() const
 {
 	return 24.0;
 }
 
-void MyClipInstance::getFrameRange(double &startFrame, double &endFrame) const
+void ClipInstance::getFrameRange(double &startFrame, double &endFrame) const
 {
 	startFrame = 0;
 	endFrame = 24;
 }
 
-const std::string &MyClipInstance::getFieldOrder() const
+const std::string &ClipInstance::getFieldOrder() const
 {
 	static const std::string v( kOfxImageFieldNone );
 	return v;
 }
 
-bool MyClipInstance::getConnected() const
+bool ClipInstance::getConnected() const
 {
 	return true;
 }
 
-double MyClipInstance::getUnmappedFrameRate() const
+double ClipInstance::getUnmappedFrameRate() const
 {
 	return 24;
 }
 
-void MyClipInstance::getUnmappedFrameRange(double &unmappedStartFrame, double &unmappedEndFrame) const
+void ClipInstance::getUnmappedFrameRange(double &unmappedStartFrame, double &unmappedEndFrame) const
 {
 	unmappedStartFrame = 0;
 	unmappedEndFrame = 24;
 }
 
-bool MyClipInstance::getContinuousSamples() const
+bool ClipInstance::getContinuousSamples() const
 {
 	return false;
 }
 
 
-OfxRectD MyClipInstance::getRegionOfDefinition(OfxTime time) const
+OfxRectD ClipInstance::getRegionOfDefinition(OfxTime time) const
 {
 	OfxRectD v;
 	v.x1 = v.y1 = 0;
@@ -178,13 +178,13 @@ OfxRectD MyClipInstance::getRegionOfDefinition(OfxTime time) const
 	return v;
 }
 
-OFX::Host::ImageEffect::Image* MyClipInstance::getImage(OfxTime time, const OfxRectD *optionalBounds)
+OFX::Host::ImageEffect::Image* ClipInstance::getImage(OfxTime time, const OfxRectD *optionalBounds)
 {
 	if(m_name == "Output")
 	{
 		if(!m_outputImage)
 		{
-			m_outputImage = new MyImage(*this, 0);
+			m_outputImage = new Image(*this, 0);
 		}
 
 		// add another reference to the member image for this fetch
@@ -198,7 +198,7 @@ OFX::Host::ImageEffect::Image* MyClipInstance::getImage(OfxTime time, const OfxR
 	}
 	else
 	{
-		MyImage *image = new MyImage(*this, time);
+		Image *image = new Image(*this, time);
 		return image;
 	}
 }
