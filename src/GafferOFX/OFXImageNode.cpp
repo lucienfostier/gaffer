@@ -77,22 +77,25 @@ bool OFXImageNode::createPluginInstance()
 				plugin->createInstance(kOfxImageEffectContextFilter, this)
 				)
 		);
+
 		const auto& instanceDesc = m_instance->getDescriptor();
 		const auto& clips = instanceDesc.getClips();
 		size_t numInputs = 0;
+
 		for ( const auto& clip : clips )
 		{
-			std::cout << "clip: " << clip.first << std::endl;
-
-		
+			if ( clip.first == "Output" )
+			{
+				continue;
+			}
 			numInputs++;
-			std::cout << "debug: " << inPlugs() << std::endl;
 			inPlugs()->resize( std::max( inPlugs()->children().size(), numInputs ) ); // Add new plug if needed.
 			IECore::ConstStringDataPtr label = new StringData( clip.first );
 			Metadata::registerValue( inPlugs()->getChild( numInputs - 1 ), "label", label );
 			Metadata::registerValue( inPlugs()->getChild( numInputs - 1 ), "noduleLayout:label", label );
 		}
 		inPlugs()->resize( numInputs );
+
 		return true;
 	}
 	return false;

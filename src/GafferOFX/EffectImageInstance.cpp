@@ -32,6 +32,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 #include "GafferOFX/EffectImageInstance.h"
+#include "GafferOFX/ClipInstance.h"
 
 #include "Gaffer/Context.h"
 
@@ -47,8 +48,7 @@ EffectImageInstance::EffectImageInstance( OFX::Host::ImageEffect::ImageEffectPlu
 
 OFX::Host::ImageEffect::ClipInstance* EffectImageInstance::newClipInstance(OFX::Host::ImageEffect::Instance* plugin, OFX::Host::ImageEffect::ClipDescriptor* descriptor, int index)
 {
-	return nullptr;
-	//return new MyClipInstance(this,descriptor);
+	return new ClipInstance(this,descriptor);
 }
 
 
