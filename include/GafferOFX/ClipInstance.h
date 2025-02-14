@@ -41,7 +41,7 @@
 
 #include "HostSupport/ofxhClip.h"
 
-#define OFXHOSTDEMOCLIPLENGTH 1.0
+//#define OFXHOSTDEMOCLIPLENGTH 1.0
 
 namespace GafferOFX
 {
