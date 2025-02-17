@@ -99,8 +99,6 @@ class GAFFEROFX_API EffectImageInstance : public OFX::Host::ImageEffect::Instanc
 
 		void setNode(const Gaffer::Node* node);
 
-		protected:
-
 		const Gaffer::Node* node() const;
 		const Gaffer::ScriptNode* scriptNode() const;
 

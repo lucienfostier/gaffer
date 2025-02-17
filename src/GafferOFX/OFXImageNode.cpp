@@ -60,6 +60,7 @@ OFXImageNode::OFXImageNode( const std::string &name )
 {
 	storeIndexOfNextChild( g_firstPlugIndex );
 	addChild( new StringPlug( "pluginId" ) );
+	addChild( new Plug( "parameters", Plug::In, Plug::Default & ~Plug::AcceptsInputs ) );
 }
 
 OFXImageNode::~OFXImageNode()
@@ -109,6 +110,16 @@ Gaffer::StringPlug* OFXImageNode::pluginIdPlug()
 const Gaffer::StringPlug* OFXImageNode::pluginIdPlug() const
 {
 	return getChild<StringPlug>( g_firstPlugIndex );
+}
+
+Gaffer::Plug *OFXImageNode::parametersPlug()
+{
+	return getChild<Plug>( g_firstPlugIndex + 1 );
+}
+
+const Gaffer::Plug *OFXImageNode::parametersPlug() const
+{
+	return getChild<Plug>( g_firstPlugIndex + 1 );
 }
 
 void OFXImageNode::affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const

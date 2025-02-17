@@ -139,51 +139,52 @@ OFX::Host::Param::Instance* EffectImageInstance::newParam(const std::string& nam
 	std::cout << "name: " << name << " type: " << descriptor.getType() << std::endl;
 	if(descriptor.getType()==kOfxParamTypeInteger)
 	{
-	  return new IntegerInstance(this,name,descriptor);
+		return new IntegerInstance(this,name,descriptor);
 	}
 	else if(descriptor.getType()==kOfxParamTypeDouble)
 	{
-	  return new DoubleInstance(this,name,descriptor);
+	
+		return new DoubleInstance(this,name,descriptor);
 	}
 	else if(descriptor.getType()==kOfxParamTypeBoolean)
 	{
-	  return new BooleanInstance(this,name,descriptor);
+		return new BooleanInstance(this,name,descriptor);
 	}
 	else if(descriptor.getType()==kOfxParamTypeChoice)
 	{
-	  return new ChoiceInstance(this,name,descriptor);
+		return new ChoiceInstance(this,name,descriptor);
 	}
 	else if(descriptor.getType()==kOfxParamTypeRGBA)
 	{
-	  return new RGBAInstance(this,name,descriptor);
+		return new RGBAInstance(this,name,descriptor);
 	}
 	else if(descriptor.getType()==kOfxParamTypeRGB)
 	{
-	  return new RGBInstance(this,name,descriptor);
+		return new RGBInstance(this,name,descriptor);
 	}
 	else if(descriptor.getType()==kOfxParamTypeDouble2D)
 	{
-	  return new Double2DInstance(this,name,descriptor);
+		return new Double2DInstance(this,name,descriptor);
 	}
 	else if(descriptor.getType()==kOfxParamTypeInteger2D)
 	{
-	  return new Integer2DInstance(this,name,descriptor);
+		return new Integer2DInstance(this,name,descriptor);
 	}
 	else if(descriptor.getType()==kOfxParamTypePushButton)
 	{
-	  return new PushbuttonInstance(this,name,descriptor);
+		return new PushbuttonInstance(this,name,descriptor);
 	}
 	else if(descriptor.getType()==kOfxParamTypeGroup)
 	{
-	  return new OFX::Host::Param::GroupInstance(descriptor,this);
+		return new OFX::Host::Param::GroupInstance(descriptor,this);
 	}
 	else if(descriptor.getType()==kOfxParamTypePage)
 	{
-	  return new OFX::Host::Param::PageInstance(descriptor,this);
+		return new OFX::Host::Param::PageInstance(descriptor,this);
 	}
 	else
 	{
-	  return nullptr;
+		return nullptr;
 	}
 }
 

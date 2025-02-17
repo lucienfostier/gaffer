@@ -38,6 +38,7 @@ import Gaffer
 import GafferUI
 import GafferOFX
 
+
 Gaffer.Metadata.registerNode(
 
 	GafferOFX.OFXImageNode,
@@ -64,6 +65,17 @@ Gaffer.Metadata.registerNode(
 			""",
 
 			"nodule:type", "",
+		],
+
+		"parameters" : [
+
+			"description",
+			"""
+			Where the parameters for the OFX plugin are represented.
+			""",
+
+			"plugValueWidget:type", "GafferUI.LayoutPlugValueWidget",
+
 		],
 
 	}

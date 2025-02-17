@@ -55,12 +55,17 @@ class GAFFEROFX_API OFXImageNode : public GafferImage::ImageProcessor
 		explicit OFXImageNode( const std::string &name=defaultName<OFXImageNode>() );
 		~OFXImageNode() override;
 		
+		GAFFER_NODE_DECLARE_TYPE( GafferOFX::OFXImageNode, OFXImageNodeTypeId, GafferImage::ImageProcessor );
+
 		bool createPluginInstance();
 
 		Gaffer::StringPlug* pluginIdPlug();
 		const Gaffer::StringPlug* pluginIdPlug() const;
 
-		GAFFER_NODE_DECLARE_TYPE( GafferOFX::OFXImageNode, OFXImageNodeTypeId, GafferImage::ImageProcessor );
+
+		Gaffer::Plug *parametersPlug();
+		const Gaffer::Plug *parametersPlug() const;
+
 
 		void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const override;
 
