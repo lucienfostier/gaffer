@@ -180,11 +180,11 @@ OfxRectD ClipInstance::getRegionOfDefinition(OfxTime time) const
 
 OFX::Host::ImageEffect::Image* ClipInstance::getImage(OfxTime time, const OfxRectD *optionalBounds)
 {
-	if(m_name == "Output")
+	if ( m_name == "Output" )
 	{
-		if(!m_outputImage)
+		if ( !m_outputImage )
 		{
-			m_outputImage = new Image(*this, 0);
+			m_outputImage = new Image( *this, 0 );
 		}
 
 		// add another reference to the member image for this fetch
@@ -198,7 +198,7 @@ OFX::Host::ImageEffect::Image* ClipInstance::getImage(OfxTime time, const OfxRec
 	}
 	else
 	{
-		Image *image = new Image(*this, time);
+		Image *image = new Image( *this, time );
 		return image;
 	}
 }

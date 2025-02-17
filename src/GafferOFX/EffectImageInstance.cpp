@@ -33,6 +33,7 @@
 //////////////////////////////////////////////////////////////////////////
 #include "GafferOFX/EffectImageInstance.h"
 #include "GafferOFX/ClipInstance.h"
+#include "GafferOFX/ParamInstance.h"
 
 #include "Gaffer/Context.h"
 
@@ -135,33 +136,55 @@ void EffectImageInstance::getRenderScaleRecursive(double &x, double &y) const
 // make a parameter instance
 OFX::Host::Param::Instance* EffectImageInstance::newParam(const std::string& name, OFX::Host::Param::Descriptor& descriptor)
 {
-	return nullptr;
-	/*
+	std::cout << "name: " << name << " type: " << descriptor.getType() << std::endl;
 	if(descriptor.getType()==kOfxParamTypeInteger)
-	  return new MyIntegerInstance(this,name,descriptor);
+	{
+	  return new IntegerInstance(this,name,descriptor);
+	}
 	else if(descriptor.getType()==kOfxParamTypeDouble)
-	  return new MyDoubleInstance(this,name,descriptor);
+	{
+	  return new DoubleInstance(this,name,descriptor);
+	}
 	else if(descriptor.getType()==kOfxParamTypeBoolean)
-	  return new MyBooleanInstance(this,name,descriptor);
+	{
+	  return new BooleanInstance(this,name,descriptor);
+	}
 	else if(descriptor.getType()==kOfxParamTypeChoice)
-	  return new MyChoiceInstance(this,name,descriptor);
+	{
+	  return new ChoiceInstance(this,name,descriptor);
+	}
 	else if(descriptor.getType()==kOfxParamTypeRGBA)
-	  return new MyRGBAInstance(this,name,descriptor);
+	{
+	  return new RGBAInstance(this,name,descriptor);
+	}
 	else if(descriptor.getType()==kOfxParamTypeRGB)
-	  return new MyRGBInstance(this,name,descriptor);
+	{
+	  return new RGBInstance(this,name,descriptor);
+	}
 	else if(descriptor.getType()==kOfxParamTypeDouble2D)
-	  return new MyDouble2DInstance(this,name,descriptor);
+	{
+	  return new Double2DInstance(this,name,descriptor);
+	}
 	else if(descriptor.getType()==kOfxParamTypeInteger2D)
-	  return new MyInteger2DInstance(this,name,descriptor);
+	{
+	  return new Integer2DInstance(this,name,descriptor);
+	}
 	else if(descriptor.getType()==kOfxParamTypePushButton)
-	  return new MyPushbuttonInstance(this,name,descriptor);
+	{
+	  return new PushbuttonInstance(this,name,descriptor);
+	}
 	else if(descriptor.getType()==kOfxParamTypeGroup)
+	{
 	  return new OFX::Host::Param::GroupInstance(descriptor,this);
+	}
 	else if(descriptor.getType()==kOfxParamTypePage)
+	{
 	  return new OFX::Host::Param::PageInstance(descriptor,this);
+	}
 	else
-	  return 0;
-	*/
+	{
+	  return nullptr;
+	}
 }
 
 OfxStatus EffectImageInstance::editBegin(const std::string& name)
