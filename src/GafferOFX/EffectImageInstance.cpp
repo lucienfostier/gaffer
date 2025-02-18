@@ -143,7 +143,6 @@ OFX::Host::Param::Instance* EffectImageInstance::newParam(const std::string& nam
 	}
 	else if(descriptor.getType()==kOfxParamTypeDouble)
 	{
-	
 		return new DoubleInstance(this,name,descriptor);
 	}
 	else if(descriptor.getType()==kOfxParamTypeBoolean)
