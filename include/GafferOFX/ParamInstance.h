@@ -160,6 +160,31 @@ class Integer2DInstance : public OFX::Host::Param::Integer2DInstance
 		OfxStatus set( OfxTime time, int, int ) override;
 };
 
+class Double3DInstance : public OFX::Host::Param::Double3DInstance
+{
+	protected : 
+		GafferOFX::EffectImageInstance*   m_effect;
+		OFX::Host::Param::Descriptor& m_descriptor;
+	public :
+		Double3DInstance( GafferOFX::EffectImageInstance* effect, const std::string& name, OFX::Host::Param::Descriptor& descriptor );
+		OfxStatus get( double&, double&, double& ) override;
+		OfxStatus get( OfxTime time, double&, double&, double& ) override;
+		OfxStatus set( double, double, double ) override;
+		OfxStatus set( OfxTime time, double, double, double ) override;
+};
+
+class Integer3DInstance : public OFX::Host::Param::Integer3DInstance
+{
+	protected : 
+		GafferOFX::EffectImageInstance*   m_effect;
+		OFX::Host::Param::Descriptor& m_descriptor;
+	public :
+		Integer3DInstance( GafferOFX::EffectImageInstance* effect,  const std::string& name, OFX::Host::Param::Descriptor& descriptor );
+		OfxStatus get( int&, int&, int& ) override;
+		OfxStatus get( OfxTime time, int&, int&, int& ) override;
+		OfxStatus set( int, int, int ) override;
+		OfxStatus set( OfxTime time, int, int, int ) override;
+};
 
 }
 

@@ -291,6 +291,59 @@ OfxStatus Integer2DInstance::set( OfxTime time, int, int )
 	return kOfxStatErrMissingHostFeature;
 }
 
+GafferOFX::Double3DInstance::Double3DInstance( GafferOFX::EffectImageInstance* effect, const std::string& name, OFX::Host::Param::Descriptor& descriptor ) : OFX::Host::Param::Double3DInstance( descriptor ), m_effect( effect ), m_descriptor( descriptor )
+{
+	auto* plugParent = const_cast<GafferOFX::OFXImageNode*>(static_cast<const GafferOFX::OFXImageNode*>(m_effect->node()))->parametersPlug();
+	setupTypedPlug<V3fPlug>( name, plugParent, Plug::In, Imath::V3f() );
+}
+
+OfxStatus Double3DInstance::get( double&, double&, double& )
+{
+	return kOfxStatErrMissingHostFeature;
+}
+
+OfxStatus Double3DInstance::get( OfxTime time, double&, double&, double& )
+{
+	return kOfxStatErrMissingHostFeature;
+}
+
+OfxStatus Double3DInstance::set( double, double, double )
+{
+	return kOfxStatErrMissingHostFeature;
+}
+
+OfxStatus Double3DInstance::set( OfxTime time, double, double, double )
+{
+	return kOfxStatErrMissingHostFeature;
+}
+
+GafferOFX::Integer3DInstance::Integer3DInstance( GafferOFX::EffectImageInstance* effect, const std::string& name, OFX::Host::Param::Descriptor& descriptor ) : OFX::Host::Param::Integer3DInstance( descriptor ), m_effect( effect ), m_descriptor( descriptor )
+{
+	auto* plugParent = const_cast<GafferOFX::OFXImageNode*>(static_cast<const GafferOFX::OFXImageNode*>(m_effect->node()))->parametersPlug();
+	setupTypedPlug<V3iPlug>( name, plugParent, Plug::In, Imath::V3i() );
+
+}
+
+OfxStatus Integer3DInstance::get( int&, int&, int& )
+{
+	return kOfxStatErrMissingHostFeature;
+}
+
+OfxStatus Integer3DInstance::get( OfxTime time, int&, int&, int& )
+{
+	return kOfxStatErrMissingHostFeature;
+}
+
+OfxStatus Integer3DInstance::set( int, int, int )
+{
+	return kOfxStatErrMissingHostFeature;
+}
+
+OfxStatus Integer3DInstance::set( OfxTime time, int, int, int )
+{
+	return kOfxStatErrMissingHostFeature;
+}
+
 PushbuttonInstance::PushbuttonInstance( GafferOFX::EffectImageInstance* effect, const std::string& name, OFX::Host::Param::Descriptor& descriptor ) : OFX::Host::Param::PushbuttonInstance( descriptor ), m_effect( effect ), m_descriptor( descriptor ) 
 {
 }
