@@ -186,5 +186,18 @@ class Integer3DInstance : public OFX::Host::Param::Integer3DInstance
 		OfxStatus set( OfxTime time, int, int, int ) override;
 };
 
+class StringInstance : public OFX::Host::Param::StringInstance
+{
+	protected : 
+		GafferOFX::EffectImageInstance*   m_effect;
+		OFX::Host::Param::Descriptor& m_descriptor;
+	public :
+		StringInstance( GafferOFX::EffectImageInstance* effect,  const std::string& name, OFX::Host::Param::Descriptor& descriptor );
+		OfxStatus get( std::string& ) override;
+		OfxStatus get( OfxTime time, std::string& ) override;
+		OfxStatus set( const char* ) override;
+		OfxStatus set( OfxTime time, const char* ) override;
+};
+
 }
 

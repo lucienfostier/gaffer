@@ -348,3 +348,31 @@ PushbuttonInstance::PushbuttonInstance( GafferOFX::EffectImageInstance* effect, 
 {
 }
 
+GafferOFX::StringInstance::StringInstance( GafferOFX::EffectImageInstance* effect, const std::string& name, OFX::Host::Param::Descriptor& descriptor ) : OFX::Host::Param::StringInstance( descriptor ), m_effect( effect ), m_descriptor( descriptor )
+{
+	auto* plugParent = const_cast<GafferOFX::OFXImageNode*>(static_cast<const GafferOFX::OFXImageNode*>(m_effect->node()))->parametersPlug();
+	setupTypedPlug<StringPlug>( name, plugParent, Plug::In, "" );
+
+}
+
+OfxStatus StringInstance::get( std::string& )
+{
+	return kOfxStatErrMissingHostFeature;
+}
+
+OfxStatus StringInstance::get( OfxTime time, std::string& )
+{
+	return kOfxStatErrMissingHostFeature;
+}
+
+OfxStatus StringInstance::set( const char* )
+{
+	return kOfxStatErrMissingHostFeature;
+}
+
+OfxStatus StringInstance::set( OfxTime time, const char* )
+{
+	return kOfxStatErrMissingHostFeature;
+}
+
+
