@@ -36,6 +36,7 @@
 
 #include "GafferOFX/OFXImageNode.h"
 #include "GafferOFX/Host.h"
+#include "GafferOFX/ClipInstance.h"
 
 #include "Gaffer/Metadata.h"
 #include "Gaffer/ArrayPlug.h"
@@ -97,6 +98,24 @@ bool OFXImageNode::createPluginInstance()
 		}
 		inPlugs()->resize( numInputs );
 
+		//m_instance->getClipPreferences();
+		//OfxStatus stat = m_instance->createInstanceAction();
+		//std::cout << "create instance action: " << stat << std::endl;
+
+		// now we need to to call getClipPreferences on the instance so that it does the clip component/depth
+		// logic and caches away the components and depth on each clip.
+		//bool ok = m_instance->getClipPreferences();
+		//std::cout << "get clip preference: " << ok << std::endl;
+
+		//// current render scale of 1
+		//OfxPointD renderScale;
+		//renderScale.x = renderScale.y = 1.0;
+		//int numFramesToRender = 1;
+	
+		//// say we are about to render a bunch of frames 
+		//stat = m_instance->beginRenderAction(0, numFramesToRender, 1.0, false, renderScale, /*sequential=*/true, /*interactive=*/false);
+		//std::cout << "begin render action: " << stat << std::endl;
+	
 		return true;
 	}
 	return false;
@@ -194,6 +213,40 @@ void OFXImageNode::hashChannelData( const GafferImage::ImagePlug *output, const 
 
 IECore::ConstFloatVectorDataPtr OFXImageNode::computeChannelData( const std::string &channelName, const Imath::V2i &tileOrigin, const Gaffer::Context *context, const ImagePlug *parent ) const
 {
+
+	if ( m_instance )
+	{
+		// The render window is in pixel coordinates
+		OfxPointD renderScale;
+		renderScale.x = renderScale.y = 1.0;
+
+		// ie: render scale and a PAR of not 1
+		OfxRectI  renderWindow;
+		renderWindow.x1 = renderWindow.y1 = 0;
+		renderWindow.x2 = 720;
+		renderWindow.y2 = 576;
+	
+		/// RoI is in canonical coords, 
+		OfxRectD  regionOfInterest;
+		regionOfInterest.x1 = regionOfInterest.y1 = 0;
+		regionOfInterest.x2 = renderWindow.x2 * m_instance->getProjectPixelAspectRatio();
+		regionOfInterest.y2 = 576;
+		
+	
+		// get the output clip
+		GafferOFX::ClipInstance* outputClip = dynamic_cast<GafferOFX::ClipInstance*>(m_instance->getClip("Output"));
+		std::cout << "output clip: " << outputClip << std::endl;
+
+		OfxTime frame = context->getFrame();
+		std::map<OFX::Host::ImageEffect::ClipInstance *, OfxRectD> rois;
+		m_instance->getRegionOfInterestAction(frame, renderScale, regionOfInterest, rois);
+
+		// render a frame
+		m_instance->renderAction(frame, kOfxImageFieldBoth, renderWindow, renderScale, /*sequential=*/true, /*interactive=*/false, /*draft=*/false);
+		// get the output image buffer
+		GafferOFX::Image *outputImage = outputClip->getOutputImage();
+		std::cout << "output image : " << outputImage << std::endl;
+	}
 	return ImagePlug::emptyTile();
 }
 

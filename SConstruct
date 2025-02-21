@@ -1153,11 +1153,13 @@ libraries = {
 			"CXXFLAGS" : [ systemIncludeArgument, "$OFX_ROOT/include/openfx" ],
 			"LIBPATH" : [ "$OFX_ROOT/lib" ],
 			"LIBS" : [ "Gaffer", "GafferImage", "OfxHost", "OfxSupport", "expat" ],
+			"CPPDEFINES" : ['OFX_DEBUG_ACTIONS',],
 		},
 		"pythonEnvAppends" : {
 			"CXXFLAGS" : [ systemIncludeArgument, "$OFX_ROOT/include/openfx" ],
 			"LIBPATH" : [ "$OFX_ROOT/lib" ],
 			"LIBS" : [ "GafferBindings", "GafferImage", "GafferOFX", "OfxHost", "OfxSupport", "expat" ],
+			"CPPDEFINES" : ['OFX_DEBUG_ACTIONS',],
 		},
 		"requiredOptions" : [ "OFX_ROOT" ],
 	},
