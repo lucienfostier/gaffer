@@ -313,6 +313,12 @@ options.Add(
 	"",
 )
 
+options.Add(
+	"OFX_ROOT",
+	"The directory in which the OpenFX library is installed. Used to build GafferOFX",
+	"",
+)
+
 # general variables
 
 options.Add(
@@ -777,7 +783,7 @@ commandEnv["ENV"]["PYTHONPATH"] = commandEnv.subst( os.path.pathsep.join( [ "$BU
 # SIP on MacOS prevents DYLD_LIBRARY_PATH being passed down so we make sure
 # we also pass through to gaffer the other base vars it uses to populate paths
 # for third-party support.
-for v in ( 'ARNOLD_ROOT', 'DELIGHT_ROOT', 'ONNX_ROOT' ) :
+for v in ( 'ARNOLD_ROOT', 'DELIGHT_ROOT', 'ONNX_ROOT', "OFX_ROOT" ) :
 	commandEnv["ENV"][ v ] = commandEnv[ v ]
 
 def runCommand( command ) :
@@ -1142,6 +1148,35 @@ libraries = {
 		"requiredOptions" : [ "ONNX_ROOT" ],
 	},
 
+	"GafferOFX" : {
+		"envAppends" : {
+			"CXXFLAGS" : [ systemIncludeArgument, "$OFX_ROOT/include/openfx" ],
+			"LIBPATH" : [ "$OFX_ROOT/lib" ],
+			"LIBS" : [ "Gaffer", "GafferImage", "OfxHost", "OfxSupport", "expat" ],
+			"CPPDEFINES" : ['OFX_DEBUG_ACTIONS',],
+		},
+		"pythonEnvAppends" : {
+			"CXXFLAGS" : [ systemIncludeArgument, "$OFX_ROOT/include/openfx" ],
+			"LIBPATH" : [ "$OFX_ROOT/lib" ],
+			"LIBS" : [ "GafferBindings", "GafferImage", "GafferOFX", "OfxHost", "OfxSupport", "expat" ],
+			"CPPDEFINES" : ['OFX_DEBUG_ACTIONS',],
+		},
+		"requiredOptions" : [ "OFX_ROOT" ],
+	},
+
+	"GafferOFXTest" : {
+		"requiredOptions" : [ "OFX_ROOT" ],
+		"additionalFiles" : glob.glob( "python/GafferOFXTest/plugins/*" )
+	},
+
+	"GafferOFXUI" : {
+		"requiredOptions" : [ "OFX_ROOT" ],
+	},
+
+	"GafferOFXUITest" : {
+		"requiredOptions" : [ "OFX_ROOT" ],
+	},
+
 	"IECoreArnold" : {
 		"envAppends" : {
 			"LIBPATH" : [ "$ARNOLD_ROOT/bin" ] if env["PLATFORM"] != "win32" else [ "$ARNOLD_ROOT/bin", "$ARNOLD_ROOT/lib" ],
@@ -1457,12 +1492,12 @@ for library in ( "GafferUI", ) :
 
 if env["PLATFORM"] == "win32" :
 
-	for library in ( "Gaffer", "GafferCycles", ) :
+	for library in ( "Gaffer", "GafferCycles", "GafferOFX" ) :
 
 		libraries[library].setdefault( "envAppends", {} )
 		libraries[library]["envAppends"].setdefault( "LIBS", [] ).extend( [ "Advapi32" ] )
 
-	for library in ( "GafferCycles", ) :
+	for library in ( "GafferCycles", "GafferOFX" ) :
 
 		libraries[library].setdefault( "pythonEnvAppends", {} )
 		libraries[library]["pythonEnvAppends"].setdefault( "LIBS", [] ).extend( [ "Advapi32" ] )
@@ -1470,6 +1505,7 @@ if env["PLATFORM"] == "win32" :
 else :
 
 	libraries["GafferCycles"]["envAppends"]["LIBS"].extend( [ "dl" ] )
+	libraries["GafferOFX"]["envAppends"]["LIBS"].extend( [ "dl" ] )
 
 # Optionally add vTune requirements
 
