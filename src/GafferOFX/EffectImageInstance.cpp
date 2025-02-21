@@ -99,9 +99,7 @@ void EffectImageInstance::getProjectExtent(double& xSize, double& ySize) const
 double EffectImageInstance::getProjectPixelAspectRatio() const
 {
 	auto gafferFormat = GafferImage::FormatPlug::getDefaultFormat(Gaffer::Context::current());
-	auto width = gafferFormat.width();
-	auto height = gafferFormat.height();
-	return double(width)/double(height);
+	return gafferFormat.getPixelAspect();
 }
 
 double EffectImageInstance::getEffectDuration() const
