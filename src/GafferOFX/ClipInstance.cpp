@@ -75,6 +75,7 @@ GafferOFX::Image::Image( ClipInstance &clip, OfxTime time, int view )
 
 OfxRGBAColourF* Image::pixel( int x, int y ) const
 {
+	return 0;
 	OfxRectI bounds = getBounds();
 
 	if ((x >= bounds.x1) && ( x< bounds.x2) && ( y >= bounds.y1) && ( y < bounds.y2) )

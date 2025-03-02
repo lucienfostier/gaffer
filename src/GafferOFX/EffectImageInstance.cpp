@@ -135,6 +135,7 @@ void EffectImageInstance::getRenderScaleRecursive(double &x, double &y) const
 OFX::Host::Param::Instance* EffectImageInstance::newParam(const std::string& name, OFX::Host::Param::Descriptor& descriptor)
 {
 	std::cout << "name: " << name << " type: " << descriptor.getType() << std::endl;
+	return nullptr;
 	if(descriptor.getType()==kOfxParamTypeInteger)
 	{
 		return new IntegerInstance(this,name,descriptor);

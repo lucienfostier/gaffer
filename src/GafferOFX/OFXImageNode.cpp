@@ -80,27 +80,29 @@ bool OFXImageNode::createPluginInstance()
 				)
 		);
 
-		const auto& instanceDesc = m_instance->getDescriptor();
-		const auto& clips = instanceDesc.getClips();
-		size_t numInputs = 0;
+		//const auto& instanceDesc = m_instance->getDescriptor();
+		//const auto& clips = instanceDesc.getClips();
+		//size_t numInputs = 0;
 
-		for ( const auto& clip : clips )
-		{
-			if ( clip.first == "Output" )
-			{
-				continue;
-			}
-			numInputs++;
-			inPlugs()->resize( std::max( inPlugs()->children().size(), numInputs ) ); // Add new plug if needed.
-			IECore::ConstStringDataPtr label = new StringData( clip.first );
-			Metadata::registerValue( inPlugs()->getChild( numInputs - 1 ), "label", label );
-			Metadata::registerValue( inPlugs()->getChild( numInputs - 1 ), "noduleLayout:label", label );
-		}
-		inPlugs()->resize( numInputs );
+		//for ( const auto& clip : clips )
+		//{
+		//	if ( clip.first == "Output" )
+		//	{
+		//		continue;
+		//	}
+		//	numInputs++;
+		//	inPlugs()->resize( std::max( inPlugs()->children().size(), numInputs ) ); // Add new plug if needed.
+		//	IECore::ConstStringDataPtr label = new StringData( clip.first );
+		//	Metadata::registerValue( inPlugs()->getChild( numInputs - 1 ), "label", label );
+		//	Metadata::registerValue( inPlugs()->getChild( numInputs - 1 ), "noduleLayout:label", label );
+		//}
+		//inPlugs()->resize( numInputs );
 
+		//m_instance->populate();
 		//m_instance->getClipPreferences();
-		//OfxStatus stat = m_instance->createInstanceAction();
-		//std::cout << "create instance action: " << stat << std::endl;
+		std::cout << m_instance.get() << std::endl;
+		OfxStatus stat = m_instance->createInstanceAction();
+		std::cout << "create instance action: " << stat << std::endl;
 
 		// now we need to to call getClipPreferences on the instance so that it does the clip component/depth
 		// logic and caches away the components and depth on each clip.
