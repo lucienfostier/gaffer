@@ -50,10 +50,18 @@ class TensorTest( GafferTest.TestCase ) :
 		tensor = GafferML.Tensor( d , [ 1, 3 ] )
 		# 1 D indexing
 		for i in range( len( d ) ):
-			self.assertEqual( tensor[i], d[i] )
+			self.assertEqual( tensor [i ], d[ i ] )
 		# N D indexing
 		for i in range( len( d ) ):
-			self.assertEqual( tensor[0,i], d[i] )
+			self.assertEqual( tensor[ 0, i ], d[ i ] )
+
+		d = IECore.StringVectorData( [ "person", "sky", "clouds", "spaceship" ] )
+		tensor = GafferML.Tensor( d , [ 1, 2, 2 ] )
+
+		self.assertEqual( tensor[ 0, 0, 0 ], d[ 0 ] )
+		self.assertEqual( tensor[ 0, 1, 1 ], d[ -1 ] )
+		self.assertEqual( tensor[ 0, 1, 0 ], d[ -2 ] )
+
 
 	def testAsData( self ) :
 
@@ -63,6 +71,7 @@ class TensorTest( GafferTest.TestCase ) :
 			IECore.DoubleVectorData( [ 1, 2, 3 ] ),
 			IECore.IntVectorData( [ 1, 2, 3 ] ),
 			IECore.UInt64VectorData( [ 1, 2, 3 ] ),
+			IECore.StringVectorData( [ "person", "light", "water" ] )
 		] :
 
 			tensor = GafferML.Tensor( data, [ 1, 3 ] )
