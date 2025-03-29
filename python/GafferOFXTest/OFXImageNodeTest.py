@@ -77,6 +77,15 @@ class OFXImageNodeTest( GafferTest.TestCase ) :
 
 			self.assertEqual(node.effectInstanceProjectSize(), (100.0, 200.0))
 
+			for i, channel in enumerate( [ "R", "G", "B", "A" ] ) :
+				channelData = node["out"].channelData( channel, imath.V2i( 0 ) )
+				self.assertEqual( len( channelData ), node["out"].tileSize() * node["out"].tileSize() )
+	
+				expectedValue = node["colorA"][i].getValue()
+				s = GafferImage.Sampler( node["out"], channel, node["out"]["dataWindow"].getValue() )
+				self.assertEqual( s.sample( 12, 12 ), expectedValue )
+				self.assertEqual( s.sample( 72, 72 ), expectedValue )
+
 if __name__ == "__main__" :
 	unittest.main()
 

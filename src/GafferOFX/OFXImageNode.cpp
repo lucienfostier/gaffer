@@ -98,9 +98,6 @@ bool OFXImageNode::createPluginInstance()
 		}
 		inPlugs()->resize( numInputs );
 
-		m_instance->populate();
-		m_instance->getClipPreferences();
-		std::cout << m_instance.get() << std::endl;
 		OfxStatus stat = m_instance->createInstanceAction();
 		std::cout << "create instance action: " << stat << std::endl;
 
