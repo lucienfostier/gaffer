@@ -52,7 +52,7 @@ class OFXImageNodeTest( GafferTest.TestCase ) :
 		scriptNode.addChild( node )
 
 		self.assertFalse(node.createPluginInstance())
-		node["pluginId"].setValue("net.sf.openfx.invertPlugin")
+		node["pluginId"].setValue("uk.co.thefoundry.OfxInvertExample")
 		self.assertTrue(node.createPluginInstance())
 
 
@@ -63,7 +63,7 @@ class OFXImageNodeTest( GafferTest.TestCase ) :
 
 		scriptNode = Gaffer.ScriptNode()
 		node = GafferOFX.OFXImageNode()
-		node["pluginId"].setValue("net.sf.openfx.invertPlugin")
+		node["pluginId"].setValue("uk.co.thefoundry.OfxInvertExample")
 		scriptNode.addChild( node )
 		node.createPluginInstance()
 
