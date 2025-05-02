@@ -245,6 +245,8 @@ IECore::ConstFloatVectorDataPtr OFXImageNode::computeChannelData( const std::str
 		// get the output image buffer
 		GafferOFX::Image *outputImage = outputClip->getOutputImage();
 		std::cout << "output image : " << outputImage << std::endl;
+		float t = outputImage->pixel( 0, 0 )->r;
+		std::cout << "channel data pixel value: " << t << std::endl;
 	}
 	return ImagePlug::emptyTile();
 }

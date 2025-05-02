@@ -49,7 +49,14 @@ GafferOFX::Image::Image( ClipInstance &clip, OfxTime time, int view )
 	: OFX::Host::ImageEffect::Image( clip )
 	, m_data(nullptr)
 {
+	std::cout << "my image ctor" << std::endl;
 	m_data.reset( new OfxRGBAColourF[kPalSizeXPixels * kPalSizeYPixels] );
+
+	OfxRGBAColourF color;
+	color.r = color.g = color.b = color.a = .12f;
+	std::fill(m_data.get(), m_data.get() + kPalSizeXPixels * kPalSizeYPixels, color);
+
+	std::cout << "debug ctor: " << m_data.get()->r << " " << this << std::endl;
 
 	// render scale x and y of 1.0
 	setDoubleProperty(kOfxImageEffectPropRenderScale, 1.0, 0);
@@ -75,7 +82,7 @@ GafferOFX::Image::Image( ClipInstance &clip, OfxTime time, int view )
 
 OfxRGBAColourF* Image::pixel( int x, int y ) const
 {
-	return 0;
+	std::cout << "pixel method" << std::endl;
 	OfxRectI bounds = getBounds();
 
 	if ((x >= bounds.x1) && ( x< bounds.x2) && ( y >= bounds.y1) && ( y < bounds.y2) )
@@ -83,7 +90,12 @@ OfxRGBAColourF* Image::pixel( int x, int y ) const
 		int rowBytes = getIntProperty(kOfxImagePropRowBytes);
 		int offset = (y - bounds.y1) * rowBytes + (x - bounds.x1) * sizeof(OfxRGBAColourF);
 
-		return reinterpret_cast<OfxRGBAColourF*>(&(reinterpret_cast<char*>(m_data.get())[offset]));
+		std::cout << "debug pixel method: " << this << " " << offset << " first pixel value " << m_data.get()->r << std::endl;
+		//OfxRGBAColourF* c = new OfxRGBAColourF();
+		//c->r = c->g = c->b = .5f;
+		//std::cout << "c : " << c->r << std::endl;
+		//return c;
+		return &m_data.get()[offset];
 	}
 
 	return 0;
@@ -183,6 +195,7 @@ OFX::Host::ImageEffect::Image* ClipInstance::getImage(OfxTime time, const OfxRec
 {
 	if ( m_name == "Output" )
 	{
+		std::cout << "output image creation: " << std::endl;
 		if ( !m_outputImage )
 		{
 			m_outputImage = new Image( *this, 0 );
@@ -199,6 +212,7 @@ OFX::Host::ImageEffect::Image* ClipInstance::getImage(OfxTime time, const OfxRec
 	}
 	else
 	{
+		std::cout << "input image creation" << std::endl;
 		Image *image = new Image( *this, time );
 		return image;
 	}
