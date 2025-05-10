@@ -230,7 +230,6 @@ IECore::ConstFloatVectorDataPtr OFXImageNode::computeChannelData( const std::str
 		regionOfInterest.x1 = regionOfInterest.y1 = 0;
 		regionOfInterest.x2 = renderWindow.x2 * m_instance->getProjectPixelAspectRatio();
 		regionOfInterest.y2 = 576;
-		
 	
 		// get the output clip
 		GafferOFX::ClipInstance* outputClip = dynamic_cast<GafferOFX::ClipInstance*>(m_instance->getClip("Output"));
@@ -246,7 +245,16 @@ IECore::ConstFloatVectorDataPtr OFXImageNode::computeChannelData( const std::str
 		GafferOFX::Image *outputImage = outputClip->getOutputImage();
 		std::cout << "output image : " << outputImage << std::endl;
 		float t = outputImage->pixel( 0, 0 )->r;
-		std::cout << "channel data pixel value: " << t << std::endl;
+		std::cout << "output channel data pixel value: " << t << std::endl;
+
+
+		GafferOFX::ClipInstance* inputClip = dynamic_cast<GafferOFX::ClipInstance*>(m_instance->getClip("Source"));
+		std::cout << "input clip: " << inputClip << std::endl;
+
+		GafferOFX::Image *inputImage = dynamic_cast<GafferOFX::Image*>(inputClip->getImage(0, nullptr));
+		std::cout << "input image : " << inputImage << std::endl;
+		t = inputImage->pixel( 0, 0 )->r;
+		std::cout << "input channel data pixel value: " << t << std::endl;
 	}
 	return ImagePlug::emptyTile();
 }

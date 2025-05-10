@@ -53,7 +53,7 @@ GafferOFX::Image::Image( ClipInstance &clip, OfxTime time, int view )
 	m_data.reset( new OfxRGBAColourF[kPalSizeXPixels * kPalSizeYPixels] );
 
 	OfxRGBAColourF color;
-	color.r = color.g = color.b = color.a = .12f;
+	color.r = color.g = color.b = color.a = -.5f;
 	std::fill(m_data.get(), m_data.get() + kPalSizeXPixels * kPalSizeYPixels, color);
 
 	std::cout << "debug ctor: " << m_data.get()->r << " " << this << std::endl;
