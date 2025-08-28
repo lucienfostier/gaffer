@@ -14,6 +14,11 @@ Fixes
 
 - PathListingWidget : Fixed parent layout update when column sizes change.
 
+1.x.x.x (relative to 1.6.x.x)
+=======
+
+
+
 1.6.0.0 (relative to 1.5.16.2)
 =======
 
