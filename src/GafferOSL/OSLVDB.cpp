@@ -185,13 +185,19 @@ bool OSLVDB::affectsProcessedObject( const Gaffer::Plug *input ) const
 {
 	return
 		Deformer::affectsProcessedObject( input ) ||
-		input == shaderPlug() ||
+		input == shaderPlug()
 	;
 }
 
 void OSLVDB::hashProcessedObject( const ScenePath &path, const Gaffer::Context *context, IECore::MurmurHash &h ) const
 {
-	ConstShadingEnginePtr shadingEngine = this->shadingEngine( context, gafferAttributes.get() );
+	ConstShadingEnginePtr shadingEngine;
+	if( auto shader = runTimeCast<const OSLShader>( shaderPlug()->source()->node() ) )
+	{
+		ScenePlug::GlobalScope globalScope( context );
+		shadingEngine = shader->shadingEngine();
+	}
+
 	if( !shadingEngine )
 	{
 		h = inPlug()->objectPlug()->hash();
@@ -213,13 +219,19 @@ IECore::ConstObjectPtr OSLVDB::computeProcessedObject( const ScenePath &path, co
 		return inputObject;
 	}
 
-	ConstShadingEnginePtr shadingEngine = this->shadingEngine( context, gafferAttributes.get() );
+	ConstShadingEnginePtr shadingEngine;
+	if( auto shader = runTimeCast<const OSLShader>( shaderPlug()->source()->node() ) )
+	{
+		ScenePlug::GlobalScope globalScope( context );
+		shadingEngine = shader->shadingEngine();
+	}
+
 	if( !shadingEngine )
 	{
 		return inputObject;
 	}
 
-	CompoundDataPtr shadingPoints = prepareShadingPoints( resampledObject.get(), shadingEngine.get() );
+	CompoundDataPtr shadingPoints = prepareShadingPoints( inputPrimitive, shadingEngine.get() );
 
 	PrimitivePtr outputPrimitive = inputPrimitive->copy();
 
@@ -234,7 +246,8 @@ IECore::ConstObjectPtr OSLVDB::computeProcessedObject( const ScenePath &path, co
 		// Ignore the output color closure as the debug closures are used to define what is 'exported' from the shader
 		if( it->first != "Ci" )
 		{
-			outputPrimitive->variables[it->first] = PrimitiveVariable( interpolation, it->second );
+            std::cout << "grid to transfer" << it->first << std::endl;
+			//outputPrimitive->variables[it->first] = PrimitiveVariable( interpolation, it->second );
 		}
 	}
 
