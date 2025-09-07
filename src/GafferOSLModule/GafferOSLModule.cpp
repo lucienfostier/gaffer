@@ -41,6 +41,7 @@
 #include "GafferOSL/OSLImage.h"
 #include "GafferOSL/OSLLight.h"
 #include "GafferOSL/OSLObject.h"
+#include "GafferOSL/OSLVDB.h"
 #include "GafferOSL/OSLShader.h"
 #include "GafferOSL/ShadingEngine.h"
 #include "GafferOSL/ShadingEngineAlgo.h"
@@ -205,6 +206,7 @@ BOOST_PYTHON_MODULE( _GafferOSL )
 		scope s = GafferBindings::DependencyNodeClass<OSLObject>();
 		GafferBindings::PlugClass<OSLObject::SourceLocationPlug>();
 	}
+	GafferBindings::DependencyNodeClass<OSLVDB>();
 
 	PlugClass<ClosurePlug>()
 		.def( init<const std::string &, Gaffer::Plug::Direction, unsigned>(

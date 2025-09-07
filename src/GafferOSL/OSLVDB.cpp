@@ -69,7 +69,7 @@ size_t OSLVDB::g_firstPlugIndex;
 namespace
 {
 
-CompoundDataPtr prepareShadingPoints( const Primitive *primitive, const ShadingEngine *shadingEngine, const CompoundObject *gafferAttributes = nullptr )
+CompoundDataPtr prepareShadingPoints( const Primitive *primitive, const ShadingEngine *shadingEngine )
 {
 	CompoundDataPtr shadingPoints = new CompoundData;
 	for( PrimitiveVariableMap::const_iterator it = primitive->variables.begin(), eIt = primitive->variables.end(); it != eIt; ++it )
@@ -84,47 +84,6 @@ CompoundDataPtr prepareShadingPoints( const Primitive *primitive, const ShadingE
 			else
 			{
 				shadingPoints->writable()[it->first] = boost::const_pointer_cast<Data>( it->second.data );
-			}
-		}
-	}
-
-	if( gafferAttributes )
-	{
-		for( const auto &i : gafferAttributes->members() )
-		{
-			if( shadingEngine->needsAttribute( i.first ) )
-			{
-				if( shadingPoints->writable().find( i.first ) == shadingPoints->writable().end() )
-				{
-					const IECore::Data* data = IECore::runTimeCast< IECore::Data >( i.second.get() );
-
-					// We currently don't support array attributes
-					// ( because ShadingEngine assumes that all arrays contain per-shading-point
-					// data of the appropriate length. )
-					// Using OpenImageIOAlgo to check if it's an array feels a bit weird, but it
-					// seems important to exactly match the logic of GafferOSL::ShadingEngine
-					if( data && !IECoreImage::OpenImageIOAlgo::DataView( data ).type.arraylen )
-					{
-						const IECore::BoolData* boolData = IECore::runTimeCast< const IECore::BoolData >( data );
-						if( boolData )
-						{
-							shadingPoints->writable()[i.first] = new IECore::IntData( boolData->readable() );
-						}
-						else
-						{
-							// Const cast is safe because the resulting dict is const
-							shadingPoints->writable()[i.first] = const_cast< IECore::Data* >( data );
-						}
-					}
-					else
-					{
-						// If we hit this branch, it means either that the shader needs to read an attribute
-						// which is invalid, in which case it would be nice to throw an error ... or it means
-						// that OSL couldn't determine which attributes the shader needs, and we're trying to
-						// pass it everything.  Because we can't tell which case we're in here, we can't throw
-						// an error, and we just silently don't pass this attribute
-					}
-				}
 			}
 		}
 	}
@@ -163,22 +122,22 @@ const GafferScene::ShaderPlug *OSLVDB::shaderPlug() const
 
 Gaffer::Plug *OSLVDB::gridsPlug()
 {
-	return getChild<Gaffer::Plug>( g_firstPlugIndex + 6 );
+	return getChild<Gaffer::Plug>( g_firstPlugIndex + 1 );
 }
 
 const Gaffer::Plug *OSLVDB::gridsPlug() const
 {
-	return getChild<Gaffer::Plug>( g_firstPlugIndex + 6 );
+	return getChild<Gaffer::Plug>( g_firstPlugIndex + 1 );
 }
 
 GafferOSL::OSLCode *OSLVDB::oslCode()
 {
-	return getChild<GafferOSL::OSLCode>( g_firstPlugIndex + 7 );
+	return getChild<GafferOSL::OSLCode>( g_firstPlugIndex + 2 );
 }
 
 const GafferOSL::OSLCode *OSLVDB::oslCode() const
 {
-	return getChild<GafferOSL::OSLCode>( g_firstPlugIndex + 7 );
+	return getChild<GafferOSL::OSLCode>( g_firstPlugIndex + 2 );
 }
 
 bool OSLVDB::affectsProcessedObject( const Gaffer::Plug *input ) const
