@@ -1294,11 +1294,11 @@ libraries = {
 	"GafferOSL" : {
 		"envAppends" : {
 			"CPPPATH" : [ "$OSLHOME/include/OSL" ],
-			"LIBS" : [ "Gaffer", "GafferScene", "GafferImage", "GafferVDB", "OpenImageIO$OIIO_LIB_SUFFIX", "OpenImageIO_Util$OIIO_LIB_SUFFIX", "oslquery$OSL_LIB_SUFFIX", "oslexec$OSL_LIB_SUFFIX", "oslcomp$OSL_LIB_SUFFIX", "Iex$IMATH_LIB_SUFFIX", "IECoreImage$CORTEX_LIB_SUFFIX", "IECoreScene$CORTEX_LIB_SUFFIX" ],
+			"LIBS" : [ "Gaffer", "GafferScene", "GafferImage", "GafferVDB", "OpenImageIO$OIIO_LIB_SUFFIX", "OpenImageIO_Util$OIIO_LIB_SUFFIX", "oslquery$OSL_LIB_SUFFIX", "oslexec$OSL_LIB_SUFFIX", "oslcomp$OSL_LIB_SUFFIX", "Iex$IMATH_LIB_SUFFIX", "IECoreImage$CORTEX_LIB_SUFFIX", "IECoreScene$CORTEX_LIB_SUFFIX", "openvdb$VDB_LIB_SUFFIX" ],
 		},
 		"pythonEnvAppends" : {
 			"CPPPATH" : [ "$OSLHOME/include/OSL" ],
-			"LIBS" : [ "GafferBindings", "GafferScene", "GafferImage", "GafferOSL", "GafferVDB", "Iex$IMATH_LIB_SUFFIX", "IECoreScene$CORTEX_LIB_SUFFIX" ],
+			"LIBS" : [ "GafferBindings", "GafferScene", "GafferImage", "GafferOSL", "GafferVDB", "Iex$IMATH_LIB_SUFFIX", "IECoreScene$CORTEX_LIB_SUFFIX", "IECoreVDB$CORTEX_LIB_SUFFIX", "openvdb$VDB_LIB_SUFFIX" ],
 		},
 		"oslHeaders" : glob.glob( "shaders/*/*.h" ),
 		"oslShaders" : glob.glob( "shaders/*/*.osl" ),
@@ -1309,7 +1309,7 @@ libraries = {
 			"LIBS" : [ "Gaffer", "GafferImage", "GafferUI", "GafferOSL", "GafferVDB" ],
 		},
 		"pythonEnvAppends" : {
-			"LIBS" : [ "IECoreGL$CORTEX_LIB_SUFFIX", "GafferBindings", "GafferScene", "GafferUI", "GafferImageUI", "GafferOSLUI", "GafferVDBUI" ],
+			"LIBS" : [ "IECoreGL$CORTEX_LIB_SUFFIX", "GafferBindings", "GafferScene", "GafferUI", "GafferImageUI", "GafferOSLUI", "GafferVDBUI", "IECoreVDB$CORTEX_LIB_SUFFIX", "openvdb$VDB_LIB_SUFFIX" ],
 		},
 	},
 

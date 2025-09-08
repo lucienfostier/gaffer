@@ -47,7 +47,7 @@
 #include "Gaffer/ScriptNode.h"
 #include "Gaffer/NameValuePlug.h"
 
-#include "IECoreScene/Primitive.h"
+#include "IECoreVDB/VDBObject.h"
 #include "IECoreImage/OpenImageIOAlgo.h"
 
 #include "IECore/MessageHandler.h"
@@ -58,9 +58,11 @@ using namespace boost::placeholders;
 using namespace Imath;
 using namespace IECore;
 using namespace IECoreScene;
+using namespace IECoreVDB;
 using namespace Gaffer;
 using namespace GafferScene;
 using namespace GafferOSL;
+using namespace std;
 
 GAFFER_NODE_DEFINE_TYPE( OSLVDB );
 
@@ -69,26 +71,85 @@ size_t OSLVDB::g_firstPlugIndex;
 namespace
 {
 
-CompoundDataPtr prepareShadingPoints( const Primitive *primitive, const ShadingEngine *shadingEngine )
+void updateGridFromSparse(
+    openvdb::FloatGrid::Ptr grid,
+    ConstV3fVectorDataPtr &coordData,
+    ConstFloatVectorDataPtr &valueData
+)
+{
+    auto &coords = coordData->readable();
+    auto &values = valueData->readable();
+
+    if (coords.size() != values.size())
+    {
+        throw std::runtime_error("Coordinates and values size mismatch");
+    }
+
+    auto accessor = grid->getAccessor();
+
+    for (size_t i = 0; i < coords.size(); ++i)
+    {
+        const Imath::V3f &v = coords[i];
+        openvdb::Coord c(
+            static_cast<int>(v.x),
+            static_cast<int>(v.y),
+            static_cast<int>(v.z)
+        );
+        accessor.setValueOn(c, values[i]); // activate voxel and set value
+    }
+}
+
+CompoundDataPtr prepareShadingPoints( const VDBObject *vdb, const ShadingEngine *shadingEngine )
 {
 	CompoundDataPtr shadingPoints = new CompoundData;
-	for( PrimitiveVariableMap::const_iterator it = primitive->variables.begin(), eIt = primitive->variables.end(); it != eIt; ++it )
+	for( const auto& gridName : vdb->gridNames() )
 	{
-		// todo: consider passing something like IndexedView to the ShadingEngine to avoid the expansion of indexed data.
-		if( shadingEngine->needsAttribute( it->first ) )
+        std::cout << "grid name: " << gridName << std::endl;
+		if( shadingEngine->needsAttribute( gridName ) )
 		{
-			if( it->second.indices )
-			{
-				shadingPoints->writable()[it->first] = it->second.expandedData();
-			}
-			else
-			{
-				shadingPoints->writable()[it->first] = boost::const_pointer_cast<Data>( it->second.data );
-			}
+            FloatVectorDataPtr gridData = new FloatVectorData;
+            vector<float> &gridWritable = gridData->writable();
+
+            V3fVectorDataPtr coordData = new V3fVectorData();
+            std::vector<Imath::V3f> &coords = coordData->writable();
+
+            std::cout << "prepare shading points : " << gridName  << std::endl;
+
+            const auto& base = vdb->findGrid( gridName );
+            openvdb::FloatGrid::ConstPtr grid = openvdb::gridConstPtrCast<openvdb::FloatGrid>(base);
+
+            size_t activeVoxelCount = grid->activeVoxelCount();
+
+            gridWritable.reserve( activeVoxelCount );
+            std::cout << "found grid: " << gridName << " ptr: " << grid << std::endl;
+            for (auto iter = grid->cbeginValueOn(); iter.test(); ++iter)
+            {
+                auto c = iter.getCoord();
+                //std::cout << "coord : " << c << std::endl;
+
+                coords.emplace_back(
+                    static_cast<float>(c.x()), 
+                    static_cast<float>(c.y()), 
+                    static_cast<float>(c.z())
+                );
+
+                float val = *iter;
+                //std::cout << "value : " << val << std::endl;
+                gridWritable.push_back( val );
+            }
+            shadingPoints->writable()[gridName] = gridData;
+            shadingPoints->writable()[gridName + "_coord"] = coordData;
 		}
 	}
 
-	return shadingPoints;
+    // dummy P
+    V3fVectorDataPtr pData = new V3fVectorData;
+    vector<V3f> &pWritable = pData->writable();
+
+    pWritable.assign( 10000, V3f() );
+
+    shadingPoints->writable()["P"] = pData;
+    return shadingPoints;
 }
 
 } // namespace
@@ -172,8 +233,8 @@ static const IECore::InternedString g_world("world");
 
 IECore::ConstObjectPtr OSLVDB::computeProcessedObject( const ScenePath &path, const Gaffer::Context *context, const IECore::Object *inputObject ) const
 {
-	const Primitive *inputPrimitive = runTimeCast<const Primitive>( inputObject );
-	if( !inputPrimitive )
+	const VDBObject *inputVDB = runTimeCast<const VDBObject>( inputObject );
+	if( !inputVDB )
 	{
 		return inputObject;
 	}
@@ -190,27 +251,55 @@ IECore::ConstObjectPtr OSLVDB::computeProcessedObject( const ScenePath &path, co
 		return inputObject;
 	}
 
-	CompoundDataPtr shadingPoints = prepareShadingPoints( inputPrimitive, shadingEngine.get() );
+	CompoundDataPtr shadingPoints = prepareShadingPoints( inputVDB, shadingEngine.get() );
 
-	PrimitivePtr outputPrimitive = inputPrimitive->copy();
+	VDBObjectPtr outputVDB = inputVDB->copy();
 
 	ShadingEngine::Transforms transforms;
 
     transforms[ g_world ] = ShadingEngine::Transform( Imath::M44f(), Imath::M44f() );
 
 	CompoundDataPtr shadedPoints = shadingEngine->shade( shadingPoints.get(), transforms );
+    auto it = shadedPoints->readable().find("density_coord");
+    if (it != shadedPoints->readable().end())
+    {
+        std::cout << it->second.get() << std::endl;
+    }
 	for( CompoundDataMap::const_iterator it = shadedPoints->readable().begin(), eIt = shadedPoints->readable().end(); it != eIt; ++it )
 	{
 
 		// Ignore the output color closure as the debug closures are used to define what is 'exported' from the shader
 		if( it->first != "Ci" )
 		{
-            std::cout << "grid to transfer" << it->first << std::endl;
-			//outputPrimitive->variables[it->first] = PrimitiveVariable( interpolation, it->second );
+            std::cout << "grid to transfer " << it->first << std::endl;
+            std::cout << "grid ptr: " << it->second << " typename : " << it->second->typeName() << std::endl;
+            if( auto floatData = runTimeCast<const FloatVectorData>( it->second ) )
+            {
+                openvdb::FloatGrid::Ptr newGrid;
+                const auto& base = inputVDB->findGrid( it->first );
+                if ( base )
+                {
+                    openvdb::FloatGrid::ConstPtr grid = openvdb::gridConstPtrCast<openvdb::FloatGrid>(base);
+                    newGrid = grid->deepCopy();
+                }
+                else
+                {
+                    newGrid = openvdb::FloatGrid::create();
+                }
+
+                IECore::ConstV3fVectorDataPtr coordData = IECore::runTimeCast<const IECore::V3fVectorData>(shadedPoints->readable().at(it->first.string() + "_coord"));
+                updateGridFromSparse( newGrid, coordData, floatData );
+                for ( const auto& v : floatData->readable() )
+                {
+                    std::cout << "shaded value : " << v << std::endl;
+                }
+                outputVDB->removeGrid(it->first.string());
+                outputVDB->insertGrid( newGrid );
+            }
 		}
 	}
 
-	return outputPrimitive;
+	return outputVDB;
 }
 
 Gaffer::ValuePlug::CachePolicy OSLVDB::processedObjectComputeCachePolicy() const
