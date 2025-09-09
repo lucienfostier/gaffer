@@ -295,6 +295,14 @@ IECore::ConstObjectPtr OSLVDB::computeProcessedObject( const ScenePath &path, co
                 }
                 outputVDB->removeGrid(it->first.string());
                 outputVDB->insertGrid( newGrid );
+
+
+                auto result = openvdb::tools::minMax(newGrid->tree());
+                
+                float minVal = result.min();
+                float maxVal = result.max();
+                
+                std::cout << "Grid min: " << minVal << " max: " << maxVal << std::endl;
             }
 		}
 	}
