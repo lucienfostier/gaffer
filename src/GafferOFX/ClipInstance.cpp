@@ -247,11 +247,12 @@ OFX::Host::ImageEffect::Image* ClipInstance::getImage(OfxTime time, const OfxRec
 
 	if ( m_name == "Output" )
 	{
-		if ( !m_outputImage )
+		if ( m_outputImage )
 		{
-			m_outputImage = new Image( *this, time, 0, useBounds );
+			m_outputImage->releaseReference();
+			m_outputImage = nullptr;
 		}
-
+		m_outputImage = new Image( *this, time, 0, useBounds );
 		m_outputImage->addReference();
 
 		return m_outputImage;
