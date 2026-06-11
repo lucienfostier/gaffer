@@ -91,6 +91,10 @@ GafferOFX::Image::Image( ClipInstance &clip, OfxTime time, int view, const OfxRe
 	setIntProperty(kOfxImagePropRegionOfDefinition, imageBounds.x2, 2);
 	setIntProperty(kOfxImagePropRegionOfDefinition, imageBounds.y2, 3);
 
+	// pixel depth and components
+	setStringProperty(kOfxImageEffectPropPixelDepth, kOfxBitDepthFloat);
+	setStringProperty(kOfxImageEffectPropComponents, kOfxImageComponentRGBA);
+
 	// row bytes
 	setIntProperty(kOfxImagePropRowBytes, width * sizeof(OfxRGBAColourF));
 }
@@ -102,8 +106,9 @@ OfxRGBAColourF* Image::pixel( int x, int y ) const
 	if ((x >= bounds.x1) && ( x< bounds.x2) && ( y >= bounds.y1) && ( y < bounds.y2) )
 	{
 		int rowBytes = getIntProperty(kOfxImagePropRowBytes);
+		OfxRGBAColourF* data = reinterpret_cast<OfxRGBAColourF*>( getPointerProperty( kOfxImagePropData ) );
 		int offset = (y - bounds.y1) * (rowBytes / (int)sizeof(OfxRGBAColourF)) + (x - bounds.x1);
-		return &m_data.get()[offset];
+		return &data[offset];
 	}
 
 	return 0;
@@ -253,6 +258,9 @@ OFX::Host::ImageEffect::Image* ClipInstance::getImage(OfxTime time, const OfxRec
 			m_outputImage = nullptr;
 		}
 		m_outputImage = new Image( *this, time, 0, useBounds );
+		// One reference for m_outputImage to keep it alive after the
+		// plugin releases its reference, and one for the plugin caller.
+		m_outputImage->addReference();
 		m_outputImage->addReference();
 
 		return m_outputImage;
@@ -260,7 +268,7 @@ OFX::Host::ImageEffect::Image* ClipInstance::getImage(OfxTime time, const OfxRec
 	else if ( m_externalBuffer && m_bufferWidth > 0 && m_bufferHeight > 0 )
 	{
 		Image *image = new Image( *this, time, 0, useBounds );
-		image->setExternalData( m_externalBuffer, m_bufferWidth, m_bufferHeight );
+		image->setExternalData( m_externalBuffer, m_bufferWidth, m_bufferHeight, imageBounds );
 		return image;
 	}
 	else

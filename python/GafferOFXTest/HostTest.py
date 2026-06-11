@@ -29,18 +29,32 @@
 #  PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
 #  PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
 #  LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
-#  NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+#  NONINFRINGEMENT) OR OTHERWISE ARISING IN ANY WAY OUT OF THE USE OF THIS
 #  SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 ##########################################################################
-from .PluginCacheTest import PluginCacheTest
-from .OFXImageNodeTest import OFXImageNodeTest
-from .HostTest import HostTest
 
+import unittest
+
+import GafferTest
 import GafferOFX
 
-GafferOFX.Host.findOFXPlugins()
+class HostTest( GafferTest.TestCase ) :
 
-if __name__ == "__main__":
-	import unittest
+	def testPluginIDs( self ) :
+
+		ids = GafferOFX.Host.pluginIDs()
+		self.assertIsInstance( ids, list )
+		self.assertGreater( len( ids ), 0 )
+		for pluginId in ids :
+			self.assertIsInstance( pluginId, str )
+			self.assertGreater( len( pluginId ), 0 )
+
+	def testPluginIDsContainExpected( self ) :
+
+		ids = GafferOFX.Host.pluginIDs()
+		self.assertIn( "uk.co.thefoundry.OfxInvertExample", ids )
+		self.assertIn( "uk.co.thefoundry.BasicGainPlugin", ids )
+
+if __name__ == "__main__" :
 	unittest.main()

@@ -61,13 +61,10 @@ namespace GafferOFX
 			OfxRGBAColourF* pixel( int x, int y ) const;
 			~Image();
 
-			void setExternalData( OfxRGBAColourF* externalData, int width, int height )
+			void setExternalData( OfxRGBAColourF* externalData, int width, int height, const OfxRectI &bounds )
 			{
 				setPointerProperty( kOfxImagePropData, externalData );
 
-				OfxRectI bounds;
-				bounds.x1 = 0; bounds.y1 = 0;
-				bounds.x2 = width; bounds.y2 = height;
 				setIntProperty( kOfxImagePropBounds, bounds.x1, 0 );
 				setIntProperty( kOfxImagePropBounds, bounds.y1, 1 );
 				setIntProperty( kOfxImagePropBounds, bounds.x2, 2 );

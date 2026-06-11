@@ -84,6 +84,7 @@ class GAFFEROFX_API Host : public OFX::Host::ImageEffect::Host
 
 		static Host& instance();
 		static void findOFXPlugins();
+		static std::vector<std::string> pluginIDs();
 		static OFX::Host::ImageEffect::PluginCache m_pluginCache;
 };
 

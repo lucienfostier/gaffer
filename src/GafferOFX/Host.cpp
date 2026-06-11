@@ -175,6 +175,16 @@ Host& Host::instance()
 	return instance;
 }
 
+std::vector<std::string> Host::pluginIDs()
+{
+	std::vector<std::string> result;
+	for( const auto &[id, plugin] : m_pluginCache.getPluginsByID() )
+	{
+		result.push_back( id );
+	}
+	return result;
+}
+
 void Host::findOFXPlugins()
 {
 	OFX::Host::PluginCache::getPluginCache()->setCacheVersion("GafferOFXCache");

@@ -574,7 +574,35 @@ if os.environ.get( "OFX_ROOT" ) and moduleSearchPath.find( "GafferOFX" ) :
 	import GafferOFX
 	import GafferOFXUI
 
-	nodeMenu.append( "/OFX/OFXImageNode", GafferOFX.OFXImageNode, searchText = "OFXImageNode" )
+	# Call findOFXPlugins if it hasn't been called yet
+	plugins = GafferOFX.Host.pluginIDs()
+	if not plugins :
+		GafferOFX.Host.findOFXPlugins()
+		plugins = GafferOFX.Host.pluginIDs()
+
+	def __ofxPluginLabel( pluginId ) :
+		label = pluginId.rsplit( ".", 1 )[-1]
+		label = re.sub( r"(?<=[a-z])(?=[A-Z])", " ", label )
+		label = re.sub( r"(?<=[A-Z])(?=[A-Z][a-z])", " ", label )
+		label = label.replace( "Plugin", "" ).replace( "Ofx", "" ).strip()
+		return label if label else pluginId
+
+	def __ofxNodeCreator( nodeName, pluginId ) :
+		node = GafferOFX.OFXImageNode( nodeName )
+		node["pluginId"].setValue( pluginId )
+		node.createPluginInstance()
+		return node
+
+	if plugins :
+		for pluginId in sorted( plugins ) :
+			nodeMenu.append(
+				"/OFX/" + __ofxPluginLabel( pluginId ),
+				functools.partial( __ofxNodeCreator, pluginId = pluginId ),
+				searchText = pluginId,
+			)
+		nodeMenu.definition().append( "/OFX/__Divider__", { "divider" : True } )
+
+	nodeMenu.append( "/OFX/Custom OFXNode...", GafferOFX.OFXImageNode, searchText = "OFXImageNode" )
 
 # Utility nodes
 

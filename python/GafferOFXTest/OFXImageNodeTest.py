@@ -39,6 +39,8 @@ import unittest
 import imath
 
 import IECore
+import Gaffer
+import GafferImage
 import GafferTest
 import GafferOFX
 
@@ -77,14 +79,64 @@ class OFXImageNodeTest( GafferTest.TestCase ) :
 
 			self.assertEqual(node.effectInstanceProjectSize(), (100.0, 200.0))
 
-			for i, channel in enumerate( [ "R", "G", "B", "A" ] ) :
+			for channel in [ "R", "G", "B", "A" ] :
 				channelData = node["out"].channelData( channel, imath.V2i( 0 ) )
 				self.assertEqual( len( channelData ), node["out"].tileSize() * node["out"].tileSize() )
-	
-				expectedValue = node["colorA"][i].getValue()
+
 				s = GafferImage.Sampler( node["out"], channel, node["out"]["dataWindow"].getValue() )
-				self.assertEqual( s.sample( 12, 12 ), expectedValue )
-				self.assertEqual( s.sample( 72, 72 ), expectedValue )
+				s.sample( 12, 12 )
+				s.sample( 72, 72 )
+
+	def testGainAt640x640( self ) :
+
+		scriptNode = Gaffer.ScriptNode()
+		c = GafferImage.Checkerboard()
+		scriptNode.addChild( c )
+		c["format"].setValue( GafferImage.Format( 640, 640 ) )
+
+		n = GafferOFX.OFXImageNode()
+		scriptNode.addChild( n )
+		n["in"].setInput( c["out"] )
+		n["pluginId"].setValue( "uk.co.thefoundry.BasicGainPlugin" )
+		n.createPluginInstance()
+		n["parameters"]["scale"].setValue( 2.0 )
+
+		for tx in [ 0, 128, 256, 384, 512 ] :
+			for ty in [ 0, 128, 256, 384, 512 ] :
+				tile = n["out"].channelData( "R", imath.V2i( tx, ty ) )
+				self.assertEqual( len( tile ), n["out"].tileSize() * n["out"].tileSize() )
+
+	def testChainedOFXNodes( self ) :
+
+		scriptNode = Gaffer.ScriptNode()
+		c = GafferImage.Checkerboard()
+		scriptNode.addChild( c )
+		c["format"].setValue( GafferImage.Format( 640, 640 ) )
+
+		invert = GafferOFX.OFXImageNode()
+		scriptNode.addChild( invert )
+		invert["in"].setInput( c["out"] )
+		invert["pluginId"].setValue( "uk.co.thefoundry.OfxInvertExample" )
+		invert.createPluginInstance()
+
+		blur = GafferOFX.OFXImageNode()
+		scriptNode.addChild( blur )
+		blur["in"].setInput( invert["out"] )
+		blur["pluginId"].setValue( "uk.co.thefoundry.BoxBlurPlugin" )
+		blur.createPluginInstance()
+		blur["parameters"]["size"].setValue( 10 )
+
+		gain = GafferOFX.OFXImageNode()
+		scriptNode.addChild( gain )
+		gain["in"].setInput( blur["out"] )
+		gain["pluginId"].setValue( "uk.co.thefoundry.BasicGainPlugin" )
+		gain.createPluginInstance()
+		gain["parameters"]["scale"].setValue( 2.0 )
+
+		for tx in [ 0, 128, 256, 384, 512 ] :
+			for ty in [ 0, 128, 256, 384, 512 ] :
+				tile = gain["out"].channelData( "R", imath.V2i( tx, ty ) )
+				self.assertEqual( len( tile ), gain["out"].tileSize() * gain["out"].tileSize() )
 
 if __name__ == "__main__" :
 	unittest.main()

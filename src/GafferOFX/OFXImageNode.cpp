@@ -99,9 +99,13 @@ bool OFXImageNode::createPluginInstance()
 				)
 		);
 
+		// Work around a bug in the compiled libOfxHost.a where
+		// createInstanceAction() calls getClipPreferences() before
+		// kOfxActionCreateInstance.  We call createInstance first
+		// so that plugins that access instance data in their
+		// getClipPreferences have it available.
+		m_instance->mainEntry( kOfxActionCreateInstance, m_instance->getHandle(), nullptr, nullptr );
 		m_instance->createInstanceAction();
-
-		m_instance->getClipPreferences();
 
 		OfxPointD renderScale;
 		renderScale.x = renderScale.y = 1.0;

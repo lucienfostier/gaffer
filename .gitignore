@@ -33,3 +33,4 @@ contrib/openColorIOPandemonium/luts/*.cube
 
 # clang compile commands
 compile_commands.json
+GafferOFXPluginCache.xml

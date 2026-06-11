@@ -49,6 +49,17 @@ using namespace GafferOFX;
 
 namespace
 {
+
+boost::python::list pluginIDsWrapper()
+{
+	boost::python::list result;
+	for( const auto &id : Host::pluginIDs() )
+	{
+		result.append( id );
+	}
+	return result;
+}
+
 struct PairToTuple
 {
     static PyObject* convert(const std::pair<double, double>& p)
@@ -83,6 +94,8 @@ BOOST_PYTHON_MODULE( _GafferOFX )
 	class_<Host>("Host", no_init)
 		.def("findOFXPlugins", &Host::findOFXPlugins)
 		.staticmethod("findOFXPlugins")
+		.def("pluginIDs", &pluginIDsWrapper)
+		.staticmethod("pluginIDs")
 	;
 
 	DependencyNodeClass<OFXImageNode>()
