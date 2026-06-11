@@ -35,6 +35,8 @@
 #include "GafferOFX/Host.h"
 #include "GafferOFX/EffectImageInstance.h"
 
+#include "Gaffer/Context.h"
+
 using namespace GafferOFX;
 
 namespace
@@ -45,56 +47,62 @@ namespace
   const OfxRectI  kPalRegionPixels = {0, 0, kPalSizeXPixels, kPalSizeYPixels};
 }
 
-GafferOFX::Image::Image( ClipInstance &clip, OfxTime time, int view )
+GafferOFX::Image::Image( ClipInstance &clip, OfxTime time, int view, const OfxRectI *bounds )
 	: OFX::Host::ImageEffect::Image( clip )
 	, m_data(nullptr)
 {
-	std::cout << "my image ctor" << std::endl;
-	m_data.reset( new OfxRGBAColourF[kPalSizeXPixels * kPalSizeYPixels] );
+	int width = kPalSizeXPixels;
+	int height = kPalSizeYPixels;
 
-	OfxRGBAColourF color;
-	color.r = color.g = color.b = color.a = -.5f;
-	std::fill(m_data.get(), m_data.get() + kPalSizeXPixels * kPalSizeYPixels, color);
+	if( bounds )
+	{
+		width = bounds->x2 - bounds->x1;
+		height = bounds->y2 - bounds->y1;
+	}
 
-	std::cout << "debug ctor: " << m_data.get()->r << " " << this << std::endl;
+	m_data.reset( new OfxRGBAColourF[width * height] );
+
+	OfxRectI imageBounds;
+	if( bounds )
+	{
+		imageBounds = *bounds;
+	}
+	else
+	{
+		imageBounds.x1 = 0; imageBounds.y1 = 0;
+		imageBounds.x2 = width; imageBounds.y2 = height;
+	}
 
 	// render scale x and y of 1.0
 	setDoubleProperty(kOfxImageEffectPropRenderScale, 1.0, 0);
-	setDoubleProperty(kOfxImageEffectPropRenderScale, 1.0, 1); 
+	setDoubleProperty(kOfxImageEffectPropRenderScale, 1.0, 1);
 
 	// data ptr
 	setPointerProperty(kOfxImagePropData, m_data.get());
 
 	// bounds and rod
-	setIntProperty(kOfxImagePropBounds, kPalRegionPixels.x1, 0);
-	setIntProperty(kOfxImagePropBounds, kPalRegionPixels.y1, 1);
-	setIntProperty(kOfxImagePropBounds, kPalRegionPixels.x2, 2);
-	setIntProperty(kOfxImagePropBounds, kPalRegionPixels.y2, 3);
+	setIntProperty(kOfxImagePropBounds, imageBounds.x1, 0);
+	setIntProperty(kOfxImagePropBounds, imageBounds.y1, 1);
+	setIntProperty(kOfxImagePropBounds, imageBounds.x2, 2);
+	setIntProperty(kOfxImagePropBounds, imageBounds.y2, 3);
 
-	setIntProperty(kOfxImagePropRegionOfDefinition, kPalRegionPixels.x1, 0);
-	setIntProperty(kOfxImagePropRegionOfDefinition, kPalRegionPixels.y1, 1);
-	setIntProperty(kOfxImagePropRegionOfDefinition, kPalRegionPixels.x2, 2);
-	setIntProperty(kOfxImagePropRegionOfDefinition, kPalRegionPixels.y2, 3);        
+	setIntProperty(kOfxImagePropRegionOfDefinition, imageBounds.x1, 0);
+	setIntProperty(kOfxImagePropRegionOfDefinition, imageBounds.y1, 1);
+	setIntProperty(kOfxImagePropRegionOfDefinition, imageBounds.x2, 2);
+	setIntProperty(kOfxImagePropRegionOfDefinition, imageBounds.y2, 3);
 
 	// row bytes
-	setIntProperty(kOfxImagePropRowBytes, kPalSizeXPixels * sizeof(OfxRGBAColourF));
+	setIntProperty(kOfxImagePropRowBytes, width * sizeof(OfxRGBAColourF));
 }
 
 OfxRGBAColourF* Image::pixel( int x, int y ) const
 {
-	std::cout << "pixel method" << std::endl;
 	OfxRectI bounds = getBounds();
 
 	if ((x >= bounds.x1) && ( x< bounds.x2) && ( y >= bounds.y1) && ( y < bounds.y2) )
 	{
 		int rowBytes = getIntProperty(kOfxImagePropRowBytes);
-		int offset = (y - bounds.y1) * rowBytes + (x - bounds.x1) * sizeof(OfxRGBAColourF);
-
-		std::cout << "debug pixel method: " << this << " " << offset << " first pixel value " << m_data.get()->r << std::endl;
-		//OfxRGBAColourF* c = new OfxRGBAColourF();
-		//c->r = c->g = c->b = .5f;
-		//std::cout << "c : " << c->r << std::endl;
-		//return c;
+		int offset = (y - bounds.y1) * (rowBytes / (int)sizeof(OfxRGBAColourF)) + (x - bounds.x1);
 		return &m_data.get()[offset];
 	}
 
@@ -108,7 +116,7 @@ Image::~Image()
 GafferOFX::ClipInstance::ClipInstance(
   GafferOFX::EffectImageInstance* effect,
   OFX::Host::ImageEffect::ClipDescriptor* desc )
-  : OFX::Host::ImageEffect::ClipInstance( effect, *desc ), m_effect( effect ), m_name( desc->getName() ), m_outputImage( nullptr )
+  : OFX::Host::ImageEffect::ClipInstance( effect, *desc ), m_effect( effect ), m_name( desc->getName() ), m_outputImage( nullptr ), m_externalBuffer( nullptr ), m_bufferWidth( 0 ), m_bufferHeight( 0 ), m_renderWindow( {0,0,0,0} ), m_renderWindowSet( false )
 {
 }
 
@@ -140,18 +148,23 @@ const std::string &ClipInstance::getPremult() const
 
 double ClipInstance::getAspectRatio() const
 {
-	return 1.0;
+	return m_effect->getProjectPixelAspectRatio();
 }
 
 double ClipInstance::getFrameRate() const
 {
-	return 24.0;
+	return Gaffer::Context::current()->getFramesPerSecond();
 }
 
 void ClipInstance::getFrameRange(double &startFrame, double &endFrame) const
 {
-	startFrame = 0;
-	endFrame = 24;
+	startFrame = 1;
+	endFrame = 100;
+	if( auto sn = m_effect->scriptNode() )
+	{
+		startFrame = sn->frameStartPlug()->getValue();
+		endFrame = sn->frameEndPlug()->getValue();
+	}
 }
 
 const std::string &ClipInstance::getFieldOrder() const
@@ -167,13 +180,12 @@ bool ClipInstance::getConnected() const
 
 double ClipInstance::getUnmappedFrameRate() const
 {
-	return 24;
+	return getFrameRate();
 }
 
 void ClipInstance::getUnmappedFrameRange(double &unmappedStartFrame, double &unmappedEndFrame) const
 {
-	unmappedStartFrame = 0;
-	unmappedEndFrame = 24;
+	getFrameRange( unmappedStartFrame, unmappedEndFrame );
 }
 
 bool ClipInstance::getContinuousSamples() const
@@ -184,36 +196,75 @@ bool ClipInstance::getContinuousSamples() const
 
 OfxRectD ClipInstance::getRegionOfDefinition(OfxTime time) const
 {
+	if( m_renderWindowSet )
+	{
+		return m_renderWindow;
+	}
+
+	double projectWidth = kPalSizeXPixels;
+	double projectHeight = kPalSizeYPixels;
+	// Try to use actual project format size
+	auto* effect = m_effect;
+	if( effect )
+	{
+		effect->getProjectSize( projectWidth, projectHeight );
+	}
+
 	OfxRectD v;
 	v.x1 = v.y1 = 0;
-	v.x2 = 768;
-	v.y2 = 576;
+	v.x2 = projectWidth;
+	v.y2 = projectHeight;
 	return v;
 }
 
 OFX::Host::ImageEffect::Image* ClipInstance::getImage(OfxTime time, const OfxRectD *optionalBounds)
 {
-	if ( m_name == "Output" )
+	// Ensure the clip's property set has the correct pixel depth
+	// (getClipBits reads from the property set, not from _pixelDepth)
+	getProps().setStringProperty( kOfxImageEffectPropPixelDepth, getUnmappedBitDepth() );
+
+	OfxRectI imageBounds;
+	const OfxRectI *useBounds = nullptr;
+
+	if( optionalBounds )
 	{
-		std::cout << "output image creation: " << std::endl;
-		if ( !m_outputImage )
-		{
-			m_outputImage = new Image( *this, 0 );
-		}
-
-		// add another reference to the member image for this fetch
-		// as we have a ref count of 1 due to construction, this will
-		// cause the output image never to delete by the plugin
-		// when it releases the image
-		m_outputImage->addReference();
-
-		// return it
-		return m_outputImage;
+		imageBounds.x1 = (int)optionalBounds->x1;
+		imageBounds.y1 = (int)optionalBounds->y1;
+		imageBounds.x2 = (int)optionalBounds->x2;
+		imageBounds.y2 = (int)optionalBounds->y2;
+		useBounds = &imageBounds;
 	}
 	else
 	{
-		std::cout << "input image creation" << std::endl;
-		Image *image = new Image( *this, time );
+		// Use clip's region of definition instead of hardcoded PAL size
+		OfxRectD rod = getRegionOfDefinition( time );
+		imageBounds.x1 = (int)rod.x1;
+		imageBounds.y1 = (int)rod.y1;
+		imageBounds.x2 = (int)rod.x2;
+		imageBounds.y2 = (int)rod.y2;
+		useBounds = &imageBounds;
+	}
+
+	if ( m_name == "Output" )
+	{
+		if ( !m_outputImage )
+		{
+			m_outputImage = new Image( *this, time, 0, useBounds );
+		}
+
+		m_outputImage->addReference();
+
+		return m_outputImage;
+	}
+	else if ( m_externalBuffer && m_bufferWidth > 0 && m_bufferHeight > 0 )
+	{
+		Image *image = new Image( *this, time, 0, useBounds );
+		image->setExternalData( m_externalBuffer, m_bufferWidth, m_bufferHeight );
+		return image;
+	}
+	else
+	{
+		Image *image = new Image( *this, time, 0, useBounds );
 		return image;
 	}
 }

@@ -57,9 +57,29 @@ namespace GafferOFX
 
 		public :
 
-			explicit Image( ClipInstance &clip, OfxTime t, int view = 0 );
+			explicit Image( ClipInstance &clip, OfxTime t, int view = 0, const OfxRectI *bounds = nullptr );
 			OfxRGBAColourF* pixel( int x, int y ) const;
 			~Image();
+
+			void setExternalData( OfxRGBAColourF* externalData, int width, int height )
+			{
+				setPointerProperty( kOfxImagePropData, externalData );
+
+				OfxRectI bounds;
+				bounds.x1 = 0; bounds.y1 = 0;
+				bounds.x2 = width; bounds.y2 = height;
+				setIntProperty( kOfxImagePropBounds, bounds.x1, 0 );
+				setIntProperty( kOfxImagePropBounds, bounds.y1, 1 );
+				setIntProperty( kOfxImagePropBounds, bounds.x2, 2 );
+				setIntProperty( kOfxImagePropBounds, bounds.y2, 3 );
+
+				setIntProperty( kOfxImagePropRegionOfDefinition, bounds.x1, 0 );
+				setIntProperty( kOfxImagePropRegionOfDefinition, bounds.y1, 1 );
+				setIntProperty( kOfxImagePropRegionOfDefinition, bounds.x2, 2 );
+				setIntProperty( kOfxImagePropRegionOfDefinition, bounds.y2, 3 );
+
+				setIntProperty( kOfxImagePropRowBytes, width * sizeof( OfxRGBAColourF ) );
+			}
 	};
 
 	class ClipInstance : public OFX::Host::ImageEffect::ClipInstance
@@ -69,6 +89,11 @@ namespace GafferOFX
 			GafferOFX::EffectImageInstance*	m_effect;
 			std::string	m_name;
 			Image*	m_outputImage;
+			OfxRGBAColourF* m_externalBuffer;
+			int m_bufferWidth;
+			int m_bufferHeight;
+			OfxRectD m_renderWindow;
+			bool m_renderWindowSet;
 
 		public :
 
@@ -79,6 +104,19 @@ namespace GafferOFX
 
 			 ~ClipInstance();
 			Image* getOutputImage() { return m_outputImage; }
+
+			void setExternalBuffer( OfxRGBAColourF* buffer, int width, int height )
+			{
+				m_externalBuffer = buffer;
+				m_bufferWidth = width;
+				m_bufferHeight = height;
+			}
+
+			void setRenderWindow( const OfxRectD &rw )
+			{
+				m_renderWindow = rw;
+				m_renderWindowSet = true;
+			}
 
 			///    - kOfxBitDepthFloat
 			const std::string &getUnmappedBitDepth() const override;

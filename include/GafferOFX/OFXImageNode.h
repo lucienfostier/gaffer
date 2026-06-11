@@ -41,6 +41,7 @@
 #include "GafferOFX/EffectImageInstance.h"
 
 #include "Gaffer/StringPlug.h"
+#include "Gaffer/TypedObjectPlug.h"
 
 #include "GafferImage/ImageProcessor.h"
 
@@ -69,7 +70,13 @@ class GAFFEROFX_API OFXImageNode : public GafferImage::ImageProcessor
 
 		void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const override;
 
+		void hash( const Gaffer::ValuePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		void compute( Gaffer::ValuePlug *output, const Gaffer::Context *context ) const override;
+
 		const GafferOFX::EffectImageInstance* effectInstance() const;
+
+		Gaffer::CompoundObjectPlug *ofxRenderBufferPlug();
+		const Gaffer::CompoundObjectPlug *ofxRenderBufferPlug() const;
 
 	protected :
 
@@ -80,6 +87,8 @@ class GAFFEROFX_API OFXImageNode : public GafferImage::ImageProcessor
 		void hashChannelNames( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
 		void hashChannelData( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
 
+		void hashOfxRenderBuffer( const Gaffer::Context *context, IECore::MurmurHash &h ) const;
+
 		IECore::ConstStringVectorDataPtr computeViewNames( const Gaffer::Context *context, const GafferImage::ImagePlug *parent ) const override;
 		GafferImage::Format computeFormat( const Gaffer::Context *context, const GafferImage::ImagePlug *parent ) const override;
 		Imath::Box2i computeDataWindow( const Gaffer::Context *context, const GafferImage::ImagePlug *parent ) const override;
@@ -89,10 +98,14 @@ class GAFFEROFX_API OFXImageNode : public GafferImage::ImageProcessor
 		IECore::ConstStringVectorDataPtr computeChannelNames( const Gaffer::Context *context, const GafferImage::ImagePlug *parent ) const override;
 		IECore::ConstFloatVectorDataPtr computeChannelData( const std::string &channelName, const Imath::V2i &tileOrigin, const Gaffer::Context *context, const GafferImage::ImagePlug *parent ) const override;
 
+		IECore::ConstCompoundObjectPtr computeOfxRenderBuffer( const Gaffer::Context *context ) const;
+
 	private :
 
+		void plugSet( Gaffer::Plug *plug );
+
 		static size_t g_firstPlugIndex;
-		std::unique_ptr<GafferOFX::EffectImageInstance> m_instance;
+		mutable std::unique_ptr<GafferOFX::EffectImageInstance> m_instance;
 
 
 };

@@ -38,8 +38,17 @@
 #include "GafferOFX/Host.h"
 #include "GafferOFX/ClipInstance.h"
 
+#include "Gaffer/Context.h"
 #include "Gaffer/Metadata.h"
 #include "Gaffer/ArrayPlug.h"
+// CompoundObjectPlug provided via OFXImageNode.h which includes Gaffer/TypedObjectPlug.h
+
+#include "GafferImage/ImageAlgo.h"
+#include "GafferImage/Sampler.h"
+
+#include "IECore/BoxOps.h"
+
+#include <iostream>
 
 using namespace std;
 using namespace Imath;
@@ -57,11 +66,21 @@ GAFFER_NODE_DEFINE_TYPE( OFXImageNode );
 size_t OFXImageNode::g_firstPlugIndex = 0;
 
 OFXImageNode::OFXImageNode( const std::string &name )
-	: ImageProcessor( name, 0, 1000 )
+    : ImageProcessor( name )
 {
 	storeIndexOfNextChild( g_firstPlugIndex );
 	addChild( new StringPlug( "pluginId" ) );
 	addChild( new Plug( "parameters", Plug::In, Plug::Default & ~Plug::AcceptsInputs ) );
+	addChild( new CompoundObjectPlug( "__ofxRenderBuffer", Plug::Out, new CompoundObject, Plug::Default & ~Plug::Serialisable ) );
+	plugSetSignal().connect( [this]( Gaffer::Plug *plug ) { plugSet( plug ); } );
+}
+
+void OFXImageNode::plugSet( Gaffer::Plug *plug )
+{
+	if( plug == pluginIdPlug() && !m_instance )
+	{
+		createPluginInstance();
+	}
 }
 
 OFXImageNode::~OFXImageNode()
@@ -80,41 +99,16 @@ bool OFXImageNode::createPluginInstance()
 				)
 		);
 
-		const auto& instanceDesc = m_instance->getDescriptor();
-		const auto& clips = instanceDesc.getClips();
-		size_t numInputs = 0;
+		m_instance->createInstanceAction();
 
-		for ( const auto& clip : clips )
-		{
-			if ( clip.first == "Output" )
-			{
-				continue;
-			}
-			numInputs++;
-			inPlugs()->resize( std::max( inPlugs()->children().size(), numInputs ) ); // Add new plug if needed.
-			IECore::ConstStringDataPtr label = new StringData( clip.first );
-			Metadata::registerValue( inPlugs()->getChild( numInputs - 1 ), "label", label );
-			Metadata::registerValue( inPlugs()->getChild( numInputs - 1 ), "noduleLayout:label", label );
-		}
-		inPlugs()->resize( numInputs );
+		m_instance->getClipPreferences();
 
-		OfxStatus stat = m_instance->createInstanceAction();
-		std::cout << "create instance action: " << stat << std::endl;
-
-		// now we need to to call getClipPreferences on the instance so that it does the clip component/depth
-		// logic and caches away the components and depth on each clip.
-		bool ok = m_instance->getClipPreferences();
-		std::cout << "get clip preference: " << ok << std::endl;
-
-		// current render scale of 1
 		OfxPointD renderScale;
 		renderScale.x = renderScale.y = 1.0;
 		int numFramesToRender = 1;
-	
-		// say we are about to render a bunch of frames 
-		stat = m_instance->beginRenderAction(0, numFramesToRender, 1.0, false, renderScale, /*sequential=*/true, /*interactive=*/false);
-		std::cout << "begin render action: " << stat << std::endl;
-	
+
+		m_instance->beginRenderAction(0, numFramesToRender, 1.0, false, renderScale, true, false);
+
 		return true;
 	}
 	return false;
@@ -140,9 +134,77 @@ const Gaffer::Plug *OFXImageNode::parametersPlug() const
 	return getChild<Plug>( g_firstPlugIndex + 1 );
 }
 
+CompoundObjectPlug *OFXImageNode::ofxRenderBufferPlug()
+{
+	return getChild<CompoundObjectPlug>( g_firstPlugIndex + 2 );
+}
+
+const CompoundObjectPlug *OFXImageNode::ofxRenderBufferPlug() const
+{
+	return getChild<CompoundObjectPlug>( g_firstPlugIndex + 2 );
+}
+
 void OFXImageNode::affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const
 {
 	ImageProcessor::affects( input, outputs );
+
+	// Guard against uninitialized inPlug when minInputs=0
+	if( !inPlug() )
+	{
+		return;
+	}
+
+	// Input image data affects the render buffer
+	if( input == inPlug()->formatPlug() || input == inPlug()->dataWindowPlug() || input == inPlug()->channelNamesPlug() )
+	{
+		outputs.push_back( ofxRenderBufferPlug() );
+	}
+
+	// Input channel data affects the render buffer
+	if( input == inPlug()->channelDataPlug() )
+	{
+		outputs.push_back( ofxRenderBufferPlug() );
+	}
+
+	// Parameters and plugin ID affect the render buffer
+	if( input == pluginIdPlug() || parametersPlug()->isAncestorOf( input ) )
+	{
+		outputs.push_back( ofxRenderBufferPlug() );
+	}
+
+	// Render buffer affects all output image properties
+	if( input == ofxRenderBufferPlug() )
+	{
+		outputs.push_back( outPlug()->formatPlug() );
+		outputs.push_back( outPlug()->dataWindowPlug() );
+		outputs.push_back( outPlug()->channelNamesPlug() );
+		outputs.push_back( outPlug()->channelDataPlug() );
+	}
+}
+
+void OFXImageNode::hash( const Gaffer::ValuePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const
+{
+	if( output == ofxRenderBufferPlug() )
+	{
+		hashOfxRenderBuffer( context, h );
+	}
+	else
+	{
+		ImageProcessor::hash( output, context, h );
+	}
+}
+
+void OFXImageNode::compute( Gaffer::ValuePlug *output, const Gaffer::Context *context ) const
+{
+	if( output == ofxRenderBufferPlug() )
+	{
+		IECore::ConstCompoundObjectPtr renderBuffer = computeOfxRenderBuffer( context );
+		static_cast<Gaffer::CompoundObjectPlug *>( output )->setValue( renderBuffer );
+	}
+	else
+	{
+		ImageProcessor::compute( output, context );
+	}
 }
 
 void OFXImageNode::hashViewNames( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const
@@ -158,21 +220,29 @@ IECore::ConstStringVectorDataPtr OFXImageNode::computeViewNames( const Gaffer::C
 void OFXImageNode::hashFormat( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const
 {
 	ImageProcessor::hashFormat( output, context, h );
+	if( output == outPlug() )
+	{
+		inPlug()->formatPlug()->hash( h );
+	}
 }
 
 GafferImage::Format OFXImageNode::computeFormat( const Gaffer::Context *context, const ImagePlug *parent ) const
 {
-	return GafferImage::Format();
+	return inPlug()->formatPlug()->getValue();
 }
 
 void OFXImageNode::hashDataWindow( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const
 {
 	ImageProcessor::hashDataWindow( output, context, h );
+	if( output == outPlug() )
+	{
+		inPlug()->dataWindowPlug()->hash( h );
+	}
 }
 
 Imath::Box2i OFXImageNode::computeDataWindow( const Gaffer::Context *context, const ImagePlug *parent ) const
 {
-	return Box2i();
+	return inPlug()->dataWindowPlug()->getValue();
 }
 
 IECore::ConstCompoundDataPtr OFXImageNode::computeMetadata( const Gaffer::Context *context, const ImagePlug *parent ) const
@@ -182,7 +252,7 @@ IECore::ConstCompoundDataPtr OFXImageNode::computeMetadata( const Gaffer::Contex
 
 bool OFXImageNode::computeDeep( const Gaffer::Context *context, const ImagePlug *parent ) const
 {
-	return true;
+	return false;
 }
 
 void OFXImageNode::hashSampleOffsets( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const
@@ -192,71 +262,305 @@ void OFXImageNode::hashSampleOffsets( const GafferImage::ImagePlug *output, cons
 
 IECore::ConstIntVectorDataPtr OFXImageNode::computeSampleOffsets( const Imath::V2i &tileOrigin, const Gaffer::Context *context, const ImagePlug *parent ) const
 {
-	return ImagePlug::emptyTileSampleOffsets();
+	return ImagePlug::flatTileSampleOffsets();
 }
 
 void OFXImageNode::hashChannelNames( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const
 {
 	ImageProcessor::hashChannelNames( output, context, h );
+	if( output == outPlug() )
+	{
+		inPlug()->channelNamesPlug()->hash( h );
+	}
 }
 
 IECore::ConstStringVectorDataPtr OFXImageNode::computeChannelNames( const Gaffer::Context *context, const ImagePlug *parent ) const
 {
-	return new IECore::StringVectorData();
+	return inPlug()->channelNamesPlug()->getValue();
 }
 
 void OFXImageNode::hashChannelData( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const
 {
-	h = ImagePlug::emptyTile()->Object::hash();
+	ImageProcessor::hashChannelData( output, context, h );
+	if( output == outPlug() )
+	{
+		ofxRenderBufferPlug()->hash( h );
+		h.append( context->get<V2i>( ImagePlug::tileOriginContextName ) );
+		h.append( context->get<std::string>( ImagePlug::channelNameContextName ) );
+	}
 }
 
 IECore::ConstFloatVectorDataPtr OFXImageNode::computeChannelData( const std::string &channelName, const Imath::V2i &tileOrigin, const Gaffer::Context *context, const ImagePlug *parent ) const
 {
+	// Read the full cached render buffer in global scope
+	ImagePlug::GlobalScope globalScope( context );
+	IECore::ConstCompoundObjectPtr renderBuffer = ofxRenderBufferPlug()->getValue();
 
-	if ( m_instance )
+	if( !renderBuffer )
 	{
-		// The render window is in pixel coordinates
-		OfxPointD renderScale;
-		renderScale.x = renderScale.y = 1.0;
-
-		// ie: render scale and a PAR of not 1
-		OfxRectI  renderWindow;
-		renderWindow.x1 = renderWindow.y1 = 0;
-		renderWindow.x2 = 720;
-		renderWindow.y2 = 576;
-	
-		/// RoI is in canonical coords, 
-		OfxRectD  regionOfInterest;
-		regionOfInterest.x1 = regionOfInterest.y1 = 0;
-		regionOfInterest.x2 = renderWindow.x2 * m_instance->getProjectPixelAspectRatio();
-		regionOfInterest.y2 = 576;
-	
-		// get the output clip
-		GafferOFX::ClipInstance* outputClip = dynamic_cast<GafferOFX::ClipInstance*>(m_instance->getClip("Output"));
-		std::cout << "output clip: " << outputClip << std::endl;
-
-		OfxTime frame = context->getFrame();
-		std::map<OFX::Host::ImageEffect::ClipInstance *, OfxRectD> rois;
-		m_instance->getRegionOfInterestAction(frame, renderScale, regionOfInterest, rois);
-
-		// render a frame
-		m_instance->renderAction(frame, kOfxImageFieldBoth, renderWindow, renderScale, /*sequential=*/true, /*interactive=*/false, /*draft=*/false);
-		// get the output image buffer
-		GafferOFX::Image *outputImage = outputClip->getOutputImage();
-		std::cout << "output image : " << outputImage << std::endl;
-		float t = outputImage->pixel( 0, 0 )->r;
-		std::cout << "output channel data pixel value: " << t << std::endl;
-
-
-		GafferOFX::ClipInstance* inputClip = dynamic_cast<GafferOFX::ClipInstance*>(m_instance->getClip("Source"));
-		std::cout << "input clip: " << inputClip << std::endl;
-
-		GafferOFX::Image *inputImage = dynamic_cast<GafferOFX::Image*>(inputClip->getImage(0, nullptr));
-		std::cout << "input image : " << inputImage << std::endl;
-		t = inputImage->pixel( 0, 0 )->r;
-		std::cout << "input channel data pixel value: " << t << std::endl;
+		return ImagePlug::emptyTile();
 	}
-	return ImagePlug::emptyTile();
+
+	// Determine which channel to extract
+	const std::string channelKey = ( channelName == "R" || channelName == "G" || channelName == "B" || channelName == "A" )
+		? channelName : "";
+
+	if( channelKey.empty() )
+	{
+		return ImagePlug::emptyTile();
+	}
+
+	FloatVectorDataPtr channelData = runTimeCast<FloatVectorData>(
+		const_cast<Data*>( renderBuffer->member<Data>( channelKey ) )
+	);
+
+	Box2iDataPtr dataWindowData = runTimeCast<Box2iData>(
+		const_cast<Data*>( renderBuffer->member<Data>( "dataWindow" ) )
+	);
+
+	if( !channelData || !dataWindowData )
+	{
+		return ImagePlug::emptyTile();
+	}
+
+	const Box2i &dataWindow = dataWindowData->readable();
+	int width = dataWindow.size().x;
+	const vector<float> &values = channelData->readable();
+
+	// Extract the 64x64 tile region
+	FloatVectorDataPtr tileData = new FloatVectorData();
+	vector<float> &tile = tileData->writable();
+	tile.reserve( ImagePlug::tileSize() * ImagePlug::tileSize() );
+
+	Box2i tileBound(
+		V2i( tileOrigin.x, tileOrigin.y ),
+		V2i( tileOrigin.x + ImagePlug::tileSize(), tileOrigin.y + ImagePlug::tileSize() )
+	);
+
+	for( int y = tileOrigin.y; y < tileOrigin.y + ImagePlug::tileSize(); ++y )
+	{
+		for( int x = tileOrigin.x; x < tileOrigin.x + ImagePlug::tileSize(); ++x )
+		{
+			if( dataWindow.intersects( V2i( x, y ) ) )
+			{
+				int srcIdx = ( y - dataWindow.min.y ) * width + ( x - dataWindow.min.x );
+				if( srcIdx < (int)values.size() )
+				{
+					tile.push_back( values[srcIdx] );
+				}
+				else
+				{
+					tile.push_back( 0.0f );
+				}
+			}
+			else
+			{
+				tile.push_back( 0.0f );
+			}
+		}
+	}
+
+	return tileData;
+}
+
+void OFXImageNode::hashOfxRenderBuffer( const Gaffer::Context *context, IECore::MurmurHash &h ) const
+{
+	// Hash input metadata
+	ImagePlug::GlobalScope globalScope( context );
+	inPlug()->formatPlug()->hash( h );
+	inPlug()->dataWindowPlug()->hash( h );
+	inPlug()->channelNamesPlug()->hash( h );
+
+	// Hash all input channel data tiles, since the OFX render
+	// processes all channels over the entire data window
+	Box2i dataWindow = inPlug()->dataWindowPlug()->getValue();
+	if( dataWindow.size().x > 0 && dataWindow.size().y > 0 )
+	{
+		const std::string channels[] = { "R", "G", "B", "A" };
+		for( int y = dataWindow.min.y; y < dataWindow.max.y; y += ImagePlug::tileSize() )
+		{
+			for( int x = dataWindow.min.x; x < dataWindow.max.x; x += ImagePlug::tileSize() )
+			{
+				V2i tileOrigin( x, y );
+				for( const auto &channel : channels )
+				{
+					h.append( inPlug()->channelDataHash( channel, tileOrigin ) );
+				}
+			}
+		}
+	}
+
+	// Hash parameters and plugin ID
+	pluginIdPlug()->hash( h );
+	for( const auto &child : parametersPlug()->children() )
+	{
+		if( auto *valuePlug = runTimeCast<const ValuePlug>( child.get() ) )
+		{
+			valuePlug->hash( h );
+		}
+	}
+}
+
+IECore::ConstCompoundObjectPtr OFXImageNode::computeOfxRenderBuffer( const Gaffer::Context *context ) const
+{
+	CompoundObjectPtr result = new CompoundObject();
+
+	if( !m_instance )
+	{
+		return result;
+	}
+
+	// Get input image data
+	ImagePlug::GlobalScope globalScope( context );
+	Format format = inPlug()->formatPlug()->getValue();
+	Box2i dataWindow = inPlug()->dataWindowPlug()->getValue();
+	ConstStringVectorDataPtr channelNamesData = inPlug()->channelNamesPlug()->getValue();
+
+	int width = dataWindow.size().x;
+	int height = dataWindow.size().y;
+
+	if( width <= 0 || height <= 0 )
+	{
+		// Use format size if no data window
+		dataWindow = Box2i( V2i( 0, 0 ), V2i( (int)format.width(), (int)format.height() ) );
+		width = dataWindow.size().x;
+		height = dataWindow.size().y;
+	}
+
+	// Read the input channels and create interleaved buffer
+	auto frameBuffer = std::make_unique<OfxRGBAColourF[]>( width * height );
+
+	// Initialize to black (for missing channels)
+	for( int i = 0; i < width * height; ++i )
+	{
+		frameBuffer[i].r = 0.0f;
+		frameBuffer[i].g = 0.0f;
+		frameBuffer[i].b = 0.0f;
+		frameBuffer[i].a = 1.0f;
+	}
+
+	// Use Sampler to read each channel from the input
+	{
+		Sampler rSampler( inPlug(), "R", dataWindow );
+		Sampler gSampler( inPlug(), "G", dataWindow );
+		Sampler bSampler( inPlug(), "B", dataWindow );
+		Sampler aSampler( inPlug(), "A", dataWindow );
+
+
+
+		for( int y = dataWindow.min.y; y < dataWindow.max.y; ++y )
+		{
+			for( int x = dataWindow.min.x; x < dataWindow.max.x; ++x )
+			{
+				int idx = ( y - dataWindow.min.y ) * width + ( x - dataWindow.min.x );
+				frameBuffer[idx].r = rSampler.sample( x, y );
+				frameBuffer[idx].g = gSampler.sample( x, y );
+				frameBuffer[idx].b = bSampler.sample( x, y );
+				frameBuffer[idx].a = aSampler.sample( x, y );
+			}
+		}
+	}
+
+	// Set the external buffer on the Source clip
+	GafferOFX::ClipInstance* sourceClip = dynamic_cast<GafferOFX::ClipInstance*>( m_instance->getClip( "Source" ) );
+	GafferOFX::ClipInstance* outputClip = dynamic_cast<GafferOFX::ClipInstance*>( m_instance->getClip( "Output" ) );
+
+	// Set the render window (dataWindow) on clips so getRegionOfDefinition returns correct bounds
+	OfxRectD renderWindowD;
+	renderWindowD.x1 = dataWindow.min.x;
+	renderWindowD.y1 = dataWindow.min.y;
+	renderWindowD.x2 = dataWindow.max.x;
+	renderWindowD.y2 = dataWindow.max.y;
+
+	if( sourceClip )
+	{
+		sourceClip->setExternalBuffer( frameBuffer.get(), width, height );
+		sourceClip->setRenderWindow( renderWindowD );
+	}
+	if( outputClip )
+	{
+		outputClip->setRenderWindow( renderWindowD );
+	}
+
+	// Set up render parameters
+	OfxPointD renderScale;
+	renderScale.x = renderScale.y = 1.0;
+
+	OfxRectI renderWindow;
+	renderWindow.x1 = dataWindow.min.x;
+	renderWindow.y1 = dataWindow.min.y;
+	renderWindow.x2 = dataWindow.max.x;
+	renderWindow.y2 = dataWindow.max.y;
+
+	OfxTime frame = context->getFrame();
+
+	// Get region of interest and render
+	OfxRectD regionOfInterest;
+	regionOfInterest.x1 = dataWindow.min.x;
+	regionOfInterest.y1 = dataWindow.min.y;
+	regionOfInterest.x2 = dataWindow.max.x;
+	regionOfInterest.y2 = dataWindow.max.y;
+
+	std::map<OFX::Host::ImageEffect::ClipInstance *, OfxRectD> rois;
+	m_instance->getRegionOfInterestAction( frame, renderScale, regionOfInterest, rois );
+
+	m_instance->renderAction( frame, kOfxImageFieldBoth, renderWindow, renderScale, true, false, false );
+
+	if( outputClip )
+	{
+		GafferOFX::Image* outputImage = outputClip->getOutputImage();
+		if( outputImage )
+		{
+			OfxRectI outputBounds = outputImage->getBounds();
+			int outWidth = outputBounds.x2 - outputBounds.x1;
+			int outHeight = outputBounds.y2 - outputBounds.y1;
+
+			// De-interleave output buffer into separate channel FloatVectorData
+			FloatVectorDataPtr rData = new FloatVectorData();
+			FloatVectorDataPtr gData = new FloatVectorData();
+			FloatVectorDataPtr bData = new FloatVectorData();
+			FloatVectorDataPtr aData = new FloatVectorData();
+			vector<float> &rVec = rData->writable();
+			vector<float> &gVec = gData->writable();
+			vector<float> &bVec = bData->writable();
+			vector<float> &aVec = aData->writable();
+
+			rVec.resize( outWidth * outHeight );
+			gVec.resize( outWidth * outHeight );
+			bVec.resize( outWidth * outHeight );
+			aVec.resize( outWidth * outHeight );
+
+			for( int y = outputBounds.y1; y < outputBounds.y2; ++y )
+			{
+				for( int x = outputBounds.x1; x < outputBounds.x2; ++x )
+				{
+					OfxRGBAColourF* pixel = outputImage->pixel( x, y );
+					if( pixel )
+					{
+						int idx = ( y - outputBounds.y1 ) * outWidth + ( x - outputBounds.x1 );
+						rVec[idx] = pixel->r;
+						gVec[idx] = pixel->g;
+						bVec[idx] = pixel->b;
+						aVec[idx] = pixel->a;
+					}
+				}
+			}
+
+			result->members()["R"] = rData;
+			result->members()["G"] = gData;
+			result->members()["B"] = bData;
+			result->members()["A"] = aData;
+		}
+	}
+
+	// Store data window and pixel aspect
+	Box2iDataPtr dataWindowData = new Box2iData( dataWindow );
+	result->members()["dataWindow"] = dataWindowData;
+
+	FloatDataPtr parData = new FloatData( format.getPixelAspect() );
+	result->members()["pixelAspect"] = parData;
+
+	return result;
 }
 
 const GafferOFX::EffectImageInstance* OFXImageNode::effectInstance() const

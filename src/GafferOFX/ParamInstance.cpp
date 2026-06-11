@@ -73,14 +73,21 @@ IntegerInstance::IntegerInstance( GafferOFX::EffectImageInstance* effect, const 
 	setupTypedPlug<IntPlug>( name, plugParent, Plug::In, 0 );
 }
 
-OfxStatus IntegerInstance::get( int& )
+OfxStatus IntegerInstance::get( int& i )
 {
-	return kOfxStatErrMissingHostFeature;
+	auto* node = static_cast<const OFXImageNode*>( m_effect->node() );
+	auto* plug = node->parametersPlug()->getChild<IntPlug>( m_descriptor.getName() );
+	if( plug )
+	{
+		i = plug->getValue();
+		return kOfxStatOK;
+	}
+	return kOfxStatFailed;
 }
 
-OfxStatus IntegerInstance::get( OfxTime time, int& )
+OfxStatus IntegerInstance::get( OfxTime time, int& i )
 {
-	return kOfxStatErrMissingHostFeature;
+	return get( i );
 }
 
 OfxStatus IntegerInstance::set( int )
@@ -95,8 +102,6 @@ OfxStatus IntegerInstance::set( OfxTime time, int )
 
 GafferOFX::DoubleInstance::DoubleInstance( GafferOFX::EffectImageInstance* effect, const std::string& name, OFX::Host::Param::Descriptor& descriptor ) : OFX::Host::Param::DoubleInstance( descriptor ), m_effect( effect ), m_descriptor( descriptor )
 {
-
-	std::cout << "setup gaffer plug for double instance" << std::endl;
 	// TODO clarify constness
 	auto* plugParent = const_cast<GafferOFX::OFXImageNode*>(static_cast<const GafferOFX::OFXImageNode*>(m_effect->node()))->parametersPlug();
 	setupTypedPlug<FloatPlug>( name, plugParent, Plug::In, 0.0f );
@@ -104,14 +109,19 @@ GafferOFX::DoubleInstance::DoubleInstance( GafferOFX::EffectImageInstance* effec
 
 OfxStatus DoubleInstance::get( double& d )
 {
-	d = 2.0;
-	return kOfxStatOK;
+	auto* node = static_cast<const OFXImageNode*>( m_effect->node() );
+	auto* plug = node->parametersPlug()->getChild<FloatPlug>( m_descriptor.getName() );
+	if( plug )
+	{
+		d = plug->getValue();
+		return kOfxStatOK;
+	}
+	return kOfxStatFailed;
 }
 
 OfxStatus DoubleInstance::get( OfxTime time, double& d )
 {
-	d = 2.0;
-	return kOfxStatOK;
+	return get( d );
 }
 
 OfxStatus DoubleInstance::set( double )
@@ -142,14 +152,19 @@ GafferOFX::BooleanInstance::BooleanInstance( GafferOFX::EffectImageInstance* eff
 
 OfxStatus BooleanInstance::get( bool& b )
 {
-	b = true;
-	return kOfxStatOK;
+	auto* node = static_cast<const OFXImageNode*>( m_effect->node() );
+	auto* plug = node->parametersPlug()->getChild<BoolPlug>( m_descriptor.getName() );
+	if( plug )
+	{
+		b = plug->getValue();
+		return kOfxStatOK;
+	}
+	return kOfxStatFailed;
 }
 
 OfxStatus BooleanInstance::get( OfxTime time, bool& b )
 {
-	b = true;
-	return kOfxStatOK;
+	return get( b );
 }
 
 OfxStatus BooleanInstance::set( bool )
@@ -166,14 +181,21 @@ GafferOFX::ChoiceInstance::ChoiceInstance( GafferOFX::EffectImageInstance* effec
 {
 }
 
-OfxStatus ChoiceInstance::get( int& )
+OfxStatus ChoiceInstance::get( int& i )
 {
-	return kOfxStatErrMissingHostFeature;
+	auto* node = static_cast<const OFXImageNode*>( m_effect->node() );
+	auto* plug = node->parametersPlug()->getChild<IntPlug>( m_descriptor.getName() );
+	if( plug )
+	{
+		i = plug->getValue();
+		return kOfxStatOK;
+	}
+	return kOfxStatFailed;
 }
 
-OfxStatus ChoiceInstance::get( OfxTime time, int& )
+OfxStatus ChoiceInstance::get( OfxTime time, int& i )
 {
-	return kOfxStatErrMissingHostFeature;
+	return get( i );
 }
 
 OfxStatus ChoiceInstance::set( int )
@@ -192,14 +214,22 @@ GafferOFX::RGBAInstance::RGBAInstance( GafferOFX::EffectImageInstance* effect, c
 	setupTypedPlug<Color4fPlug>( name, plugParent, Plug::In, Imath::Color4f() );
 }
 
-OfxStatus RGBAInstance::get( double&, double&, double&, double& )
+OfxStatus RGBAInstance::get( double& r, double& g, double& b, double& a )
 {
-	return kOfxStatErrMissingHostFeature;
+	auto* node = static_cast<const OFXImageNode*>( m_effect->node() );
+	auto* plug = node->parametersPlug()->getChild<Color4fPlug>( m_descriptor.getName() );
+	if( plug )
+	{
+		Imath::Color4f c = plug->getValue();
+		r = c.r; g = c.g; b = c.b; a = c.a;
+		return kOfxStatOK;
+	}
+	return kOfxStatFailed;
 }
 
-OfxStatus RGBAInstance::get( OfxTime time, double&,double&,double&,double& )
+OfxStatus RGBAInstance::get( OfxTime time, double& r, double& g, double& b, double& a )
 {
-	return kOfxStatErrMissingHostFeature;
+	return get( r, g, b, a );
 }
 
 OfxStatus RGBAInstance::set( double, double, double, double )
@@ -218,14 +248,22 @@ GafferOFX::RGBInstance::RGBInstance( GafferOFX::EffectImageInstance* effect, con
 	setupTypedPlug<Color3fPlug>( name, plugParent, Plug::In, Imath::Color3f() );
 }
 
-OfxStatus RGBInstance::get( double&, double&, double& )
+OfxStatus RGBInstance::get( double& r, double& g, double& b )
 {
-	return kOfxStatErrMissingHostFeature;
+	auto* node = static_cast<const OFXImageNode*>( m_effect->node() );
+	auto* plug = node->parametersPlug()->getChild<Color3fPlug>( m_descriptor.getName() );
+	if( plug )
+	{
+		Imath::Color3f c = plug->getValue();
+		r = c.x; g = c.y; b = c.z;
+		return kOfxStatOK;
+	}
+	return kOfxStatFailed;
 }
 
-OfxStatus RGBInstance::get( OfxTime time, double&, double&, double& )
+OfxStatus RGBInstance::get( OfxTime time, double& r, double& g, double& b )
 {
-	return kOfxStatErrMissingHostFeature;
+	return get( r, g, b );
 }
 
 OfxStatus RGBInstance::set( double, double, double )
@@ -244,14 +282,22 @@ GafferOFX::Double2DInstance::Double2DInstance( GafferOFX::EffectImageInstance* e
 	setupTypedPlug<V2fPlug>( name, plugParent, Plug::In, Imath::V2f() );
 }
 
-OfxStatus Double2DInstance::get( double&, double& )
+OfxStatus Double2DInstance::get( double& x, double& y )
 {
-	return kOfxStatErrMissingHostFeature;
+	auto* node = static_cast<const OFXImageNode*>( m_effect->node() );
+	auto* plug = node->parametersPlug()->getChild<V2fPlug>( m_descriptor.getName() );
+	if( plug )
+	{
+		Imath::V2f v = plug->getValue();
+		x = v.x; y = v.y;
+		return kOfxStatOK;
+	}
+	return kOfxStatFailed;
 }
 
-OfxStatus Double2DInstance::get( OfxTime time, double&, double& )
+OfxStatus Double2DInstance::get( OfxTime time, double& x, double& y )
 {
-	return kOfxStatErrMissingHostFeature;
+	return get( x, y );
 }
 
 OfxStatus Double2DInstance::set( double, double )
@@ -271,14 +317,22 @@ GafferOFX::Integer2DInstance::Integer2DInstance( GafferOFX::EffectImageInstance*
 
 }
 
-OfxStatus Integer2DInstance::get( int&, int& )
+OfxStatus Integer2DInstance::get( int& x, int& y )
 {
-	return kOfxStatErrMissingHostFeature;
+	auto* node = static_cast<const OFXImageNode*>( m_effect->node() );
+	auto* plug = node->parametersPlug()->getChild<V2iPlug>( m_descriptor.getName() );
+	if( plug )
+	{
+		Imath::V2i v = plug->getValue();
+		x = v.x; y = v.y;
+		return kOfxStatOK;
+	}
+	return kOfxStatFailed;
 }
 
-OfxStatus Integer2DInstance::get( OfxTime time, int&, int& )
+OfxStatus Integer2DInstance::get( OfxTime time, int& x, int& y )
 {
-	return kOfxStatErrMissingHostFeature;
+	return get( x, y );
 }
 
 OfxStatus Integer2DInstance::set( int, int )
@@ -297,14 +351,22 @@ GafferOFX::Double3DInstance::Double3DInstance( GafferOFX::EffectImageInstance* e
 	setupTypedPlug<V3fPlug>( name, plugParent, Plug::In, Imath::V3f() );
 }
 
-OfxStatus Double3DInstance::get( double&, double&, double& )
+OfxStatus Double3DInstance::get( double& x, double& y, double& z )
 {
-	return kOfxStatErrMissingHostFeature;
+	auto* node = static_cast<const OFXImageNode*>( m_effect->node() );
+	auto* plug = node->parametersPlug()->getChild<V3fPlug>( m_descriptor.getName() );
+	if( plug )
+	{
+		Imath::V3f v = plug->getValue();
+		x = v.x; y = v.y; z = v.z;
+		return kOfxStatOK;
+	}
+	return kOfxStatFailed;
 }
 
-OfxStatus Double3DInstance::get( OfxTime time, double&, double&, double& )
+OfxStatus Double3DInstance::get( OfxTime time, double& x, double& y, double& z )
 {
-	return kOfxStatErrMissingHostFeature;
+	return get( x, y, z );
 }
 
 OfxStatus Double3DInstance::set( double, double, double )
@@ -324,14 +386,22 @@ GafferOFX::Integer3DInstance::Integer3DInstance( GafferOFX::EffectImageInstance*
 
 }
 
-OfxStatus Integer3DInstance::get( int&, int&, int& )
+OfxStatus Integer3DInstance::get( int& x, int& y, int& z )
 {
-	return kOfxStatErrMissingHostFeature;
+	auto* node = static_cast<const OFXImageNode*>( m_effect->node() );
+	auto* plug = node->parametersPlug()->getChild<V3iPlug>( m_descriptor.getName() );
+	if( plug )
+	{
+		Imath::V3i v = plug->getValue();
+		x = v.x; y = v.y; z = v.z;
+		return kOfxStatOK;
+	}
+	return kOfxStatFailed;
 }
 
-OfxStatus Integer3DInstance::get( OfxTime time, int&, int&, int& )
+OfxStatus Integer3DInstance::get( OfxTime time, int& x, int& y, int& z )
 {
-	return kOfxStatErrMissingHostFeature;
+	return get( x, y, z );
 }
 
 OfxStatus Integer3DInstance::set( int, int, int )
@@ -355,14 +425,21 @@ GafferOFX::StringInstance::StringInstance( GafferOFX::EffectImageInstance* effec
 
 }
 
-OfxStatus StringInstance::get( std::string& )
+OfxStatus StringInstance::get( std::string& s )
 {
-	return kOfxStatErrMissingHostFeature;
+	auto* node = static_cast<const OFXImageNode*>( m_effect->node() );
+	auto* plug = node->parametersPlug()->getChild<StringPlug>( m_descriptor.getName() );
+	if( plug )
+	{
+		s = plug->getValue();
+		return kOfxStatOK;
+	}
+	return kOfxStatFailed;
 }
 
-OfxStatus StringInstance::get( OfxTime time, std::string& )
+OfxStatus StringInstance::get( OfxTime time, std::string& s )
 {
-	return kOfxStatErrMissingHostFeature;
+	return get( s );
 }
 
 OfxStatus StringInstance::set( const char* )
