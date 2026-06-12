@@ -243,3 +243,17 @@ void EffectImageInstance::setNode(const Gaffer::Node* node)
 {
 	m_node = node;
 }
+
+OfxStatus EffectImageInstance::mainEntry(const char *action, const void *handle, OFX::Host::Property::Set *inArgs, OFX::Host::Property::Set *outArgs)
+{
+	typedef OFX::Host::ImageEffect::Instance BaseInstance;
+	OfxStatus result = BaseInstance::mainEntry( action, handle, inArgs, outArgs );
+	std::cerr << "DEBUG mainEntry action=" << (action ? action : "null") << " result=" << result;
+	if( strcmp( action, "OfxImageEffectActionRender" ) == 0 )
+	{
+		void* pluginBinary = *(void**)( (char*)this + 0xc0 );
+		std::cerr << " pluginBinary=" << pluginBinary;
+	}
+	std::cerr << std::endl;
+	return result;
+}

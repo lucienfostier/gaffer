@@ -244,6 +244,7 @@ OfxRectD ClipInstance::getRegionOfDefinition(OfxTime time) const
 
 OFX::Host::ImageEffect::Image* ClipInstance::getImage(OfxTime time, const OfxRectD *optionalBounds)
 {
+	std::cerr << "DEBUG ClipInstance::getImage(" << m_name << ", time=" << time << ")" << std::endl;
 	// Ensure the clip's property set has the correct pixel depth
 	// (getClipBits reads from the property set, not from _pixelDepth)
 	getProps().setStringProperty( kOfxImageEffectPropPixelDepth, getUnmappedBitDepth() );

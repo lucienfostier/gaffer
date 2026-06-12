@@ -73,6 +73,7 @@ class GAFFEROFX_API EffectImageInstance : public OFX::Host::ImageEffect::Instanc
 											   va_list args) override;
 	
 		OfxStatus clearPersistentMessage() override;
+		OfxStatus mainEntry(const char *action, const void *handle, OFX::Host::Property::Set *inArgs, OFX::Host::Property::Set *outArgs) override;
 
 		void getProjectSize(double& xSize, double& ySize) const override;
 		void getProjectOffset(double& xOffset, double& yOffset) const override;
