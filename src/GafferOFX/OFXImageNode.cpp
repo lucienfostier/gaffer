@@ -48,6 +48,7 @@
 
 #include "IECore/BoxOps.h"
 
+#include <algorithm>
 #include <iostream>
 
 using namespace std;
@@ -380,13 +381,14 @@ void OFXImageNode::hashOfxRenderBuffer( const Gaffer::Context *context, IECore::
 	Box2i dataWindow = inPlug()->dataWindowPlug()->getValue();
 	if( dataWindow.size().x > 0 && dataWindow.size().y > 0 )
 	{
-		const std::string channels[] = { "R", "G", "B", "A" };
+		IECore::ConstStringVectorDataPtr channelNamesData = inPlug()->channelNamesPlug()->getValue();
+		const auto &channelNames = channelNamesData->readable();
 		for( int y = dataWindow.min.y; y < dataWindow.max.y; y += ImagePlug::tileSize() )
 		{
 			for( int x = dataWindow.min.x; x < dataWindow.max.x; x += ImagePlug::tileSize() )
 			{
 				V2i tileOrigin( x, y );
-				for( const auto &channel : channels )
+				for( const auto &channel : channelNames )
 				{
 					h.append( inPlug()->channelDataHash( channel, tileOrigin ) );
 				}
@@ -407,6 +409,7 @@ void OFXImageNode::hashOfxRenderBuffer( const Gaffer::Context *context, IECore::
 
 IECore::ConstCompoundObjectPtr OFXImageNode::computeOfxRenderBuffer( const Gaffer::Context *context ) const
 {
+	std::lock_guard<std::mutex> lock( m_renderMutex );
 	CompoundObjectPtr result = new CompoundObject();
 
 	if( !m_instance )
@@ -431,38 +434,65 @@ IECore::ConstCompoundObjectPtr OFXImageNode::computeOfxRenderBuffer( const Gaffe
 		height = dataWindow.size().y;
 	}
 
-	// Read the input channels and create interleaved buffer
+	// Determine which channels are available in the input
+	const vector<string> &channelNames = channelNamesData->readable();
+	bool hasR = find( channelNames.begin(), channelNames.end(), "R" ) != channelNames.end();
+	bool hasG = find( channelNames.begin(), channelNames.end(), "G" ) != channelNames.end();
+	bool hasB = find( channelNames.begin(), channelNames.end(), "B" ) != channelNames.end();
+	bool hasA = find( channelNames.begin(), channelNames.end(), "A" ) != channelNames.end();
+
+	// Allocate RGBA buffer — plugins always expect 4-component pixels
 	auto frameBuffer = std::make_unique<OfxRGBAColourF[]>( width * height );
 
-	// Initialize to black (for missing channels)
+	// Initialize to black, A=1.0 opaque if no alpha channel
 	for( int i = 0; i < width * height; ++i )
 	{
 		frameBuffer[i].r = 0.0f;
 		frameBuffer[i].g = 0.0f;
 		frameBuffer[i].b = 0.0f;
-		frameBuffer[i].a = 1.0f;
+		frameBuffer[i].a = hasA ? 0.0f : 1.0f;
 	}
 
-	// Use Sampler to read each channel from the input
+	// Sample channels that exist in the input
+	if( hasR )
 	{
 		Sampler rSampler( inPlug(), "R", dataWindow );
-		Sampler gSampler( inPlug(), "G", dataWindow );
-		Sampler bSampler( inPlug(), "B", dataWindow );
-		Sampler aSampler( inPlug(), "A", dataWindow );
-
-
-
 		for( int y = dataWindow.min.y; y < dataWindow.max.y; ++y )
-		{
 			for( int x = dataWindow.min.x; x < dataWindow.max.x; ++x )
 			{
 				int idx = ( y - dataWindow.min.y ) * width + ( x - dataWindow.min.x );
 				frameBuffer[idx].r = rSampler.sample( x, y );
+			}
+	}
+	if( hasG )
+	{
+		Sampler gSampler( inPlug(), "G", dataWindow );
+		for( int y = dataWindow.min.y; y < dataWindow.max.y; ++y )
+			for( int x = dataWindow.min.x; x < dataWindow.max.x; ++x )
+			{
+				int idx = ( y - dataWindow.min.y ) * width + ( x - dataWindow.min.x );
 				frameBuffer[idx].g = gSampler.sample( x, y );
+			}
+	}
+	if( hasB )
+	{
+		Sampler bSampler( inPlug(), "B", dataWindow );
+		for( int y = dataWindow.min.y; y < dataWindow.max.y; ++y )
+			for( int x = dataWindow.min.x; x < dataWindow.max.x; ++x )
+			{
+				int idx = ( y - dataWindow.min.y ) * width + ( x - dataWindow.min.x );
 				frameBuffer[idx].b = bSampler.sample( x, y );
+			}
+	}
+	if( hasA )
+	{
+		Sampler aSampler( inPlug(), "A", dataWindow );
+		for( int y = dataWindow.min.y; y < dataWindow.max.y; ++y )
+			for( int x = dataWindow.min.x; x < dataWindow.max.x; ++x )
+			{
+				int idx = ( y - dataWindow.min.y ) * width + ( x - dataWindow.min.x );
 				frameBuffer[idx].a = aSampler.sample( x, y );
 			}
-		}
 	}
 
 	// Set the external buffer on the Source clip

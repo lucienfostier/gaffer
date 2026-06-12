@@ -595,9 +595,11 @@ if os.environ.get( "OFX_ROOT" ) and moduleSearchPath.find( "GafferOFX" ) :
 
 	if plugins :
 		for pluginId in sorted( plugins ) :
+			label = __ofxPluginLabel( pluginId )
+			nodeName = pluginId.rsplit( ".", 1 )[-1]
 			nodeMenu.append(
-				"/OFX/" + __ofxPluginLabel( pluginId ),
-				functools.partial( __ofxNodeCreator, pluginId = pluginId ),
+				"/OFX/" + label,
+				functools.partial( __ofxNodeCreator, nodeName, pluginId ),
 				searchText = pluginId,
 			)
 		nodeMenu.definition().append( "/OFX/__Divider__", { "divider" : True } )

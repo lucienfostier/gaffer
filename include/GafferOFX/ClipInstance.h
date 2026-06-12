@@ -41,6 +41,8 @@
 
 #include "HostSupport/ofxhClip.h"
 
+#include <mutex>
+
 //#define OFXHOSTDEMOCLIPLENGTH 1.0
 
 namespace GafferOFX
@@ -49,7 +51,7 @@ namespace GafferOFX
 
 	class Image : public OFX::Host::ImageEffect::Image 
 	{
-		using OfxRGBAColourFPtr = std::unique_ptr<OfxRGBAColourF>;
+		using OfxRGBAColourFPtr = std::unique_ptr<OfxRGBAColourF[]>;
 
 		protected :
 
@@ -61,22 +63,7 @@ namespace GafferOFX
 			OfxRGBAColourF* pixel( int x, int y ) const;
 			~Image();
 
-			void setExternalData( OfxRGBAColourF* externalData, int width, int height, const OfxRectI &bounds )
-			{
-				setPointerProperty( kOfxImagePropData, externalData );
-
-				setIntProperty( kOfxImagePropBounds, bounds.x1, 0 );
-				setIntProperty( kOfxImagePropBounds, bounds.y1, 1 );
-				setIntProperty( kOfxImagePropBounds, bounds.x2, 2 );
-				setIntProperty( kOfxImagePropBounds, bounds.y2, 3 );
-
-				setIntProperty( kOfxImagePropRegionOfDefinition, bounds.x1, 0 );
-				setIntProperty( kOfxImagePropRegionOfDefinition, bounds.y1, 1 );
-				setIntProperty( kOfxImagePropRegionOfDefinition, bounds.x2, 2 );
-				setIntProperty( kOfxImagePropRegionOfDefinition, bounds.y2, 3 );
-
-				setIntProperty( kOfxImagePropRowBytes, width * sizeof( OfxRGBAColourF ) );
-			}
+			void setExternalData( const void* externalData, int width, int height, const OfxRectI &bounds );
 	};
 
 	class ClipInstance : public OFX::Host::ImageEffect::ClipInstance
@@ -91,6 +78,7 @@ namespace GafferOFX
 			int m_bufferHeight;
 			OfxRectD m_renderWindow;
 			bool m_renderWindowSet;
+			std::mutex m_outputImageMutex;
 
 		public :
 

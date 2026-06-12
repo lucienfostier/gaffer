@@ -118,10 +118,28 @@ Image::~Image()
 {
 }
 
+void Image::setExternalData( const void* externalData, int width, int height, const OfxRectI &bounds )
+{
+	setPointerProperty( kOfxImagePropData, const_cast<void*>( externalData ) );
+
+	setIntProperty( kOfxImagePropBounds, bounds.x1, 0 );
+	setIntProperty( kOfxImagePropBounds, bounds.y1, 1 );
+	setIntProperty( kOfxImagePropBounds, bounds.x2, 2 );
+	setIntProperty( kOfxImagePropBounds, bounds.y2, 3 );
+
+	setIntProperty( kOfxImagePropRegionOfDefinition, bounds.x1, 0 );
+	setIntProperty( kOfxImagePropRegionOfDefinition, bounds.y1, 1 );
+	setIntProperty( kOfxImagePropRegionOfDefinition, bounds.x2, 2 );
+	setIntProperty( kOfxImagePropRegionOfDefinition, bounds.y2, 3 );
+
+	setStringProperty( kOfxImageEffectPropComponents, kOfxImageComponentRGBA );
+	setIntProperty( kOfxImagePropRowBytes, width * sizeof( OfxRGBAColourF ) );
+}
+
 GafferOFX::ClipInstance::ClipInstance(
   GafferOFX::EffectImageInstance* effect,
   OFX::Host::ImageEffect::ClipDescriptor* desc )
-  : OFX::Host::ImageEffect::ClipInstance( effect, *desc ), m_effect( effect ), m_name( desc->getName() ), m_outputImage( nullptr ), m_externalBuffer( nullptr ), m_bufferWidth( 0 ), m_bufferHeight( 0 ), m_renderWindow( {0,0,0,0} ), m_renderWindowSet( false )
+   : OFX::Host::ImageEffect::ClipInstance( effect, *desc ), m_effect( effect ), m_name( desc->getName() ), m_outputImage( nullptr ), m_externalBuffer( nullptr ), m_bufferWidth( 0 ), m_bufferHeight( 0 ), m_renderWindow( {0,0,0,0} ), m_renderWindowSet( false )
 {
 }
 
@@ -141,6 +159,8 @@ const std::string &ClipInstance::getUnmappedBitDepth() const
 
 const std::string &ClipInstance::getUnmappedComponents() const
 {
+	// Always RGBA — plugins expect 4-component pixels regardless of
+	// what channels the input image actually has.
 	static const std::string v( kOfxImageComponentRGBA );
 	return v;
 }
@@ -252,15 +272,15 @@ OFX::Host::ImageEffect::Image* ClipInstance::getImage(OfxTime time, const OfxRec
 
 	if ( m_name == "Output" )
 	{
+		std::lock_guard<std::mutex> lock( m_outputImageMutex );
 		if ( m_outputImage )
 		{
 			m_outputImage->releaseReference();
 			m_outputImage = nullptr;
 		}
 		m_outputImage = new Image( *this, time, 0, useBounds );
-		// One reference for m_outputImage to keep it alive after the
-		// plugin releases its reference, and one for the plugin caller.
-		m_outputImage->addReference();
+		// One reference to keep m_outputImage alive after
+		// the SDK's clipReleaseImage drops its reference.
 		m_outputImage->addReference();
 
 		return m_outputImage;

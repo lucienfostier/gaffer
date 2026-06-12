@@ -138,6 +138,68 @@ class OFXImageNodeTest( GafferTest.TestCase ) :
 				tile = gain["out"].channelData( "R", imath.V2i( tx, ty ) )
 				self.assertEqual( len( tile ), gain["out"].tileSize() * gain["out"].tileSize() )
 
+	def testRGBOnlyInput( self ) :
+
+		scriptNode = Gaffer.ScriptNode()
+		c = GafferImage.Checkerboard()
+		scriptNode.addChild( c )
+		c["format"].setValue( GafferImage.Format( 64, 64 ) )
+		c["colorA"].setValue( imath.Color4f( 0.01, 0.47, 0.00, 1.0 ) )
+		c["colorB"].setValue( imath.Color4f( 0.50, 0.42, 0.81, 1.0 ) )
+
+		dc = GafferImage.DeleteChannels()
+		scriptNode.addChild( dc )
+		dc["in"].setInput( c["out"] )
+		dc["mode"].setValue( GafferImage.DeleteChannels.Mode.Keep )
+		dc["channels"].setValue( "R G B" )
+		self.assertEqual( list( dc["out"]["channelNames"].getValue() ), [ "R", "G", "B" ] )
+
+		n = GafferOFX.OFXImageNode()
+		scriptNode.addChild( n )
+		n["in"].setInput( dc["out"] )
+		n["pluginId"].setValue( "uk.co.thefoundry.OfxInvertExample" )
+		n.createPluginInstance()
+
+		channels = list( n["out"]["channelNames"].getValue() )
+		self.assertEqual( channels, [ "R", "G", "B" ] )
+		for ch in [ "R", "G", "B" ] :
+			tile = n["out"].channelData( ch, imath.V2i( 0 ) )
+			self.assertEqual( len( tile ), n["out"].tileSize() * n["out"].tileSize() )
+
+		# Verify channels produce distinct non-gray values
+		dw = n["out"]["dataWindow"].getValue()
+		r0 = GafferImage.Sampler( n["out"], "R", dw ).sample( 0, 0 )
+		g0 = GafferImage.Sampler( n["out"], "G", dw ).sample( 0, 0 )
+		b0 = GafferImage.Sampler( n["out"], "B", dw ).sample( 0, 0 )
+		self.assertNotAlmostEqual( r0, g0, places = 3 )
+		self.assertNotAlmostEqual( g0, b0, places = 3 )
+
+	def testAlphaOnlyInput( self ) :
+
+		scriptNode = Gaffer.ScriptNode()
+		c = GafferImage.Checkerboard()
+		scriptNode.addChild( c )
+		c["format"].setValue( GafferImage.Format( 64, 64 ) )
+
+		dc = GafferImage.DeleteChannels()
+		scriptNode.addChild( dc )
+		dc["in"].setInput( c["out"] )
+		dc["mode"].setValue( GafferImage.DeleteChannels.Mode.Keep )
+		dc["channels"].setValue( "A" )
+		self.assertEqual( list( dc["out"]["channelNames"].getValue() ), [ "A" ] )
+
+		n = GafferOFX.OFXImageNode()
+		scriptNode.addChild( n )
+		n["in"].setInput( dc["out"] )
+		n["pluginId"].setValue( "uk.co.thefoundry.BasicGainPlugin" )
+		n.createPluginInstance()
+		n["parameters"]["scale"].setValue( 2.0 )
+
+		channels = list( n["out"]["channelNames"].getValue() )
+		self.assertEqual( channels, [ "A" ] )
+		tile = n["out"].channelData( "A", imath.V2i( 0 ) )
+		self.assertEqual( len( tile ), n["out"].tileSize() * n["out"].tileSize() )
+
 if __name__ == "__main__" :
 	unittest.main()
 
