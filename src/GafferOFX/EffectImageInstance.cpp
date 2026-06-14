@@ -39,6 +39,11 @@
 
 #include "GafferImage/FormatPlug.h"
 
+#include "HostSupport/ofxhPluginCache.h"
+#include "HostSupport/ofxhImageEffectAPI.h"
+
+
+
 #include <iostream>
 
 using namespace GafferOFX;
@@ -78,9 +83,17 @@ OfxStatus EffectImageInstance::clearPersistentMessage()
 
 void EffectImageInstance::getProjectSize(double& xSize, double& ySize) const
 {
-	auto gafferFormat = GafferImage::FormatPlug::getDefaultFormat(Gaffer::Context::current());
-	xSize = gafferFormat.width();
-	ySize = gafferFormat.height();
+	if( auto ctx = Gaffer::Context::current() )
+	{
+		auto gafferFormat = GafferImage::FormatPlug::getDefaultFormat( ctx );
+		xSize = gafferFormat.width();
+		ySize = gafferFormat.height();
+	}
+	else
+	{
+		xSize = 1920;
+		ySize = 1080;
+	}
 }
 
 void EffectImageInstance::getProjectOffset(double& xOffset, double& yOffset) const
@@ -91,15 +104,27 @@ void EffectImageInstance::getProjectOffset(double& xOffset, double& yOffset) con
 
 void EffectImageInstance::getProjectExtent(double& xSize, double& ySize) const
 {
-	auto gafferFormat = GafferImage::FormatPlug::getDefaultFormat(Gaffer::Context::current());
-	xSize = gafferFormat.width();
-	ySize = gafferFormat.height();
+	if( auto ctx = Gaffer::Context::current() )
+	{
+		auto gafferFormat = GafferImage::FormatPlug::getDefaultFormat( ctx );
+		xSize = gafferFormat.width();
+		ySize = gafferFormat.height();
+	}
+	else
+	{
+		xSize = 1920;
+		ySize = 1080;
+	}
 }
 
 double EffectImageInstance::getProjectPixelAspectRatio() const
 {
-	auto gafferFormat = GafferImage::FormatPlug::getDefaultFormat(Gaffer::Context::current());
-	return gafferFormat.getPixelAspect();
+	if( auto ctx = Gaffer::Context::current() )
+	{
+		auto gafferFormat = GafferImage::FormatPlug::getDefaultFormat( ctx );
+		return gafferFormat.getPixelAspect();
+	}
+	return 1.0;
 }
 
 double EffectImageInstance::getEffectDuration() const
@@ -117,7 +142,9 @@ double EffectImageInstance::getEffectDuration() const
 
 double EffectImageInstance::getFrameRate() const
 {
-	return Gaffer::Context::current()->getFramesPerSecond();
+	if( auto ctx = Gaffer::Context::current() )
+		return ctx->getFramesPerSecond();
+	return 24.0;
 }
 
 double EffectImageInstance::getFrameRecursive() const
@@ -244,16 +271,26 @@ void EffectImageInstance::setNode(const Gaffer::Node* node)
 	m_node = node;
 }
 
+// Helper: detect if this is a Mode 1 call (vtable[13](this) → return handle)
+// vs a Mode 2 call (vtable[13](this, action, handle, inArgs, outArgs) → dispatch).
+// In Mode 1, the action pointer is whatever was left in rsi (typically not "Ofx*").
+// In Mode 2, action is always a valid OFX action string starting with "Ofx".
+static inline bool isMode1Call( const char* action, const void* handle )
+{
+	if( !action )
+		return true;
+	const char* p = action;
+	// Fast check: an OFX action always starts with "OfxAction" or "OfxImageEffectAction"
+	// For a valid string, the first 3 bytes are readable. If they're not 'O','f','x',
+	// this cannot be a valid OFX action string → Mode 1.
+	if( p[0] != 'O' || p[1] != 'f' || p[2] != 'x' )
+		return true;
+	// Could be Mode 2 - let the caller verify further.
+	return false;
+}
+
 OfxStatus EffectImageInstance::mainEntry(const char *action, const void *handle, OFX::Host::Property::Set *inArgs, OFX::Host::Property::Set *outArgs)
 {
 	typedef OFX::Host::ImageEffect::Instance BaseInstance;
-	OfxStatus result = BaseInstance::mainEntry( action, handle, inArgs, outArgs );
-	std::cerr << "DEBUG mainEntry action=" << (action ? action : "null") << " result=" << result;
-	if( strcmp( action, "OfxImageEffectActionRender" ) == 0 )
-	{
-		void* pluginBinary = *(void**)( (char*)this + 0xc0 );
-		std::cerr << " pluginBinary=" << pluginBinary;
-	}
-	std::cerr << std::endl;
-	return result;
+	return BaseInstance::mainEntry( action, handle, inArgs, outArgs );
 }

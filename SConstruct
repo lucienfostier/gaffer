@@ -1148,18 +1148,28 @@ libraries = {
 		"requiredOptions" : [ "ONNX_ROOT" ],
 	},
 
-	"GafferOFX" : {
+	"OfxGafferHost" : {
 		"envAppends" : {
-			"CXXFLAGS" : [ systemIncludeArgument, "$OFX_ROOT/include/openfx" ],
-			"LIBPATH" : [ "$OFX_ROOT/lib" ],
-			"LIBS" : [ "Gaffer", "GafferImage", "OfxHost", "OfxSupport", "expat" ],
-			"CPPDEFINES" : ['OFX_DEBUG_ACTIONS',],
+			"CXXFLAGS" : [ systemIncludeArgument, "$OFX_ROOT/include/openfx", systemIncludeArgument, "$OFX_ROOT/include/openfx/HostSupport", "-fvisibility=default" ],
+			"CPPDEFINES" : [ "OFX_DEBUG_ACTIONS" ],
+			"LIBS" : [ "expat", "dl" ],
 		},
 		"pythonEnvAppends" : {
-			"CXXFLAGS" : [ systemIncludeArgument, "$OFX_ROOT/include/openfx" ],
+			"LIBS" : [ "OfxGafferHost", "dl" ],
+		},
+		"requiredOptions" : [ "OFX_ROOT" ],
+	},
+
+	"GafferOFX" : {
+		"envAppends" : {
+			"CXXFLAGS" : [ systemIncludeArgument, "$OFX_ROOT/include/openfx", systemIncludeArgument, "$OFX_ROOT/include/openfx/HostSupport" ],
+			"CPPDEFINES" : [ "OFX_DEBUG_ACTIONS" ],
 			"LIBPATH" : [ "$OFX_ROOT/lib" ],
-			"LIBS" : [ "GafferBindings", "GafferImage", "GafferOFX", "OfxHost", "OfxSupport", "expat" ],
-			"CPPDEFINES" : ['OFX_DEBUG_ACTIONS',],
+			"LIBS" : [ "Gaffer", "GafferImage", "OfxGafferHost", "expat" ],
+		},
+		"pythonEnvAppends" : {
+			"CXXFLAGS" : [ systemIncludeArgument, "$OFX_ROOT/include/openfx", systemIncludeArgument, "$OFX_ROOT/include/openfx/HostSupport" ],
+			"LIBS" : [ "GafferBindings", "GafferImage", "GafferOFX", "OfxGafferHost", "expat" ],
 		},
 		"requiredOptions" : [ "OFX_ROOT" ],
 	},

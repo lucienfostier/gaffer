@@ -77,6 +77,7 @@ namespace GafferOFX
 			int m_bufferWidth;
 			int m_bufferHeight;
 			OfxRectD m_renderWindow;
+			bool m_isConnected;
 			bool m_renderWindowSet;
 			std::mutex m_outputImageMutex;
 
@@ -95,6 +96,11 @@ namespace GafferOFX
 				m_externalBuffer = buffer;
 				m_bufferWidth = width;
 				m_bufferHeight = height;
+			}
+
+			void setConnected( bool connected )
+			{
+				m_isConnected = connected;
 			}
 
 			void setRenderWindow( const OfxRectD &rw )

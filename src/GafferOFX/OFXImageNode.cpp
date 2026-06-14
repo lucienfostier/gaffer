@@ -117,6 +117,20 @@ bool OFXImageNode::createPluginInstance()
 
 		m_instance->createInstanceAction();
 
+		// Mark all clips as connected if the "in" plug has a connection
+		const bool hasInput = inPlug()->getInput() != nullptr;
+		for( int i = 0; i < m_instance->getNClips(); ++i )
+		{
+			if( auto *clip = dynamic_cast<GafferOFX::ClipInstance*>( m_instance->getNthClip( i ) ) )
+			{
+				// Only mark non-output clips based on actual input connection
+				if( clip->getName() != "Output" )
+				{
+					clip->setConnected( hasInput );
+				}
+			}
+		}
+
 		return true;
 	}
 	return false;
@@ -480,7 +494,14 @@ IECore::ConstCompoundObjectPtr OFXImageNode::computeOfxRenderBuffer( const Gaffe
 	int width = 0, height = 0;
 	auto frameBuffer = std::unique_ptr<OfxRGBAColourF[]>();
 
+	const bool hasInput = inPlug()->getInput() != nullptr;
+
 	if( sourceClip )
+	{
+		sourceClip->setConnected( hasInput );
+	}
+
+	if( hasInput && sourceClip )
 	{
 		// Filter: use input image data
 		format = inPlug()->formatPlug()->getValue();
@@ -591,7 +612,7 @@ IECore::ConstCompoundObjectPtr OFXImageNode::computeOfxRenderBuffer( const Gaffe
 	renderWindowD.x2 = dataWindow.max.x;
 	renderWindowD.y2 = dataWindow.max.y;
 
-	if( sourceClip )
+	if( hasInput && sourceClip )
 	{
 		sourceClip->setRenderWindow( renderWindowD );
 	}
@@ -617,45 +638,40 @@ IECore::ConstCompoundObjectPtr OFXImageNode::computeOfxRenderBuffer( const Gaffe
 	std::map<OFX::Host::ImageEffect::ClipInstance *, OfxRectD> rois;
 	m_instance->getRegionOfInterestAction( frame, renderScale, regionOfInterest, rois );
 
-	try
-	{
-		// Pre-allocate the output image by calling getImage on the OFX SDK's clip.
-		// Some hosts need this before renderAction will proceed.
+		// Initialize output clip properties before render
+		if( outputClip )
+		{
+			outputClip->getProps().setStringProperty( kOfxImageEffectPropPixelDepth, kOfxBitDepthFloat );
+			outputClip->getProps().setStringProperty( kOfxImageEffectPropComponents, kOfxImageComponentRGBA );
+		}
+		if( sourceClip )
+		{
+			sourceClip->getProps().setStringProperty( kOfxImageEffectPropPixelDepth, kOfxBitDepthFloat );
+			sourceClip->getProps().setStringProperty( kOfxImageEffectPropComponents, kOfxImageComponentRGBA );
+		}
+
+		// Let the plugin customize clip preferences
+		m_instance->getClipPreferences();
+
+		// Pre-allocate the output image
 		if( outputClip )
 		{
 			outputClip->getImage( frame, nullptr );
-			std::cerr << "DEBUG pre-allocated output image" << std::endl;
 		}
-		m_instance->getClipPreferences();
+
 		m_instance->beginRenderAction( frame, frame, 1.0, false, renderScale, true, false );
-		std::cerr << "DEBUG beginRenderAction done" << std::endl;
-		m_instance->renderAction( frame, kOfxImageFieldBoth, renderWindow, renderScale, true, false, false );
-		std::cerr << "DEBUG renderAction done" << std::endl;
+		OfxStatus r = m_instance->renderAction( frame, kOfxImageFieldBoth, renderWindow, renderScale, true, false, false );
 		m_instance->endRenderAction( frame, frame, 1.0, false, renderScale, true, false );
-		std::cerr << "DEBUG endRenderAction completed" << std::endl;
-	}
-	catch( const std::exception &e )
-	{
-		std::cerr << "DEBUG renderAction exception: " << e.what() << std::endl;
-	}
+		std::cerr << "DEBUG renderResult=" << r << std::endl;
 
 	if( outputClip )
 	{
 		GafferOFX::Image* outputImage = outputClip->getOutputImage();
-		std::cerr << "DEBUG outputImage=" << outputImage;
 		if( outputImage )
 		{
 			OfxRectI outputBounds = outputImage->getBounds();
-			std::cerr << " bounds=" << outputBounds.x1 << "," << outputBounds.y1 << " " << outputBounds.x2 << "," << outputBounds.y2;
 			int outWidth = outputBounds.x2 - outputBounds.x1;
 			int outHeight = outputBounds.y2 - outputBounds.y1;
-			std::cerr << " size=" << outWidth << "x" << outHeight;
-			OfxRGBAColourF* data = reinterpret_cast<OfxRGBAColourF*>( outputImage->getPointerProperty( kOfxImagePropData ) );
-			if( data && outWidth > 0 && outHeight > 0 )
-			{
-				std::cerr << " first_pixel=" << data[0].r << "," << data[0].g << "," << data[0].b << "," << data[0].a;
-			}
-			std::cerr << std::endl;
 
 			// De-interleave output buffer into separate channel FloatVectorData
 			FloatVectorDataPtr rData = new FloatVectorData();

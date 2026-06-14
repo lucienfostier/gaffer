@@ -70,7 +70,9 @@ Gaffer::Plug *setupTypedPlug( const IECore::InternedString &parameterName, Gaffe
 IntegerInstance::IntegerInstance( GafferOFX::EffectImageInstance* effect, const std::string& name, OFX::Host::Param::Descriptor& descriptor ) : OFX::Host::Param::IntegerInstance( descriptor ), m_effect( effect ), m_descriptor( descriptor )
 {
 	auto* plugParent = const_cast<GafferOFX::OFXImageNode*>(static_cast<const GafferOFX::OFXImageNode*>(m_effect->node()))->parametersPlug();
-	setupTypedPlug<IntPlug>( name, plugParent, Plug::In, 0 );
+	int defaultValue = 0;
+	try { defaultValue = descriptor.getIntProperty( kOfxParamPropDefault ); } catch( ... ) {}
+	setupTypedPlug<IntPlug>( name, plugParent, Plug::In, defaultValue );
 }
 
 OfxStatus IntegerInstance::get( int& i )
@@ -102,9 +104,10 @@ OfxStatus IntegerInstance::set( OfxTime time, int )
 
 GafferOFX::DoubleInstance::DoubleInstance( GafferOFX::EffectImageInstance* effect, const std::string& name, OFX::Host::Param::Descriptor& descriptor ) : OFX::Host::Param::DoubleInstance( descriptor ), m_effect( effect ), m_descriptor( descriptor )
 {
-	// TODO clarify constness
 	auto* plugParent = const_cast<GafferOFX::OFXImageNode*>(static_cast<const GafferOFX::OFXImageNode*>(m_effect->node()))->parametersPlug();
-	setupTypedPlug<FloatPlug>( name, plugParent, Plug::In, 0.0f );
+	double defaultValue = 0.0;
+	try { defaultValue = descriptor.getDoubleProperty( kOfxParamPropDefault ); } catch( ... ) {}
+	setupTypedPlug<FloatPlug>( name, plugParent, Plug::In, (float)defaultValue );
 }
 
 OfxStatus DoubleInstance::get( double& d )
@@ -147,7 +150,9 @@ OfxStatus DoubleInstance::integrate( OfxTime time1, OfxTime time2, double& )
 GafferOFX::BooleanInstance::BooleanInstance( GafferOFX::EffectImageInstance* effect, const std::string& name, OFX::Host::Param::Descriptor& descriptor ) : OFX::Host::Param::BooleanInstance( descriptor ), m_effect( effect ), m_descriptor( descriptor )
 {
 	auto* plugParent = const_cast<GafferOFX::OFXImageNode*>(static_cast<const GafferOFX::OFXImageNode*>(m_effect->node()))->parametersPlug();
-	setupTypedPlug<BoolPlug>( name, plugParent, Plug::In, false );
+	bool defaultValue = false;
+	try { defaultValue = descriptor.getIntProperty( kOfxParamPropDefault ) != 0; } catch( ... ) {}
+	setupTypedPlug<BoolPlug>( name, plugParent, Plug::In, defaultValue );
 }
 
 OfxStatus BooleanInstance::get( bool& b )
@@ -179,6 +184,16 @@ OfxStatus BooleanInstance::set( OfxTime time, bool )
 
 GafferOFX::ChoiceInstance::ChoiceInstance( GafferOFX::EffectImageInstance* effect, const std::string& name, OFX::Host::Param::Descriptor& descriptor ) : OFX::Host::Param::ChoiceInstance( descriptor ), m_effect( effect ), m_descriptor( descriptor )
 {
+	auto* plugParent = const_cast<GafferOFX::OFXImageNode*>(static_cast<const GafferOFX::OFXImageNode*>(m_effect->node()))->parametersPlug();
+	int defaultValue = 0;
+	try
+	{
+		defaultValue = descriptor.getIntProperty( kOfxParamPropDefault );
+	}
+	catch( ... )
+	{
+	}
+	setupTypedPlug<IntPlug>( name, plugParent, Plug::In, defaultValue );
 }
 
 OfxStatus ChoiceInstance::get( int& i )

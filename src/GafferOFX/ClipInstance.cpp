@@ -139,7 +139,7 @@ void Image::setExternalData( const void* externalData, int width, int height, co
 GafferOFX::ClipInstance::ClipInstance(
   GafferOFX::EffectImageInstance* effect,
   OFX::Host::ImageEffect::ClipDescriptor* desc )
-   : OFX::Host::ImageEffect::ClipInstance( effect, *desc ), m_effect( effect ), m_name( desc->getName() ), m_outputImage( nullptr ), m_externalBuffer( nullptr ), m_bufferWidth( 0 ), m_bufferHeight( 0 ), m_renderWindow( {0,0,0,0} ), m_renderWindowSet( false )
+   : OFX::Host::ImageEffect::ClipInstance( effect, *desc ), m_effect( effect ), m_name( desc->getName() ), m_outputImage( nullptr ), m_externalBuffer( nullptr ), m_bufferWidth( 0 ), m_bufferHeight( 0 ), m_renderWindow( {0,0,0,0} ), m_isConnected( false ), m_renderWindowSet( false )
 {
 }
 
@@ -178,7 +178,9 @@ double ClipInstance::getAspectRatio() const
 
 double ClipInstance::getFrameRate() const
 {
-	return Gaffer::Context::current()->getFramesPerSecond();
+	if( auto ctx = Gaffer::Context::current() )
+		return ctx->getFramesPerSecond();
+	return 24.0;
 }
 
 void ClipInstance::getFrameRange(double &startFrame, double &endFrame) const
@@ -200,7 +202,7 @@ const std::string &ClipInstance::getFieldOrder() const
 
 bool ClipInstance::getConnected() const
 {
-	return true;
+	return m_isConnected;
 }
 
 double ClipInstance::getUnmappedFrameRate() const
@@ -242,9 +244,12 @@ OfxRectD ClipInstance::getRegionOfDefinition(OfxTime time) const
 	return v;
 }
 
+static int g_getImageCallCount = 0;
+
 OFX::Host::ImageEffect::Image* ClipInstance::getImage(OfxTime time, const OfxRectD *optionalBounds)
 {
-	std::cerr << "DEBUG ClipInstance::getImage(" << m_name << ", time=" << time << ")" << std::endl;
+	int callId = ++g_getImageCallCount;
+	std::cerr << "DEBUG ClipInstance::getImage(" << m_name << ", time=" << time << ") call=" << callId << std::endl;
 	// Ensure the clip's property set has the correct pixel depth
 	// (getClipBits reads from the property set, not from _pixelDepth)
 	getProps().setStringProperty( kOfxImageEffectPropPixelDepth, getUnmappedBitDepth() );
