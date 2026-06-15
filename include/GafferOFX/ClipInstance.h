@@ -41,6 +41,10 @@
 
 #include "HostSupport/ofxhClip.h"
 
+#include "IECore/BoxOps.h"
+#include "ImathBox.h"
+
+#include <map>
 #include <mutex>
 
 //#define OFXHOSTDEMOCLIPLENGTH 1.0
@@ -81,6 +85,12 @@ namespace GafferOFX
 			bool m_renderWindowSet;
 			std::mutex m_outputImageMutex;
 
+			// Frame cache for temporal clip access
+			std::map<OfxTime, std::unique_ptr<OfxRGBAColourF[]>> m_frameCache;
+			int m_frameCacheWidth = 0;
+			int m_frameCacheHeight = 0;
+			Imath::Box2i 		m_frameCacheDataWindow = Imath::Box2i();
+
 		public :
 
 			ClipInstance(
@@ -96,6 +106,21 @@ namespace GafferOFX
 				m_externalBuffer = buffer;
 				m_bufferWidth = width;
 				m_bufferHeight = height;
+			}
+
+			void setFrameCache( std::map<OfxTime, std::unique_ptr<OfxRGBAColourF[]>> &&cache, int width, int height, const Imath::Box2i &dw )
+			{
+				m_frameCache = std::move( cache );
+				m_frameCacheWidth = width;
+				m_frameCacheHeight = height;
+				m_frameCacheDataWindow = dw;
+			}
+
+			void clearFrameCache()
+			{
+				m_frameCache.clear();
+				m_frameCacheWidth = 0;
+				m_frameCacheHeight = 0;
 			}
 
 			void setConnected( bool connected )

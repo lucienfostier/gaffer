@@ -851,6 +851,58 @@ IECore::ConstCompoundObjectPtr OFXImageNode::computeOfxRenderBuffer( const Gaffe
 		}
 	}
 
+	// ---- Temporal clip access: pre-fetch frames needed by the plugin ----
+	if( hasInput && sourceClip && m_instance->temporalAccess() )
+	{
+		OFX::Host::ImageEffect::RangeMap rangeMap;
+		if( m_instance->getFrameNeededAction( frame, rangeMap ) == kOfxStatOK )
+		{
+			auto srcIt = rangeMap.find( sourceClip );
+			if( srcIt != rangeMap.end() && !srcIt->second.empty() )
+			{
+				std::map<OfxTime, std::unique_ptr<OfxRGBAColourF[]>> cache;
+				int cacheWidth = dataWindow.size().x;
+				int cacheHeight = dataWindow.size().y;
+
+				for( const auto &range : srcIt->second )
+				{
+					for( OfxTime t = range.min; t <= range.max; t += 1.0 )
+					{
+						if( cache.find( t ) != cache.end() )
+							continue;
+
+						// Current frame is already in external buffer, don't re-fetch
+						if( t == frame )
+							continue;
+
+						auto buf = std::make_unique<OfxRGBAColourF[]>( cacheWidth * cacheHeight );
+						// Fill with transparent black as fallback
+						for( int i = 0; i < cacheWidth * cacheHeight; ++i )
+						{
+							buf[i].r = 0.0f;
+							buf[i].g = 0.0f;
+							buf[i].b = 0.0f;
+							buf[i].a = 0.0f;
+						}
+
+						// Read the input plug at the requested time
+						Gaffer::ContextPtr tContext = new Gaffer::Context( *context );
+						tContext->setFrame( t );
+						Gaffer::Context::Scope tScope( tContext.get() );
+
+						readPlugToRGBA( inPlug(), buf.get(), dataWindow, cacheWidth );
+						cache[t] = std::move( buf );
+					}
+				}
+
+				if( !cache.empty() )
+				{
+					sourceClip->setFrameCache( std::move( cache ), cacheWidth, cacheHeight, dataWindow );
+				}
+			}
+		}
+	}
+
 	// Set the render window on clips so getRegionOfDefinition returns correct bounds
 	OfxRectD renderWindowD;
 	renderWindowD.x1 = dataWindow.min.x;
@@ -901,6 +953,13 @@ IECore::ConstCompoundObjectPtr OFXImageNode::computeOfxRenderBuffer( const Gaffe
 		m_instance->beginRenderAction( frame, frame, 1.0, false, renderScale, true, false );
 		m_instance->renderAction( frame, kOfxImageFieldBoth, renderWindow, renderScale, true, false, false );
 		m_instance->endRenderAction( frame, frame, 1.0, false, renderScale, true, false );
+
+		// Clear frame cache after render
+		if( sourceClip )
+		{
+			sourceClip->clearFrameCache();
+		}
+
 	if( outputClip )
 	{
 		GafferOFX::Image* outputImage = outputClip->getOutputImage();

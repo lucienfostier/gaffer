@@ -244,12 +244,8 @@ OfxRectD ClipInstance::getRegionOfDefinition(OfxTime time) const
 	return v;
 }
 
-static int g_getImageCallCount = 0;
-
 OFX::Host::ImageEffect::Image* ClipInstance::getImage(OfxTime time, const OfxRectD *optionalBounds)
 {
-	int callId = ++g_getImageCallCount;
-	std::cerr << "DEBUG ClipInstance::getImage(" << m_name << ", time=" << time << ") call=" << callId << std::endl;
 	// Ensure the clip's property set has the correct pixel depth
 	// (getClipBits reads from the property set, not from _pixelDepth)
 	getProps().setStringProperty( kOfxImageEffectPropPixelDepth, getUnmappedBitDepth() );
@@ -291,14 +287,32 @@ OFX::Host::ImageEffect::Image* ClipInstance::getImage(OfxTime time, const OfxRec
 
 		return m_outputImage;
 	}
-	else if ( m_externalBuffer && m_bufferWidth > 0 && m_bufferHeight > 0 )
-	{
-		Image *image = new Image( *this, time, 0, useBounds );
-		image->setExternalData( m_externalBuffer, m_bufferWidth, m_bufferHeight, imageBounds );
-		return image;
-	}
 	else
 	{
+		// Check frame cache first (for temporal clip access plugins like FrameBlend)
+		if( !m_frameCache.empty() )
+		{
+			auto it = m_frameCache.find( time );
+			if( it != m_frameCache.end() && m_frameCacheWidth > 0 && m_frameCacheHeight > 0 )
+			{
+				OfxRectI cacheBounds;
+				cacheBounds.x1 = m_frameCacheDataWindow.min.x;
+				cacheBounds.y1 = m_frameCacheDataWindow.min.y;
+				cacheBounds.x2 = m_frameCacheDataWindow.max.x;
+				cacheBounds.y2 = m_frameCacheDataWindow.max.y;
+				Image *image = new Image( *this, time, 0, useBounds );
+				image->setExternalData( it->second.get(), m_frameCacheWidth, m_frameCacheHeight, cacheBounds );
+				return image;
+			}
+		}
+
+		if ( m_externalBuffer && m_bufferWidth > 0 && m_bufferHeight > 0 )
+		{
+			Image *image = new Image( *this, time, 0, useBounds );
+			image->setExternalData( m_externalBuffer, m_bufferWidth, m_bufferHeight, imageBounds );
+			return image;
+		}
+
 		Image *image = new Image( *this, time, 0, useBounds );
 		return image;
 	}
