@@ -105,11 +105,13 @@ class GAFFEROFX_API OFXImageNode : public GafferImage::ImageProcessor
 	private :
 
 		void plugSet( Gaffer::Plug *plug );
+		void removeClipPlugs();
+		void createClipPlugs();
 
 		static size_t g_firstPlugIndex;
 		mutable std::unique_ptr<GafferOFX::EffectImageInstance> m_instance;
 		mutable std::mutex m_renderMutex;
-
+		std::vector<std::string> m_clipPlugNames;
 
 };
 

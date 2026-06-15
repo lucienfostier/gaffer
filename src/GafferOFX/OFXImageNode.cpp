@@ -49,6 +49,7 @@
 #include "IECore/BoxOps.h"
 
 #include <algorithm>
+#include <cctype>
 #include <iostream>
 #include <vector>
 
@@ -96,6 +97,9 @@ bool OFXImageNode::createPluginInstance()
 	auto plugin = host.m_pluginCache.getPluginById(pluginIdPlug()->getValue());
 	if( plugin )
 	{
+		// Remove clip plugs from any previous instance
+		removeClipPlugs();
+
 		// Use the first available context supported by the plugin
 		const std::set<std::string> &contexts = plugin->getContexts();
 		std::vector<std::string> contextPriority;
@@ -147,9 +151,66 @@ bool OFXImageNode::createPluginInstance()
 			}
 		}
 
+		// Create Gaffer plug for each non-Output, non-Source clip
+		createClipPlugs();
+
 		return true;
 	}
 	return false;
+}
+
+void OFXImageNode::removeClipPlugs()
+{
+	for( const auto &name : m_clipPlugNames )
+	{
+		if( auto *plug = getChild<GafferImage::ImagePlug>( name ) )
+		{
+			removeChild( plug );
+		}
+	}
+	m_clipPlugNames.clear();
+}
+
+void OFXImageNode::createClipPlugs()
+{
+	if( !m_instance )
+	{
+		return;
+	}
+
+	for( int i = 0; i < m_instance->getNClips(); ++i )
+	{
+		auto *clip = dynamic_cast<GafferOFX::ClipInstance*>( m_instance->getNthClip( i ) );
+		if( !clip )
+		{
+			continue;
+		}
+
+		const std::string &clipName = clip->getName();
+		if( clipName == "Output" || clipName == "Source" )
+		{
+			continue;
+		}
+
+		// Derive Gaffer plug name from clip name (lowercase first letter)
+		std::string plugName = clipName;
+		if( !plugName.empty() && isupper( plugName[0] ) )
+		{
+			plugName[0] = tolower( plugName[0] );
+		}
+
+		// Reuse existing plug if present (e.g. after scene load or re-creation)
+		auto *plug = getChild<GafferImage::ImagePlug>( plugName );
+		if( !plug )
+		{
+			plug = new GafferImage::ImagePlug( plugName, Plug::In );
+			addChild( plug );
+		}
+		m_clipPlugNames.push_back( plugName );
+
+		// Reflect whether the plug already has a connection
+		clip->setConnected( plug->getInput() != nullptr );
+	}
 }
 
 Gaffer::StringPlug* OFXImageNode::pluginIdPlug()
@@ -202,6 +263,19 @@ void OFXImageNode::affects( const Gaffer::Plug *input, AffectedPlugsContainer &o
 	if( input == inPlug()->channelDataPlug() )
 	{
 		outputs.push_back( ofxRenderBufferPlug() );
+	}
+
+	// Dynamic clip plugs (Mask, UV, etc.) affect the render buffer
+	for( const auto &name : m_clipPlugNames )
+	{
+		if( auto *imgPlug = getChild<GafferImage::ImagePlug>( name ) )
+		{
+			if( input == imgPlug->formatPlug() || input == imgPlug->dataWindowPlug() ||
+			    input == imgPlug->channelNamesPlug() || input == imgPlug->channelDataPlug() )
+			{
+				outputs.push_back( ofxRenderBufferPlug() );
+			}
+		}
 	}
 
 	// Parameters and plugin ID affect the render buffer
@@ -501,6 +575,37 @@ void OFXImageNode::hashOfxRenderBuffer( const Gaffer::Context *context, IECore::
 		}
 	}
 
+	// Hash additional connected clip plugs
+	for( const auto &name : m_clipPlugNames )
+	{
+		if( auto *imgPlug = getChild<GafferImage::ImagePlug>( name ) )
+		{
+			if( !imgPlug->getInput() )
+			{
+				continue;
+			}
+			imgPlug->formatPlug()->hash( h );
+			imgPlug->dataWindowPlug()->hash( h );
+			imgPlug->channelNamesPlug()->hash( h );
+			Box2i clipDw = imgPlug->dataWindowPlug()->getValue();
+			if( clipDw.size().x > 0 && clipDw.size().y > 0 )
+			{
+				IECore::ConstStringVectorDataPtr clipChannels = imgPlug->channelNamesPlug()->getValue();
+				for( int yy = clipDw.min.y; yy < clipDw.max.y; yy += ImagePlug::tileSize() )
+				{
+					for( int xx = clipDw.min.x; xx < clipDw.max.x; xx += ImagePlug::tileSize() )
+					{
+						V2i tileOrigin( xx, yy );
+						for( const auto &ch : clipChannels->readable() )
+						{
+							h.append( imgPlug->channelDataHash( ch, tileOrigin ) );
+						}
+					}
+				}
+			}
+		}
+	}
+
 	// Hash parameters and plugin ID
 	pluginIdPlug()->hash( h );
 	for( const auto &child : parametersPlug()->children() )
@@ -511,6 +616,32 @@ void OFXImageNode::hashOfxRenderBuffer( const Gaffer::Context *context, IECore::
 		}
 	}
 }
+
+namespace
+{
+
+/// Read RGBA channel data from an ImagePlug into an interleaved RGBA buffer.
+void readPlugToRGBA( const GafferImage::ImagePlug *plug, OfxRGBAColourF *buffer, const Box2i &dataWindow, int width )
+{
+	GafferImage::Sampler rSampler( plug, "R", dataWindow );
+	GafferImage::Sampler gSampler( plug, "G", dataWindow );
+	GafferImage::Sampler bSampler( plug, "B", dataWindow );
+	GafferImage::Sampler aSampler( plug, "A", dataWindow );
+
+	for( int y = dataWindow.min.y; y < dataWindow.max.y; ++y )
+	{
+		for( int x = dataWindow.min.x; x < dataWindow.max.x; ++x )
+		{
+			int idx = ( y - dataWindow.min.y ) * width + ( x - dataWindow.min.x );
+			buffer[idx].r = rSampler.sample( x, y );
+			buffer[idx].g = gSampler.sample( x, y );
+			buffer[idx].b = bSampler.sample( x, y );
+			buffer[idx].a = aSampler.sample( x, y );
+		}
+	}
+}
+
+} // namespace
 
 IECore::ConstCompoundObjectPtr OFXImageNode::computeOfxRenderBuffer( const Gaffer::Context *context ) const
 {
@@ -561,12 +692,6 @@ IECore::ConstCompoundObjectPtr OFXImageNode::computeOfxRenderBuffer( const Gaffe
 			height = dataWindow.size().y;
 		}
 
-		const vector<string> &channelNames = channelNamesData->readable();
-		bool hasR = find( channelNames.begin(), channelNames.end(), "R" ) != channelNames.end();
-		bool hasG = find( channelNames.begin(), channelNames.end(), "G" ) != channelNames.end();
-		bool hasB = find( channelNames.begin(), channelNames.end(), "B" ) != channelNames.end();
-		bool hasA = find( channelNames.begin(), channelNames.end(), "A" ) != channelNames.end();
-
 		frameBuffer = std::make_unique<OfxRGBAColourF[]>( width * height );
 
 		for( int i = 0; i < width * height; ++i )
@@ -574,49 +699,10 @@ IECore::ConstCompoundObjectPtr OFXImageNode::computeOfxRenderBuffer( const Gaffe
 			frameBuffer[i].r = 0.0f;
 			frameBuffer[i].g = 0.0f;
 			frameBuffer[i].b = 0.0f;
-			frameBuffer[i].a = hasA ? 0.0f : 1.0f;
+			frameBuffer[i].a = 1.0f;
 		}
 
-		if( hasR )
-		{
-			Sampler rSampler( inPlug(), "R", dataWindow );
-			for( int y = dataWindow.min.y; y < dataWindow.max.y; ++y )
-				for( int x = dataWindow.min.x; x < dataWindow.max.x; ++x )
-				{
-					int idx = ( y - dataWindow.min.y ) * width + ( x - dataWindow.min.x );
-					frameBuffer[idx].r = rSampler.sample( x, y );
-				}
-		}
-		if( hasG )
-		{
-			Sampler gSampler( inPlug(), "G", dataWindow );
-			for( int y = dataWindow.min.y; y < dataWindow.max.y; ++y )
-				for( int x = dataWindow.min.x; x < dataWindow.max.x; ++x )
-				{
-					int idx = ( y - dataWindow.min.y ) * width + ( x - dataWindow.min.x );
-					frameBuffer[idx].g = gSampler.sample( x, y );
-				}
-		}
-		if( hasB )
-		{
-			Sampler bSampler( inPlug(), "B", dataWindow );
-			for( int y = dataWindow.min.y; y < dataWindow.max.y; ++y )
-				for( int x = dataWindow.min.x; x < dataWindow.max.x; ++x )
-				{
-					int idx = ( y - dataWindow.min.y ) * width + ( x - dataWindow.min.x );
-					frameBuffer[idx].b = bSampler.sample( x, y );
-				}
-		}
-		if( hasA )
-		{
-			Sampler aSampler( inPlug(), "A", dataWindow );
-			for( int y = dataWindow.min.y; y < dataWindow.max.y; ++y )
-				for( int x = dataWindow.min.x; x < dataWindow.max.x; ++x )
-				{
-					int idx = ( y - dataWindow.min.y ) * width + ( x - dataWindow.min.x );
-					frameBuffer[idx].a = aSampler.sample( x, y );
-				}
-		}
+		readPlugToRGBA( inPlug(), frameBuffer.get(), dataWindow, width );
 
 		sourceClip->setExternalBuffer( frameBuffer.get(), width, height );
 	}
@@ -646,6 +732,62 @@ IECore::ConstCompoundObjectPtr OFXImageNode::computeOfxRenderBuffer( const Gaffe
 			height = 1080;
 		}
 		format = Format( width, height );
+	}
+
+	// ----- Feed additional input clips (Mask, UV, etc.) -----
+	// Keep a vector of all per-clip frame buffers so they stay alive
+	// throughout the render.
+	struct ClipBuffer
+	{
+		GafferOFX::ClipInstance *clip;
+		std::unique_ptr<OfxRGBAColourF[]> buffer;
+	};
+	std::vector<ClipBuffer> extraClipBuffers;
+
+	for( const auto &plugName : m_clipPlugNames )
+	{
+		auto *plug = getChild<GafferImage::ImagePlug>( plugName );
+		if( !plug || !plug->getInput() )
+		{
+			continue;
+		}
+
+		// Capitalise first letter to match OFX clip name
+		std::string ofxClipName = plugName;
+		if( !ofxClipName.empty() && islower( ofxClipName[0] ) )
+		{
+			ofxClipName[0] = toupper( ofxClipName[0] );
+		}
+
+		auto *clip = dynamic_cast<GafferOFX::ClipInstance*>( m_instance->getClip( ofxClipName ) );
+		if( !clip )
+		{
+			continue;
+		}
+
+		clip->setConnected( true );
+
+		Box2i clipDw = plug->dataWindowPlug()->getValue();
+		if( clipDw.size().x <= 0 || clipDw.size().y <= 0 )
+		{
+			continue;
+		}
+
+		int clipWidth = clipDw.size().x;
+		int clipHeight = clipDw.size().y;
+
+		auto buf = std::make_unique<OfxRGBAColourF[]>( clipWidth * clipHeight );
+		readPlugToRGBA( plug, buf.get(), clipDw, clipWidth );
+
+		clip->setExternalBuffer( buf.get(), clipWidth, clipHeight );
+		OfxRectD clipRod;
+		clipRod.x1 = clipDw.min.x;
+		clipRod.y1 = clipDw.min.y;
+		clipRod.x2 = clipDw.max.x;
+		clipRod.y2 = clipDw.max.y;
+		clip->setRenderWindow( clipRod );
+
+		extraClipBuffers.push_back( { clip, std::move( buf ) } );
 	}
 
 	// Set the render window on clips so getRegionOfDefinition returns correct bounds
