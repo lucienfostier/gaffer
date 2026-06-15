@@ -791,6 +791,66 @@ IECore::ConstCompoundObjectPtr OFXImageNode::computeOfxRenderBuffer( const Gaffe
 		extraClipBuffers.push_back( { clip, std::move( buf ) } );
 	}
 
+	// Set up render parameters
+	OfxRectI renderWindow;
+	renderWindow.x1 = dataWindow.min.x;
+	renderWindow.y1 = dataWindow.min.y;
+	renderWindow.x2 = dataWindow.max.x;
+	renderWindow.y2 = dataWindow.max.y;
+
+	// Check if the effect is identity (e.g. FrameHold pass-through at a different frame)
+	{
+		OfxTime identityTime = frame;
+		std::string identityClip;
+		if( m_instance->isIdentityAction( identityTime, kOfxImageFieldBoth, renderWindow, renderScale, identityClip ) == kOfxStatOK )
+		{
+			if( identityClip == "Source" && hasInput && sourceClip )
+			{
+				// Read source at identityTime and return as output
+				Gaffer::ContextPtr idContext = new Gaffer::Context( *context );
+				idContext->setFrame( identityTime );
+				Gaffer::Context::Scope idScope( idContext.get() );
+
+				GafferImage::Format idFormat = inPlug()->formatPlug()->getValue();
+				Box2i idDw = inPlug()->dataWindowPlug()->getValue();
+				int idWidth = idDw.size().x;
+				int idHeight = idDw.size().y;
+				if( idWidth > 0 && idHeight > 0 )
+				{
+					auto idBuf = std::make_unique<OfxRGBAColourF[]>( idWidth * idHeight );
+					readPlugToRGBA( inPlug(), idBuf.get(), idDw, idWidth );
+
+					FloatVectorDataPtr rData = new FloatVectorData();
+					FloatVectorDataPtr gData = new FloatVectorData();
+					FloatVectorDataPtr bData = new FloatVectorData();
+					FloatVectorDataPtr aData = new FloatVectorData();
+					vector<float> &rVec = rData->writable();
+					vector<float> &gVec = gData->writable();
+					vector<float> &bVec = bData->writable();
+					vector<float> &aVec = aData->writable();
+					rVec.resize( idWidth * idHeight );
+					gVec.resize( idWidth * idHeight );
+					bVec.resize( idWidth * idHeight );
+					aVec.resize( idWidth * idHeight );
+					for( int i = 0; i < idWidth * idHeight; ++i )
+					{
+						rVec[i] = idBuf[i].r;
+						gVec[i] = idBuf[i].g;
+						bVec[i] = idBuf[i].b;
+						aVec[i] = idBuf[i].a;
+					}
+					result->members()["R"] = rData;
+					result->members()["G"] = gData;
+					result->members()["B"] = bData;
+					result->members()["A"] = aData;
+				result->members()["dataWindow"] = new Box2iData( idDw );
+				result->members()["pixelAspect"] = new FloatData( idFormat.getPixelAspect() );
+				}
+				return result;
+			}
+		}
+	}
+
 	// Set the render window on clips so getRegionOfDefinition returns correct bounds
 	OfxRectD renderWindowD;
 	renderWindowD.x1 = dataWindow.min.x;
@@ -806,13 +866,6 @@ IECore::ConstCompoundObjectPtr OFXImageNode::computeOfxRenderBuffer( const Gaffe
 	{
 		outputClip->setRenderWindow( renderWindowD );
 	}
-
-	// Set up render parameters
-	OfxRectI renderWindow;
-	renderWindow.x1 = dataWindow.min.x;
-	renderWindow.y1 = dataWindow.min.y;
-	renderWindow.x2 = dataWindow.max.x;
-	renderWindow.y2 = dataWindow.max.y;
 
 	// Get region of interest and render
 	OfxRectD regionOfInterest;

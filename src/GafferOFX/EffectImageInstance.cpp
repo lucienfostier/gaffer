@@ -197,6 +197,10 @@ OFX::Host::Param::Instance* EffectImageInstance::newParam(const std::string& nam
 	{
 		return new PushbuttonInstance(this,name,descriptor);
 	}
+	else if(descriptor.getType()==kOfxParamTypeString)
+	{
+		return new StringInstance(this,name,descriptor);
+	}
 	else if(descriptor.getType()==kOfxParamTypeGroup)
 	{
 		return new OFX::Host::Param::GroupInstance(descriptor,this);
