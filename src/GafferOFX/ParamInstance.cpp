@@ -71,7 +71,7 @@ IntegerInstance::IntegerInstance( GafferOFX::EffectImageInstance* effect, const 
 {
 	auto* plugParent = const_cast<GafferOFX::OFXImageNode*>(static_cast<const GafferOFX::OFXImageNode*>(m_effect->node()))->parametersPlug();
 	int defaultValue = 0;
-	try { defaultValue = descriptor.getIntProperty( kOfxParamPropDefault ); } catch( ... ) {}
+	try { defaultValue = descriptor.getProperties().getIntProperty( kOfxParamPropDefault ); } catch( ... ) {}
 	setupTypedPlug<IntPlug>( name, plugParent, Plug::In, defaultValue );
 }
 
@@ -106,7 +106,7 @@ GafferOFX::DoubleInstance::DoubleInstance( GafferOFX::EffectImageInstance* effec
 {
 	auto* plugParent = const_cast<GafferOFX::OFXImageNode*>(static_cast<const GafferOFX::OFXImageNode*>(m_effect->node()))->parametersPlug();
 	double defaultValue = 0.0;
-	try { defaultValue = descriptor.getDoubleProperty( kOfxParamPropDefault ); } catch( ... ) {}
+	try { defaultValue = descriptor.getProperties().getDoubleProperty( kOfxParamPropDefault ); } catch( ... ) {}
 	setupTypedPlug<FloatPlug>( name, plugParent, Plug::In, (float)defaultValue );
 }
 
@@ -151,7 +151,7 @@ GafferOFX::BooleanInstance::BooleanInstance( GafferOFX::EffectImageInstance* eff
 {
 	auto* plugParent = const_cast<GafferOFX::OFXImageNode*>(static_cast<const GafferOFX::OFXImageNode*>(m_effect->node()))->parametersPlug();
 	bool defaultValue = false;
-	try { defaultValue = descriptor.getIntProperty( kOfxParamPropDefault ) != 0; } catch( ... ) {}
+	try { defaultValue = descriptor.getProperties().getIntProperty( kOfxParamPropDefault ) != 0; } catch( ... ) {}
 	setupTypedPlug<BoolPlug>( name, plugParent, Plug::In, defaultValue );
 }
 
@@ -188,7 +188,7 @@ GafferOFX::ChoiceInstance::ChoiceInstance( GafferOFX::EffectImageInstance* effec
 	int defaultValue = 0;
 	try
 	{
-		defaultValue = descriptor.getIntProperty( kOfxParamPropDefault );
+		defaultValue = descriptor.getProperties().getIntProperty( kOfxParamPropDefault );
 	}
 	catch( ... )
 	{
@@ -226,7 +226,13 @@ OfxStatus ChoiceInstance::set( OfxTime time, int )
 GafferOFX::RGBAInstance::RGBAInstance( GafferOFX::EffectImageInstance* effect, const std::string& name, OFX::Host::Param::Descriptor& descriptor ) : OFX::Host::Param::RGBAInstance( descriptor ), m_effect( effect ), m_descriptor( descriptor )
 {
 	auto* plugParent = const_cast<GafferOFX::OFXImageNode*>(static_cast<const GafferOFX::OFXImageNode*>(m_effect->node()))->parametersPlug();
-	setupTypedPlug<Color4fPlug>( name, plugParent, Plug::In, Imath::Color4f() );
+	Imath::Color4f defaultValue(0.0f, 0.0f, 0.0f, 1.0f);
+	try {
+		double vals[4];
+		descriptor.getProperties().getDoublePropertyN(kOfxParamPropDefault, vals, 4);
+		defaultValue = Imath::Color4f(static_cast<float>(vals[0]), static_cast<float>(vals[1]), static_cast<float>(vals[2]), static_cast<float>(vals[3]));
+	} catch (...) {}
+	setupTypedPlug<Color4fPlug>( name, plugParent, Plug::In, defaultValue );
 }
 
 OfxStatus RGBAInstance::get( double& r, double& g, double& b, double& a )
