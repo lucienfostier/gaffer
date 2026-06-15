@@ -746,12 +746,6 @@ IECore::ConstCompoundObjectPtr OFXImageNode::computeOfxRenderBuffer( const Gaffe
 
 	for( const auto &plugName : m_clipPlugNames )
 	{
-		auto *plug = getChild<GafferImage::ImagePlug>( plugName );
-		if( !plug || !plug->getInput() )
-		{
-			continue;
-		}
-
 		// Capitalise first letter to match OFX clip name
 		std::string ofxClipName = plugName;
 		if( !ofxClipName.empty() && islower( ofxClipName[0] ) )
@@ -762,6 +756,13 @@ IECore::ConstCompoundObjectPtr OFXImageNode::computeOfxRenderBuffer( const Gaffe
 		auto *clip = dynamic_cast<GafferOFX::ClipInstance*>( m_instance->getClip( ofxClipName ) );
 		if( !clip )
 		{
+			continue;
+		}
+
+		auto *plug = getChild<GafferImage::ImagePlug>( plugName );
+		if( !plug || !plug->getInput() )
+		{
+			clip->setConnected( false );
 			continue;
 		}
 
@@ -845,10 +846,8 @@ IECore::ConstCompoundObjectPtr OFXImageNode::computeOfxRenderBuffer( const Gaffe
 		}
 
 		m_instance->beginRenderAction( frame, frame, 1.0, false, renderScale, true, false );
-		OfxStatus r = m_instance->renderAction( frame, kOfxImageFieldBoth, renderWindow, renderScale, true, false, false );
+		m_instance->renderAction( frame, kOfxImageFieldBoth, renderWindow, renderScale, true, false, false );
 		m_instance->endRenderAction( frame, frame, 1.0, false, renderScale, true, false );
-		std::cerr << "DEBUG renderResult=" << r << std::endl;
-
 	if( outputClip )
 	{
 		GafferOFX::Image* outputImage = outputClip->getOutputImage();

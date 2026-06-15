@@ -415,6 +415,243 @@ class OFXImageNodeTest( GafferTest.TestCase ) :
 			tile = n["out"].channelData( ch, imath.V2i( 0 ) )
 			self.assertEqual( len( tile ), tileSize * tileSize )
 
+	# -----------------------------------------------------------------------
+	# Mask / affects / hash isolation tests
+	# -----------------------------------------------------------------------
+
+	def testPassThrough( self ) :
+
+		# For a filter with default params, format/dataWindow/channelNames
+		# should have the same values as the input (though hashes differ
+		# because the render buffer hash includes all input dependencies).
+
+		s = Gaffer.ScriptNode()
+
+		cb = GafferImage.Checkerboard()
+		s.addChild( cb )
+		cb["format"].setValue( GafferImage.Format( 256, 256 ) )
+
+		n = GafferOFX.OFXImageNode()
+		s.addChild( n )
+		n["in"].setInput( cb["out"] )
+		n["pluginId"].setValue( "uk.co.thefoundry.OfxInvertExample" )
+		self.assertTrue( n.createPluginInstance() )
+
+		self.assertEqual( cb["out"]["format"].getValue(), n["out"]["format"].getValue() )
+		self.assertEqual( cb["out"]["dataWindow"].getValue(), n["out"]["dataWindow"].getValue() )
+		self.assertEqual(
+			list( cb["out"]["channelNames"].getValue() ),
+			list( n["out"]["channelNames"].getValue() )
+		)
+
+		# Channel data value should NOT pass through (Invert modifies it)
+		dw = n["out"]["dataWindow"].getValue()
+		self.assertNotEqual(
+			GafferImage.Sampler( cb["out"], "R", dw ).sample( 0, 0 ),
+			GafferImage.Sampler( n["out"], "R", dw ).sample( 0, 0 ),
+		)
+
+	def testAffects( self ) :
+
+		n = GafferOFX.OFXImageNode()
+		n["pluginId"].setValue( "net.sf.openfx.Invert" )
+		self.assertTrue( n.createPluginInstance() )
+
+		rb = n["__ofxRenderBuffer"]
+
+		# Input image plugs affect the render buffer
+		self.assertIn( rb, n.affects( n["in"]["format"] ) )
+		self.assertIn( rb, n.affects( n["in"]["dataWindow"] ) )
+		self.assertIn( rb, n.affects( n["in"]["channelNames"] ) )
+		self.assertIn( rb, n.affects( n["in"]["channelData"] ) )
+
+		# Mask clip plugs affect the render buffer
+		self.assertIn( rb, n.affects( n["mask"]["format"] ) )
+		self.assertIn( rb, n.affects( n["mask"]["dataWindow"] ) )
+		self.assertIn( rb, n.affects( n["mask"]["channelNames"] ) )
+		self.assertIn( rb, n.affects( n["mask"]["channelData"] ) )
+
+		# Plugin ID and parameters affect the render buffer
+		self.assertIn( rb, n.affects( n["pluginId"] ) )
+		self.assertIn( rb, n.affects( n["parameters"]["mix"] ) )
+
+		# Render buffer affects all output image properties
+		self.assertIn( n["out"]["format"], n.affects( rb ) )
+		self.assertIn( n["out"]["dataWindow"], n.affects( rb ) )
+		self.assertIn( n["out"]["channelNames"], n.affects( rb ) )
+		self.assertIn( n["out"]["channelData"], n.affects( rb ) )
+
+	def testMaskPlug( self ) :
+
+		# Plugins with a Mask clip should expose an ImagePlug input
+		n = GafferOFX.OFXImageNode()
+		n["pluginId"].setValue( "net.sf.openfx.Invert" )
+		self.assertTrue( n.createPluginInstance() )
+		self.assertTrue( "mask" in n )
+		self.assertIsInstance( n["mask"], GafferImage.ImagePlug )
+
+		# Plugins without extra clips should not have a mask plug
+		n2 = GafferOFX.OFXImageNode()
+		n2["pluginId"].setValue( "uk.co.thefoundry.OfxInvertExample" )
+		self.assertTrue( n2.createPluginInstance() )
+		self.assertFalse( "mask" in n2 )
+
+	def testMaskDisconnectedEqualsFullEffect( self ) :
+
+		s = Gaffer.ScriptNode()
+
+		cb = GafferImage.Checkerboard()
+		s.addChild( cb )
+		cb["format"].setValue( GafferImage.Format( 256, 256 ) )
+		cb["colorA"].setValue( imath.Color4f( 0.2, 0.4, 0.6, 1.0 ) )
+
+		n = GafferOFX.OFXImageNode()
+		s.addChild( n )
+		n["in"].setInput( cb["out"] )
+		n["pluginId"].setValue( "net.sf.openfx.Invert" )
+		self.assertTrue( n.createPluginInstance() )
+
+		dw = n["out"]["dataWindow"].getValue()
+		sIn = GafferImage.Sampler( cb["out"], "R", dw )
+		sOut = GafferImage.Sampler( n["out"], "R", dw )
+		self.assertAlmostEqual( sOut.sample( 0, 0 ), 1.0 - sIn.sample( 0, 0 ), places = 5 )
+
+	def testMaskBlackEqualsPassthrough( self ) :
+
+		s = Gaffer.ScriptNode()
+
+		cb = GafferImage.Checkerboard()
+		s.addChild( cb )
+		cb["format"].setValue( GafferImage.Format( 256, 256 ) )
+		cb["colorA"].setValue( imath.Color4f( 0.2, 0.4, 0.6, 1.0 ) )
+
+		n = GafferOFX.OFXImageNode()
+		s.addChild( n )
+		n["in"].setInput( cb["out"] )
+		n["pluginId"].setValue( "net.sf.openfx.Invert" )
+		self.assertTrue( n.createPluginInstance() )
+
+		mask = GafferImage.Constant()
+		s.addChild( mask )
+		mask["format"].setValue( GafferImage.Format( 256, 256 ) )
+		mask["color"].setValue( imath.Color4f( 0, 0, 0, 0 ) )
+		n["mask"].setInput( mask["out"] )
+
+		dw = n["out"]["dataWindow"].getValue()
+		sOut = GafferImage.Sampler( n["out"], "R", dw )
+		sIn = GafferImage.Sampler( cb["out"], "R", dw )
+		self.assertAlmostEqual( sOut.sample( 0, 0 ), sIn.sample( 0, 0 ), places = 5 )
+
+	def testMaskDisconnectAfterConnect( self ) :
+
+		s = Gaffer.ScriptNode()
+
+		cb = GafferImage.Checkerboard()
+		s.addChild( cb )
+		cb["format"].setValue( GafferImage.Format( 256, 256 ) )
+		cb["colorA"].setValue( imath.Color4f( 0.2, 0.4, 0.6, 1.0 ) )
+
+		n = GafferOFX.OFXImageNode()
+		s.addChild( n )
+		n["in"].setInput( cb["out"] )
+		n["pluginId"].setValue( "net.sf.openfx.Invert" )
+		self.assertTrue( n.createPluginInstance() )
+
+		mask = GafferImage.Constant()
+		s.addChild( mask )
+		mask["format"].setValue( GafferImage.Format( 256, 256 ) )
+
+		# Connect black mask → passthrough
+		mask["color"].setValue( imath.Color4f( 0, 0, 0, 0 ) )
+		n["mask"].setInput( mask["out"] )
+		dw = n["out"]["dataWindow"].getValue()
+		self.assertAlmostEqual(
+			GafferImage.Sampler( n["out"], "R", dw ).sample( 0, 0 ),
+			GafferImage.Sampler( cb["out"], "R", dw ).sample( 0, 0 ),
+			places = 5
+		)
+
+		# Disconnect mask → back to full invert
+		n["mask"].setInput( None )
+		self.assertAlmostEqual(
+			GafferImage.Sampler( n["out"], "R", dw ).sample( 0, 0 ),
+			1.0 - GafferImage.Sampler( cb["out"], "R", dw ).sample( 0, 0 ),
+			places = 5
+		)
+
+	def testMaskHashChangesOnConnection( self ) :
+
+		s = Gaffer.ScriptNode()
+
+		cb = GafferImage.Checkerboard()
+		s.addChild( cb )
+		cb["format"].setValue( GafferImage.Format( 256, 256 ) )
+
+		n = GafferOFX.OFXImageNode()
+		s.addChild( n )
+		n["in"].setInput( cb["out"] )
+		n["pluginId"].setValue( "net.sf.openfx.Invert" )
+		self.assertTrue( n.createPluginInstance() )
+
+		h1 = n["out"].channelDataHash( "R", imath.V2i( 0 ) )
+
+		mask = GafferImage.Constant()
+		s.addChild( mask )
+		mask["format"].setValue( GafferImage.Format( 256, 256 ) )
+		mask["color"].setValue( imath.Color4f( 0.5, 0.5, 0.5, 1 ) )
+		n["mask"].setInput( mask["out"] )
+
+		h2 = n["out"].channelDataHash( "R", imath.V2i( 0 ) )
+		self.assertNotEqual( h1, h2 )
+
+	def testMaskHashChangesOnContent( self ) :
+
+		s = Gaffer.ScriptNode()
+
+		cb = GafferImage.Checkerboard()
+		s.addChild( cb )
+		cb["format"].setValue( GafferImage.Format( 256, 256 ) )
+
+		n = GafferOFX.OFXImageNode()
+		s.addChild( n )
+		n["in"].setInput( cb["out"] )
+		n["pluginId"].setValue( "net.sf.openfx.Invert" )
+		self.assertTrue( n.createPluginInstance() )
+
+		mask = GafferImage.Constant()
+		s.addChild( mask )
+		mask["format"].setValue( GafferImage.Format( 256, 256 ) )
+		mask["color"].setValue( imath.Color4f( 1, 1, 1, 1 ) )
+		n["mask"].setInput( mask["out"] )
+
+		hWhite = n["out"].channelDataHash( "R", imath.V2i( 0 ) )
+
+		mask["color"].setValue( imath.Color4f( 0, 0, 0, 0 ) )
+		hBlack = n["out"].channelDataHash( "R", imath.V2i( 0 ) )
+		self.assertNotEqual( hWhite, hBlack )
+
+	def testHashChangesWithParameter( self ) :
+
+		s = Gaffer.ScriptNode()
+
+		cb = GafferImage.Checkerboard()
+		s.addChild( cb )
+		cb["format"].setValue( GafferImage.Format( 256, 256 ) )
+
+		n = GafferOFX.OFXImageNode()
+		s.addChild( n )
+		n["in"].setInput( cb["out"] )
+		n["pluginId"].setValue( "uk.co.thefoundry.BasicGainPlugin" )
+		self.assertTrue( n.createPluginInstance() )
+
+		n["parameters"]["scale"].setValue( 1.0 )
+		h1 = n["out"].channelDataHash( "R", imath.V2i( 0 ) )
+
+		n["parameters"]["scale"].setValue( 2.0 )
+		h2 = n["out"].channelDataHash( "R", imath.V2i( 0 ) )
+		self.assertNotEqual( h1, h2 )
+
+
 if __name__ == "__main__" :
 	unittest.main()
 
