@@ -50,6 +50,7 @@
 
 #include <algorithm>
 #include <iostream>
+#include <vector>
 
 using namespace std;
 using namespace Imath;
@@ -97,23 +98,38 @@ bool OFXImageNode::createPluginInstance()
 	{
 		// Use the first available context supported by the plugin
 		const std::set<std::string> &contexts = plugin->getContexts();
-		std::string context;
+		std::vector<std::string> contextPriority;
 		if( contexts.find( kOfxImageEffectContextFilter ) != contexts.end() )
-			context = kOfxImageEffectContextFilter;
-		else if( contexts.find( kOfxImageEffectContextGeneral ) != contexts.end() )
-			context = kOfxImageEffectContextGeneral;
-		else if( contexts.find( kOfxImageEffectContextGenerator ) != contexts.end() )
-			context = kOfxImageEffectContextGenerator;
-		else if( !contexts.empty() )
-			context = *contexts.begin();
-		else
+			contextPriority.push_back( kOfxImageEffectContextFilter );
+		if( contexts.find( kOfxImageEffectContextGeneral ) != contexts.end() )
+			contextPriority.push_back( kOfxImageEffectContextGeneral );
+		if( contexts.find( kOfxImageEffectContextGenerator ) != contexts.end() )
+			contextPriority.push_back( kOfxImageEffectContextGenerator );
+		for( const auto &c : contexts )
+		{
+			if( c != kOfxImageEffectContextFilter &&
+			    c != kOfxImageEffectContextGeneral &&
+			    c != kOfxImageEffectContextGenerator )
+			{
+				contextPriority.push_back( c );
+			}
+		}
+
+		if( contextPriority.empty() )
 			return false;
 
-		m_instance.reset(
-			static_cast<EffectImageInstance*>(
-				plugin->createInstance(context, this)
-				)
-		);
+		OFX::Host::ImageEffect::Instance *instance = nullptr;
+		for( const auto &context : contextPriority )
+		{
+			instance = plugin->createInstance( context, this );
+			if( instance )
+				break;
+		}
+
+		if( !instance )
+			return false;
+
+		m_instance.reset( static_cast<EffectImageInstance*>( instance ) );
 
 		m_instance->createInstanceAction();
 
@@ -351,7 +367,16 @@ void OFXImageNode::hashChannelData( const GafferImage::ImagePlug *output, const 
 	ImageProcessor::hashChannelData( output, context, h );
 	if( output == outPlug() )
 	{
-		ofxRenderBufferPlug()->hash( h );
+		if( !m_instance )
+		{
+			const std::string channelName = context->get<std::string>( ImagePlug::channelNameContextName );
+			const Imath::V2i tileOrigin = context->get<V2i>( ImagePlug::tileOriginContextName );
+			h.append( inPlug()->channelDataHash( channelName, tileOrigin ) );
+		}
+		else
+		{
+			ofxRenderBufferPlug()->hash( h );
+		}
 		h.append( context->get<V2i>( ImagePlug::tileOriginContextName ) );
 		h.append( context->get<std::string>( ImagePlug::channelNameContextName ) );
 	}
@@ -361,6 +386,12 @@ IECore::ConstFloatVectorDataPtr OFXImageNode::computeChannelData( const std::str
 {
 	// Read the full cached render buffer in global scope
 	ImagePlug::GlobalScope globalScope( context );
+
+	if( !m_instance )
+	{
+		return inPlug()->channelData( channelName, tileOrigin );
+	}
+
 	IECore::ConstCompoundObjectPtr renderBuffer = ofxRenderBufferPlug()->getValue();
 
 	if( !renderBuffer )
@@ -432,8 +463,20 @@ IECore::ConstFloatVectorDataPtr OFXImageNode::computeChannelData( const std::str
 
 void OFXImageNode::hashOfxRenderBuffer( const Gaffer::Context *context, IECore::MurmurHash &h ) const
 {
-	// Hash input metadata
 	ImagePlug::GlobalScope globalScope( context );
+
+	if( !m_instance )
+	{
+		// No valid OFX instance — pass through input data.
+		// Hash input plugs to invalidate cache when input changes.
+		pluginIdPlug()->hash( h );
+		inPlug()->formatPlug()->hash( h );
+		inPlug()->dataWindowPlug()->hash( h );
+		inPlug()->channelNamesPlug()->hash( h );
+		return;
+	}
+
+	// Hash input metadata
 	inPlug()->formatPlug()->hash( h );
 	inPlug()->dataWindowPlug()->hash( h );
 	inPlug()->channelNamesPlug()->hash( h );

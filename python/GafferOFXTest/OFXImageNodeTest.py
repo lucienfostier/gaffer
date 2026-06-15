@@ -45,39 +45,33 @@ import GafferTest
 import GafferOFX
 
 class OFXImageNodeTest( GafferTest.TestCase ) :
-	def testCreatePluginInstance(self):
-		import Gaffer
-		import GafferOFX
+
+	def testCreatePluginInstance( self ) :
 
 		scriptNode = Gaffer.ScriptNode()
 		node = GafferOFX.OFXImageNode()
 		scriptNode.addChild( node )
 
-		self.assertFalse(node.createPluginInstance())
-		node["pluginId"].setValue("uk.co.thefoundry.OfxInvertExample")
-		self.assertTrue(node.createPluginInstance())
+		self.assertFalse( node.createPluginInstance() )
+		node["pluginId"].setValue( "uk.co.thefoundry.OfxInvertExample" )
+		self.assertTrue( node.createPluginInstance() )
 
-
-	def testEffectInstanceProjectSize(self):
-		import Gaffer
-		import GafferOFX
-		import GafferImage
+	def testEffectInstanceProjectSize( self ) :
 
 		scriptNode = Gaffer.ScriptNode()
 		node = GafferOFX.OFXImageNode()
-		node["pluginId"].setValue("uk.co.thefoundry.OfxInvertExample")
+		node["pluginId"].setValue( "uk.co.thefoundry.OfxInvertExample" )
 		scriptNode.addChild( node )
 		node.createPluginInstance()
 
-		with scriptNode.context():
-			self.assertEqual(node.effectInstanceProjectSize(), (1920.0, 1080.0))
+		with scriptNode.context() :
+			self.assertEqual( node.effectInstanceProjectSize(), ( 1920.0, 1080.0 ) )
 
-			# override default format
 			defaultFormatPlug = GafferImage.FormatPlug.acquireDefaultFormatPlug( scriptNode )
 			f = GafferImage.Format( 100, 200, 2 )
-			defaultFormatPlug.setValue( f )	
+			defaultFormatPlug.setValue( f )
 
-			self.assertEqual(node.effectInstanceProjectSize(), (100.0, 200.0))
+			self.assertEqual( node.effectInstanceProjectSize(), ( 100.0, 200.0 ) )
 
 			for channel in [ "R", "G", "B", "A" ] :
 				channelData = node["out"].channelData( channel, imath.V2i( 0 ) )
@@ -160,9 +154,11 @@ class OFXImageNodeTest( GafferTest.TestCase ) :
 		n["pluginId"].setValue( "uk.co.thefoundry.OfxInvertExample" )
 		n.createPluginInstance()
 
+		# The InvertExample describes RGBA output clips, so the output
+		# includes an A channel even though the input is RGB-only.
 		channels = list( n["out"]["channelNames"].getValue() )
-		self.assertEqual( channels, [ "R", "G", "B" ] )
-		for ch in [ "R", "G", "B" ] :
+		self.assertEqual( channels, [ "R", "G", "B", "A" ] )
+		for ch in [ "R", "G", "B", "A" ] :
 			tile = n["out"].channelData( ch, imath.V2i( 0 ) )
 			self.assertEqual( len( tile ), n["out"].tileSize() * n["out"].tileSize() )
 
@@ -195,10 +191,229 @@ class OFXImageNodeTest( GafferTest.TestCase ) :
 		n.createPluginInstance()
 		n["parameters"]["scale"].setValue( 2.0 )
 
+		# BasicGainPlugin describes RGBA output clips, so the output
+		# includes RGB channels even though the input is A-only.
 		channels = list( n["out"]["channelNames"].getValue() )
-		self.assertEqual( channels, [ "A" ] )
-		tile = n["out"].channelData( "A", imath.V2i( 0 ) )
-		self.assertEqual( len( tile ), n["out"].tileSize() * n["out"].tileSize() )
+		self.assertEqual( channels, [ "R", "G", "B", "A" ] )
+		for ch in [ "R", "G", "B", "A" ] :
+			tile = n["out"].channelData( ch, imath.V2i( 0 ) )
+			self.assertEqual( len( tile ), n["out"].tileSize() * n["out"].tileSize() )
+
+	# -----------------------------------------------------------------------
+	# Plugin-specific tests
+	# -----------------------------------------------------------------------
+
+	def testInvertPlugin( self ) :
+
+		# Use the Foundry InvertExample which does not require a mask clip.
+		scriptNode = Gaffer.ScriptNode()
+
+		cb = GafferImage.Checkerboard()
+		scriptNode.addChild( cb )
+		cb["format"].setValue( GafferImage.Format( 256, 256 ) )
+		cb["colorA"].setValue( imath.Color4f( 0.2, 0.4, 0.6, 1.0 ) )
+		cb["colorB"].setValue( imath.Color4f( 0.8, 0.9, 0.3, 1.0 ) )
+
+		n = GafferOFX.OFXImageNode()
+		scriptNode.addChild( n )
+		n["in"].setInput( cb["out"] )
+		n["pluginId"].setValue( "uk.co.thefoundry.OfxInvertExample" )
+		self.assertTrue( n.createPluginInstance() )
+
+		dw = n["out"]["dataWindow"].getValue()
+		tileSize = n["out"].tileSize()
+		tile = n["out"].channelData( "R", imath.V2i( 0 ) )
+		self.assertEqual( len( tile ), tileSize * tileSize )
+
+		# InvertExample: out = 1.0 - in
+		sIn = GafferImage.Sampler( cb["out"], "R", dw )
+		sOut = GafferImage.Sampler( n["out"], "R", dw )
+		for x, y in [ ( 0, 0 ), ( 64, 64 ), ( 128, 128 ), ( 192, 192 ) ] :
+			self.assertAlmostEqual( sOut.sample( x, y ), 1.0 - sIn.sample( x, y ), places = 5 )
+
+		# Check the Natron Invert at least doesn't crash (it needs a Mask clip
+		# that we don't currently expose, so it acts as passthrough).
+		n2 = GafferOFX.OFXImageNode()
+		scriptNode.addChild( n2 )
+		n2["in"].setInput( cb["out"] )
+		n2["pluginId"].setValue( "net.sf.openfx.Invert" )
+		self.assertTrue( n2.createPluginInstance() )
+		dw2 = n2["out"]["dataWindow"].getValue()
+		self.assertGreater( dw2.size().x, 0 )
+		self.assertGreater( dw2.size().y, 0 )
+		self.assertEqual(
+			list( n2["parameters"].keys() ),
+			[ "NatronOfxParamProcessR", "NatronOfxParamProcessG", "NatronOfxParamProcessB",
+			  "NatronOfxParamProcessA", "premult", "premultChannel", "maskInvert", "mix",
+			  "premultChanged" ]
+		)
+
+	def testBasicGainScale( self ) :
+
+		scriptNode = Gaffer.ScriptNode()
+
+		const = GafferImage.Constant()
+		scriptNode.addChild( const )
+		const["format"].setValue( GafferImage.Format( 128, 128 ) )
+		const["color"].setValue( imath.Color4f( 0.25, 0.50, 0.75, 1.0 ) )
+
+		n = GafferOFX.OFXImageNode()
+		scriptNode.addChild( n )
+		n["in"].setInput( const["out"] )
+		n["pluginId"].setValue( "uk.co.thefoundry.BasicGainPlugin" )
+		self.assertTrue( n.createPluginInstance() )
+
+		dw = n["out"]["dataWindow"].getValue()
+		tileSize = n["out"].tileSize()
+
+		# scale = 2.0 should double the values
+		n["parameters"]["scale"].setValue( 2.0 )
+		tileR = n["out"].channelData( "R", imath.V2i( 0 ) )
+		self.assertEqual( len( tileR ), tileSize * tileSize )
+		sR = GafferImage.Sampler( n["out"], "R", dw )
+		sG = GafferImage.Sampler( n["out"], "G", dw )
+		sB = GafferImage.Sampler( n["out"], "B", dw )
+		sA = GafferImage.Sampler( n["out"], "A", dw )
+		self.assertAlmostEqual( sR.sample( 0, 0 ), 0.5, places = 5 )
+		self.assertAlmostEqual( sG.sample( 0, 0 ), 1.0, places = 5 )
+		self.assertAlmostEqual( sB.sample( 0, 0 ), 1.5, places = 5 )
+		self.assertAlmostEqual( sA.sample( 0, 0 ), 2.0, places = 5 )
+
+		# scale = 0.5 should halve the values.
+		# Create new samplers to avoid stale tile caches.
+		n["parameters"]["scale"].setValue( 0.5 )
+		self.assertAlmostEqual(
+			GafferImage.Sampler( n["out"], "R", dw ).sample( 0, 0 ), 0.125, places = 5
+		)
+		self.assertAlmostEqual(
+			GafferImage.Sampler( n["out"], "G", dw ).sample( 0, 0 ), 0.25, places = 5
+		)
+		self.assertAlmostEqual(
+			GafferImage.Sampler( n["out"], "B", dw ).sample( 0, 0 ), 0.375, places = 5
+		)
+
+	def testBoxBlurPlugin( self ) :
+
+		scriptNode = Gaffer.ScriptNode()
+
+		cb = GafferImage.Checkerboard()
+		scriptNode.addChild( cb )
+		cb["format"].setValue( GafferImage.Format( 256, 256 ) )
+
+		n = GafferOFX.OFXImageNode()
+		scriptNode.addChild( n )
+		n["in"].setInput( cb["out"] )
+		n["pluginId"].setValue( "uk.co.thefoundry.BoxBlurPlugin" )
+		self.assertTrue( n.createPluginInstance() )
+
+		dw = n["out"]["dataWindow"].getValue()
+		tileSize = n["out"].tileSize()
+
+		# Default size=5 should produce valid tiles
+		tile = n["out"].channelData( "R", imath.V2i( 0 ) )
+		self.assertEqual( len( tile ), tileSize * tileSize )
+
+		# Different size values produce different results
+		n["parameters"]["size"].setValue( 1 )
+		val1 = GafferImage.Sampler( n["out"], "R", dw ).sample( 128, 128 )
+		n["parameters"]["size"].setValue( 20 )
+		val20 = GafferImage.Sampler( n["out"], "R", dw ).sample( 128, 128 )
+		self.assertNotEqual( val1, val20, "Different blur sizes should differ" )
+
+	def testColorBarsGenerator( self ) :
+
+		scriptNode = Gaffer.ScriptNode()
+
+		n = GafferOFX.OFXImageNode()
+		scriptNode.addChild( n )
+		n["pluginId"].setValue( "net.sf.openfx.ColorBars" )
+		self.assertTrue( n.createPluginInstance() )
+
+		dw = n["out"]["dataWindow"].getValue()
+		fmt = n["out"]["format"].getValue()
+		channels = list( n["out"]["channelNames"].getValue() )
+		self.assertEqual( channels, [ "R", "G", "B", "A" ] )
+
+		self.assertGreater( dw.size().x, 0 )
+		self.assertGreater( dw.size().y, 0 )
+		self.assertGreater( fmt.getDisplayWindow().size().x, 0 )
+		self.assertGreater( fmt.getDisplayWindow().size().y, 0 )
+
+		tileSize = n["out"].tileSize()
+		for ch in [ "R", "G", "B", "A" ] :
+			tile = n["out"].channelData( ch, imath.V2i( 0 ) )
+			self.assertEqual( len( tile ), tileSize * tileSize )
+			nonZero = sum( 1 for v in tile if abs( v ) > 1e-6 )
+			self.assertGreater( nonZero, 0 )
+
+		# Bars should produce distinct color stripes
+		sR = GafferImage.Sampler( n["out"], "R", dw )
+		sG = GafferImage.Sampler( n["out"], "G", dw )
+		sB = GafferImage.Sampler( n["out"], "B", dw )
+		width = dw.size().x
+		colors = set()
+		for x in range( 0, width, width // 16 ) :
+			colors.add( (
+				round( sR.sample( x, dw.min().y + 10 ), 3 ),
+				round( sG.sample( x, dw.min().y + 10 ), 3 ),
+				round( sB.sample( x, dw.min().y + 10 ), 3 ),
+			) )
+		self.assertGreaterEqual( len( colors ), 4 )
+
+	def testDespillPlugin( self ) :
+
+		scriptNode = Gaffer.ScriptNode()
+
+		cb = GafferImage.Checkerboard()
+		scriptNode.addChild( cb )
+		cb["format"].setValue( GafferImage.Format( 256, 256 ) )
+
+		n = GafferOFX.OFXImageNode()
+		scriptNode.addChild( n )
+		n["in"].setInput( cb["out"] )
+		n["pluginId"].setValue( "net.sf.openfx.Despill" )
+		self.assertTrue( n.createPluginInstance() )
+
+		dw = n["out"]["dataWindow"].getValue()
+		tileSize = n["out"].tileSize()
+
+		for ch in [ "R", "G", "B", "A" ] :
+			tile = n["out"].channelData( ch, imath.V2i( 0 ) )
+			self.assertEqual( len( tile ), tileSize * tileSize )
+			nonZero = sum( 1 for v in tile if abs( v ) > 1e-6 )
+			self.assertGreater( nonZero, 0 )
+
+		# With defaults (screenType=0 greenscreen, scaleGreen=-1.0)
+		# green values should be reduced or unchanged but never increased.
+		sInG = GafferImage.Sampler( cb["out"], "G", dw )
+		sOutG = GafferImage.Sampler( n["out"], "G", dw )
+		for x, y in [ ( 0, 0 ), ( 64, 64 ) ] :
+			self.assertLessEqual( sOutG.sample( x, y ), sInG.sample( x, y ) + 0.001 )
+
+	def testGodRaysPlugin( self ) :
+
+		scriptNode = Gaffer.ScriptNode()
+
+		cb = GafferImage.Checkerboard()
+		scriptNode.addChild( cb )
+		# Use a smaller image for this render-heavy plugin
+		cb["format"].setValue( GafferImage.Format( 64, 64 ) )
+
+		n = GafferOFX.OFXImageNode()
+		scriptNode.addChild( n )
+		n["in"].setInput( cb["out"] )
+		n["pluginId"].setValue( "net.sf.openfx.GodRays" )
+		self.assertTrue( n.createPluginInstance() )
+
+		dw = n["out"]["dataWindow"].getValue()
+		tileSize = n["out"].tileSize()
+		self.assertEqual( list( n["out"]["channelNames"].getValue() ), [ "R", "G", "B", "A" ] )
+		self.assertGreater( dw.size().x, 0 )
+		self.assertGreater( dw.size().y, 0 )
+
+		for ch in [ "R", "G", "B", "A" ] :
+			tile = n["out"].channelData( ch, imath.V2i( 0 ) )
+			self.assertEqual( len( tile ), tileSize * tileSize )
 
 if __name__ == "__main__" :
 	unittest.main()
