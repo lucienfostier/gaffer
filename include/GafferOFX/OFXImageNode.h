@@ -50,6 +50,8 @@
 namespace GafferOFX
 {
 
+class GafferOFXInteractInstance;
+
 class GAFFEROFX_API OFXImageNode : public GafferImage::ImageProcessor
 {
 
@@ -102,6 +104,12 @@ class GAFFEROFX_API OFXImageNode : public GafferImage::ImageProcessor
 
 		IECore::ConstCompoundObjectPtr computeOfxRenderBuffer( const Gaffer::Context *context ) const;
 
+	public :
+
+		bool hasOverlay() const;
+		class GafferOFXInteractInstance* getInteract();
+		void destroyInteract();
+
 	private :
 
 		void plugSet( Gaffer::Plug *plug );
@@ -112,6 +120,7 @@ class GAFFEROFX_API OFXImageNode : public GafferImage::ImageProcessor
 		mutable std::unique_ptr<GafferOFX::EffectImageInstance> m_instance;
 		mutable std::mutex m_renderMutex;
 		std::vector<std::string> m_clipPlugNames;
+		std::unique_ptr<GafferOFXInteractInstance> m_interactInstance;
 
 };
 

@@ -40,6 +40,7 @@
 
 #include "GafferOFX/Host.h"
 #include "GafferOFX/OFXImageNode.h"
+#include "GafferOFX/OFXInteractInstance.h"
 
 #include "IECorePython/RunTimeTypedBinding.h"
 
@@ -85,11 +86,73 @@ std::pair<double, double> effectInstanceProjectSizeWrapper( OFXImageNode& node )
 	return std::make_pair(xsize, ysize);
 }
 
+// OFXInteractInstance wrappers
+
+struct OfxPointD_to_tuple
+{
+	static PyObject* convert( const OfxPointD& p )
+	{
+		return incref( make_tuple( p.x, p.y ).ptr() );
+	}
+};
+
+OfxStatus interactDrawAction( GafferOFXInteractInstance &self, double time, const OfxPointD &renderScale )
+{
+	return self.drawAction( time, renderScale );
 }
+
+OfxStatus interactPenMotionAction( GafferOFXInteractInstance &self, double time, const OfxPointD &renderScale, const OfxPointD &penPos, const OfxPointI &penPosViewport, double pressure )
+{
+	return self.penMotionAction( time, renderScale, penPos, penPosViewport, pressure );
+}
+
+OfxStatus interactPenDownAction( GafferOFXInteractInstance &self, double time, const OfxPointD &renderScale, const OfxPointD &penPos, const OfxPointI &penPosViewport, double pressure )
+{
+	return self.penDownAction( time, renderScale, penPos, penPosViewport, pressure );
+}
+
+OfxStatus interactPenUpAction( GafferOFXInteractInstance &self, double time, const OfxPointD &renderScale, const OfxPointD &penPos, const OfxPointI &penPosViewport, double pressure )
+{
+	return self.penUpAction( time, renderScale, penPos, penPosViewport, pressure );
+}
+
+OfxStatus interactKeyDownAction( GafferOFXInteractInstance &self, double time, const OfxPointD &renderScale, int key, std::string keyString )
+{
+	char *ks = const_cast<char*>( keyString.c_str() );
+	return self.keyDownAction( time, renderScale, key, ks );
+}
+
+OfxStatus interactKeyUpAction( GafferOFXInteractInstance &self, double time, const OfxPointD &renderScale, int key, std::string keyString )
+{
+	char *ks = const_cast<char*>( keyString.c_str() );
+	return self.keyUpAction( time, renderScale, key, ks );
+}
+
+OfxStatus interactGainFocusAction( GafferOFXInteractInstance &self, double time, const OfxPointD &renderScale )
+{
+	return self.gainFocusAction( time, renderScale );
+}
+
+OfxStatus interactLoseFocusAction( GafferOFXInteractInstance &self, double time, const OfxPointD &renderScale )
+{
+	return self.loseFocusAction( time, renderScale );
+}
+
+struct OfxPointI_to_tuple
+{
+	static PyObject* convert( const OfxPointI& p )
+	{
+		return incref( make_tuple( p.x, p.y ).ptr() );
+	}
+};
+
+} // anonymous namespace
 
 BOOST_PYTHON_MODULE( _GafferOFX )
 {
 	to_python_converter<std::pair<double, double>, PairToTuple>();
+	to_python_converter<OfxPointD, OfxPointD_to_tuple>();
+	to_python_converter<OfxPointI, OfxPointI_to_tuple>();
 
 	class_<Host>("Host", no_init)
 		.def("findOFXPlugins", &Host::findOFXPlugins)
@@ -98,8 +161,27 @@ BOOST_PYTHON_MODULE( _GafferOFX )
 		.staticmethod("pluginIDs")
 	;
 
+	class_<GafferOFXInteractInstance, boost::noncopyable>( "OFXInteractInstance", no_init )
+		.def( "setViewportSize", &GafferOFXInteractInstance::setViewportSize )
+		.def( "setTime", &GafferOFXInteractInstance::setTime )
+		.def( "getTime", &GafferOFXInteractInstance::getTime )
+		.def( "setupGLProjection", &GafferOFXInteractInstance::setupGLProjection )
+		.def( "restoreGLProjection", &GafferOFXInteractInstance::restoreGLProjection )
+		.def( "drawAction", &interactDrawAction )
+		.def( "penMotionAction", &interactPenMotionAction )
+		.def( "penDownAction", &interactPenDownAction )
+		.def( "penUpAction", &interactPenUpAction )
+		.def( "keyDownAction", &interactKeyDownAction )
+		.def( "keyUpAction", &interactKeyUpAction )
+		.def( "gainFocusAction", &interactGainFocusAction )
+		.def( "loseFocusAction", &interactLoseFocusAction )
+	;
+
 	DependencyNodeClass<OFXImageNode>()
 		.def( "createPluginInstance", &createPluginInstanceWrapper )
 		.def( "effectInstanceProjectSize", &effectInstanceProjectSizeWrapper )
+		.def( "hasOverlay", &OFXImageNode::hasOverlay )
+		.def( "getInteract", &OFXImageNode::getInteract, return_value_policy<reference_existing_object>() )
+		.def( "destroyInteract", &OFXImageNode::destroyInteract )
 	;
 }

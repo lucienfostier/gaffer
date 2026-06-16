@@ -35,5 +35,7 @@
 ##########################################################################
 
 from . import OFXImageNodeUI
+from . import OFXInteractTool
+from . import OFXOverlayGadget
 
 __import__( "IECore" ).loadConfig( "GAFFER_STARTUP_PATHS", subdirectory = "GafferOFXUI" )

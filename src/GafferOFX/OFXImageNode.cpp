@@ -37,6 +37,7 @@
 #include "GafferOFX/OFXImageNode.h"
 #include "GafferOFX/Host.h"
 #include "GafferOFX/ClipInstance.h"
+#include "GafferOFX/OFXInteractInstance.h"
 
 #include "Gaffer/Context.h"
 #include "Gaffer/Metadata.h"
@@ -1036,4 +1037,33 @@ IECore::ConstCompoundObjectPtr OFXImageNode::computeOfxRenderBuffer( const Gaffe
 const GafferOFX::EffectImageInstance* OFXImageNode::effectInstance() const
 {
 	return m_instance.get();
+}
+
+bool OFXImageNode::hasOverlay() const
+{
+	if( !m_instance )
+		return false;
+	// Calling getOverlayDescriptor() triggers describe on the overlay interact
+	// and returns the descriptor. Its state tells us if the plugin has an overlay.
+	OFX::Host::Interact::Descriptor &desc = m_instance->getOverlayDescriptor();
+	OFX::Host::Interact::State state = desc.getState();
+	// Also check the descriptor's overlay main entry (property set by plugin during DescribeInContext)
+	auto *overlayEntry = m_instance->getDescriptor().getOverlayInteractMainEntry();
+	std::cerr << "DEBUG hasOverlay: overlayState=" << state << " described=" << (state == OFX::Host::Interact::eDescribed) << " overlayEntry=" << (void*)overlayEntry << std::endl;
+	return state == OFX::Host::Interact::eDescribed;
+}
+
+GafferOFXInteractInstance* OFXImageNode::getInteract()
+{
+	if( !m_interactInstance && m_instance )
+	{
+		m_interactInstance = std::make_unique<GafferOFXInteractInstance>( *m_instance );
+		m_interactInstance->createInstance();
+	}
+	return m_interactInstance.get();
+}
+
+void OFXImageNode::destroyInteract()
+{
+	m_interactInstance.reset();
 }

@@ -37,6 +37,9 @@
 import Gaffer
 import GafferUI
 import GafferOFX
+import GafferImageUI
+
+from GafferOFXUI.OFXInteractTool import OFXInteractTool
 
 
 Gaffer.Metadata.registerNode(
