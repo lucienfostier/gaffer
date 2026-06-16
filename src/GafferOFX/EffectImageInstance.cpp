@@ -34,10 +34,16 @@
 #include "GafferOFX/EffectImageInstance.h"
 #include "GafferOFX/ClipInstance.h"
 #include "GafferOFX/ParamInstance.h"
+#include "GafferOFX/OFXImageNode.h"
 
 #include "Gaffer/Context.h"
+#include "Gaffer/Metadata.h"
+#include "Gaffer/Plug.h"
 
 #include "GafferImage/FormatPlug.h"
+
+#include "IECore/SimpleTypedData.h"
+#include "IECore/VectorTypedData.h"
 
 #include "HostSupport/ofxhPluginCache.h"
 #include "HostSupport/ofxhImageEffectAPI.h"
@@ -159,60 +165,161 @@ void EffectImageInstance::getRenderScaleRecursive(double &x, double &y) const
 }
 
 // make a parameter instance
+namespace
+{
+
+void registerParameterMetadata( Gaffer::Plug *plug, const OFX::Host::Param::Descriptor &descriptor )
+{
+	const auto &props = descriptor.getProperties();
+	const std::string type = descriptor.getType();
+
+	// Label
+	try
+	{
+		std::string label = props.getStringProperty( kOfxPropLabel );
+		if( !label.empty() )
+		{
+			Gaffer::Metadata::registerValue( plug, "label", new IECore::StringData( label ), false );
+		}
+	}
+	catch( ... )
+	{
+	}
+
+	// Tooltip
+	try
+	{
+		std::string hint = props.getStringProperty( kOfxParamPropHint );
+		if( !hint.empty() )
+		{
+			Gaffer::Metadata::registerValue( plug, "description", new IECore::StringData( hint ), false );
+		}
+	}
+	catch( ... )
+	{
+	}
+
+	// Secret params — hide nodule
+	try
+	{
+		if( props.getIntProperty( kOfxParamPropSecret ) )
+		{
+			Gaffer::Metadata::registerValue( plug, "nodule:type", new IECore::StringData( "" ), false );
+		}
+	}
+	catch( ... )
+	{
+	}
+
+	// Numeric range limits
+	if( type == kOfxParamTypeInteger || type == kOfxParamTypeDouble )
+	{
+		try
+		{
+			double min = props.getDoubleProperty( kOfxParamPropMin );
+			double max = props.getDoubleProperty( kOfxParamPropMax );
+			Gaffer::Metadata::registerValue( plug, "hardRange", new IECore::V2dData( Imath::V2d( min, max ) ), false );
+		}
+		catch( ... )
+		{
+		}
+
+		try
+		{
+			double min = props.getDoubleProperty( kOfxParamPropDisplayMin );
+			double max = props.getDoubleProperty( kOfxParamPropDisplayMax );
+			Gaffer::Metadata::registerValue( plug, "softRange", new IECore::V2dData( Imath::V2d( min, max ) ), false );
+		}
+		catch( ... )
+		{
+		}
+	}
+
+	// Choice presets
+	if( type == kOfxParamTypeChoice )
+	{
+		try
+		{
+			int numOptions = props.getDimension( kOfxParamPropChoiceOption );
+			for( int i = 0; i < numOptions; ++i )
+			{
+				std::string optionName = props.getStringProperty( kOfxParamPropChoiceOption, i );
+				Gaffer::Metadata::registerValue( plug, "preset:" + optionName, new IECore::IntData( i ), false );
+			}
+		}
+		catch( ... )
+		{
+		}
+
+		Gaffer::Metadata::registerValue( plug, "plugValueWidget:type", new IECore::StringData( "GafferUI.PresetsPlugValueWidget" ), false );
+	}
+}
+
+} // anonymous namespace
+
 OFX::Host::Param::Instance* EffectImageInstance::newParam(const std::string& name, OFX::Host::Param::Descriptor& descriptor)
 {
+	OFX::Host::Param::Instance *result = nullptr;
+
 	if(descriptor.getType()==kOfxParamTypeInteger)
 	{
-		return new IntegerInstance(this,name,descriptor);
+		result = new IntegerInstance(this,name,descriptor);
 	}
 	else if(descriptor.getType()==kOfxParamTypeDouble)
 	{
-		return new DoubleInstance(this,name,descriptor);
+		result = new DoubleInstance(this,name,descriptor);
 	}
 	else if(descriptor.getType()==kOfxParamTypeBoolean)
 	{
-		return new BooleanInstance(this,name,descriptor);
+		result = new BooleanInstance(this,name,descriptor);
 	}
 	else if(descriptor.getType()==kOfxParamTypeChoice)
 	{
-		return new ChoiceInstance(this,name,descriptor);
+		result = new ChoiceInstance(this,name,descriptor);
 	}
 	else if(descriptor.getType()==kOfxParamTypeRGBA)
 	{
-		return new RGBAInstance(this,name,descriptor);
+		result = new RGBAInstance(this,name,descriptor);
 	}
 	else if(descriptor.getType()==kOfxParamTypeRGB)
 	{
-		return new RGBInstance(this,name,descriptor);
+		result = new RGBInstance(this,name,descriptor);
 	}
 	else if(descriptor.getType()==kOfxParamTypeDouble2D)
 	{
-		return new Double2DInstance(this,name,descriptor);
+		result = new Double2DInstance(this,name,descriptor);
 	}
 	else if(descriptor.getType()==kOfxParamTypeInteger2D)
 	{
-		return new Integer2DInstance(this,name,descriptor);
+		result = new Integer2DInstance(this,name,descriptor);
 	}
 	else if(descriptor.getType()==kOfxParamTypePushButton)
 	{
-		return new PushbuttonInstance(this,name,descriptor);
+		result = new PushbuttonInstance(this,name,descriptor);
 	}
 	else if(descriptor.getType()==kOfxParamTypeString)
 	{
-		return new StringInstance(this,name,descriptor);
+		result = new StringInstance(this,name,descriptor);
 	}
 	else if(descriptor.getType()==kOfxParamTypeGroup)
 	{
-		return new OFX::Host::Param::GroupInstance(descriptor,this);
+		result = new OFX::Host::Param::GroupInstance(descriptor,this);
 	}
 	else if(descriptor.getType()==kOfxParamTypePage)
 	{
-		return new OFX::Host::Param::PageInstance(descriptor,this);
+		result = new OFX::Host::Param::PageInstance(descriptor,this);
 	}
-	else
+
+	if( result )
 	{
-		return nullptr;
+		auto *plug = const_cast<OFXImageNode*>( static_cast<const OFXImageNode*>( node() ) )->parametersPlug()->getChild<Gaffer::Plug>( name );
+		if( plug )
+		{
+			registerParameterMetadata( plug, descriptor );
+		}
 	}
+
+	return result;
 }
 
 OfxStatus EffectImageInstance::editBegin(const std::string& name)

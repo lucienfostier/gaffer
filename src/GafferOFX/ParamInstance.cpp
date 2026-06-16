@@ -65,7 +65,8 @@ Gaffer::Plug *setupTypedPlug( const IECore::InternedString &parameterName, Gaffe
 
 	return plug.get();
 }
-}
+
+} // namespace
 
 IntegerInstance::IntegerInstance( GafferOFX::EffectImageInstance* effect, const std::string& name, OFX::Host::Param::Descriptor& descriptor ) : OFX::Host::Param::IntegerInstance( descriptor, effect ), m_effect( effect ), m_descriptor( descriptor )
 {
@@ -335,7 +336,6 @@ GafferOFX::Integer2DInstance::Integer2DInstance( GafferOFX::EffectImageInstance*
 {
 	auto* plugParent = const_cast<GafferOFX::OFXImageNode*>(static_cast<const GafferOFX::OFXImageNode*>(m_effect->node()))->parametersPlug();
 	setupTypedPlug<V2iPlug>( name, plugParent, Plug::In, Imath::V2i() );
-
 }
 
 OfxStatus Integer2DInstance::get( int& x, int& y )
@@ -404,7 +404,6 @@ GafferOFX::Integer3DInstance::Integer3DInstance( GafferOFX::EffectImageInstance*
 {
 	auto* plugParent = const_cast<GafferOFX::OFXImageNode*>(static_cast<const GafferOFX::OFXImageNode*>(m_effect->node()))->parametersPlug();
 	setupTypedPlug<V3iPlug>( name, plugParent, Plug::In, Imath::V3i() );
-
 }
 
 OfxStatus Integer3DInstance::get( int& x, int& y, int& z )
