@@ -170,6 +170,14 @@ class OFXImageNodeTest( GafferTest.TestCase ) :
 		self.assertNotAlmostEqual( r0, g0, places = 3 )
 		self.assertNotAlmostEqual( g0, b0, places = 3 )
 
+		# The input has no Alpha channel, so readPlugToRGBA injects
+		# alpha = 1.0 for the OFX buffer.  Invert does out = 1.0 - in,
+		# so the output alpha should be 0.0 everywhere.
+		aSampler = GafferImage.Sampler( n["out"], "A", dw )
+		self.assertAlmostEqual( aSampler.sample( 0, 0 ), 0.0, places = 5 )
+		for x in [ 10, 32, 50 ] :
+			self.assertAlmostEqual( aSampler.sample( x, x ), 0.0, places = 5 )
+
 	def testAlphaOnlyInput( self ) :
 
 		scriptNode = Gaffer.ScriptNode()
@@ -629,6 +637,45 @@ class OFXImageNodeTest( GafferTest.TestCase ) :
 		mask["color"].setValue( imath.Color4f( 0, 0, 0, 0 ) )
 		hBlack = n["out"].channelDataHash( "R", imath.V2i( 0 ) )
 		self.assertNotEqual( hWhite, hBlack )
+
+	def testRgbInputAlphaInjected( self ) :
+
+		# When the input has no Alpha channel, readPlugToRGBA injects
+		# alpha=1.0 into the OFX buffer.  Verify that the injected
+		# alpha is processed correctly by the plugin.
+
+		s = Gaffer.ScriptNode()
+
+		cb = GafferImage.Checkerboard()
+		s.addChild( cb )
+		cb["format"].setValue( GafferImage.Format( 128, 128 ) )
+		cb["colorA"].setValue( imath.Color4f( 0.2, 0.4, 0.6, 1.0 ) )
+
+		dc = GafferImage.DeleteChannels()
+		s.addChild( dc )
+		dc["in"].setInput( cb["out"] )
+		dc["mode"].setValue( GafferImage.DeleteChannels.Mode.Keep )
+		dc["channels"].setValue( "R G B" )
+		self.assertEqual( list( dc["out"]["channelNames"].getValue() ), [ "R", "G", "B" ] )
+
+		n = GafferOFX.OFXImageNode()
+		s.addChild( n )
+		n["in"].setInput( dc["out"] )
+		n["pluginId"].setValue( "uk.co.thefoundry.BasicGainPlugin" )
+		self.assertTrue( n.createPluginInstance() )
+		n["parameters"]["scale"].setValue( 2.0 )
+
+		# BasicGain multiplies all channels by scale.
+		# Input has no A, so injected A=1.0 → output A should be 2.0.
+		dw = n["out"]["dataWindow"].getValue()
+		self.assertAlmostEqual(
+			GafferImage.Sampler( n["out"], "A", dw ).sample( 0, 0 ), 2.0, places = 5
+		)
+
+		# R/G/B should be doubled as usual.
+		sR = GafferImage.Sampler( n["out"], "R", dw )
+		sInR = GafferImage.Sampler( cb["out"], "R", dw )
+		self.assertAlmostEqual( sR.sample( 0, 0 ), sInR.sample( 0, 0 ) * 2.0, places = 5 )
 
 	def testHashChangesWithParameter( self ) :
 
