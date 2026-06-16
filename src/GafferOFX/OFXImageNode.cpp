@@ -626,7 +626,23 @@ void readPlugToRGBA( const GafferImage::ImagePlug *plug, OfxRGBAColourF *buffer,
 	GafferImage::Sampler rSampler( plug, "R", dataWindow );
 	GafferImage::Sampler gSampler( plug, "G", dataWindow );
 	GafferImage::Sampler bSampler( plug, "B", dataWindow );
-	GafferImage::Sampler aSampler( plug, "A", dataWindow );
+
+	ConstStringVectorDataPtr channelNamesData = plug->channelNamesPlug()->getValue();
+	bool hasAlpha = false;
+	for( const auto &ch : channelNamesData->readable() )
+	{
+		if( ch == "A" )
+		{
+			hasAlpha = true;
+			break;
+		}
+	}
+
+	std::unique_ptr<GafferImage::Sampler> aSampler;
+	if( hasAlpha )
+	{
+		aSampler = std::make_unique<GafferImage::Sampler>( plug, "A", dataWindow );
+	}
 
 	for( int y = dataWindow.min.y; y < dataWindow.max.y; ++y )
 	{
@@ -636,7 +652,7 @@ void readPlugToRGBA( const GafferImage::ImagePlug *plug, OfxRGBAColourF *buffer,
 			buffer[idx].r = rSampler.sample( x, y );
 			buffer[idx].g = gSampler.sample( x, y );
 			buffer[idx].b = bSampler.sample( x, y );
-			buffer[idx].a = aSampler.sample( x, y );
+			buffer[idx].a = aSampler ? aSampler->sample( x, y ) : 1.0f;
 		}
 	}
 }
@@ -876,13 +892,13 @@ IECore::ConstCompoundObjectPtr OFXImageNode::computeOfxRenderBuffer( const Gaffe
 							continue;
 
 						auto buf = std::make_unique<OfxRGBAColourF[]>( cacheWidth * cacheHeight );
-						// Fill with transparent black as fallback
+						// Fill with opaque black as fallback (matching current frame initialization)
 						for( int i = 0; i < cacheWidth * cacheHeight; ++i )
 						{
 							buf[i].r = 0.0f;
 							buf[i].g = 0.0f;
 							buf[i].b = 0.0f;
-							buf[i].a = 0.0f;
+							buf[i].a = 1.0f;
 						}
 
 						// Read the input plug at the requested time
