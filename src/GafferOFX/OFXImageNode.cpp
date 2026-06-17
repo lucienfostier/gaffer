@@ -83,6 +83,7 @@ void OFXImageNode::plugSet( Gaffer::Plug *plug )
 {
 	if( plug == pluginIdPlug() )
 	{
+		destroyInteract();
 		m_instance.reset();
 		createPluginInstance();
 	}
@@ -95,7 +96,8 @@ OFXImageNode::~OFXImageNode()
 bool OFXImageNode::createPluginInstance()
 {
 	Host& host = Host::instance();
-	auto plugin = host.m_pluginCache.getPluginById(pluginIdPlug()->getValue());
+	std::string pluginId = pluginIdPlug()->getValue();
+	auto plugin = host.m_pluginCache.getPluginById(pluginId);
 	if( plugin )
 	{
 		// Remove clip plugs from any previous instance
@@ -1047,15 +1049,12 @@ bool OFXImageNode::hasOverlay() const
 	// and returns the descriptor. Its state tells us if the plugin has an overlay.
 	OFX::Host::Interact::Descriptor &desc = m_instance->getOverlayDescriptor();
 	OFX::Host::Interact::State state = desc.getState();
-	// Also check the descriptor's overlay main entry (property set by plugin during DescribeInContext)
-	auto *overlayEntry = m_instance->getDescriptor().getOverlayInteractMainEntry();
-	std::cerr << "DEBUG hasOverlay: overlayState=" << state << " described=" << (state == OFX::Host::Interact::eDescribed) << " overlayEntry=" << (void*)overlayEntry << std::endl;
 	return state == OFX::Host::Interact::eDescribed;
 }
 
 GafferOFXInteractInstance* OFXImageNode::getInteract()
 {
-	if( !m_interactInstance && m_instance )
+	if( !m_interactInstance && m_instance && hasOverlay() )
 	{
 		m_interactInstance = std::make_unique<GafferOFXInteractInstance>( *m_instance );
 		m_interactInstance->createInstance();

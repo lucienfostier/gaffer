@@ -61,16 +61,6 @@ boost::python::list pluginIDsWrapper()
 	return result;
 }
 
-struct PairToTuple
-{
-    static PyObject* convert(const std::pair<double, double>& p)
-	{
-        return boost::python::incref(
-            boost::python::make_tuple(p.first, p.second).ptr()
-        );
-    }
-};
-
 bool createPluginInstanceWrapper( OFXImageNode& node )
 {
 	IECorePython::ScopedGILRelease gilRelease;
@@ -96,48 +86,6 @@ struct OfxPointD_to_tuple
 	}
 };
 
-OfxStatus interactDrawAction( GafferOFXInteractInstance &self, double time, const OfxPointD &renderScale )
-{
-	return self.drawAction( time, renderScale );
-}
-
-OfxStatus interactPenMotionAction( GafferOFXInteractInstance &self, double time, const OfxPointD &renderScale, const OfxPointD &penPos, const OfxPointI &penPosViewport, double pressure )
-{
-	return self.penMotionAction( time, renderScale, penPos, penPosViewport, pressure );
-}
-
-OfxStatus interactPenDownAction( GafferOFXInteractInstance &self, double time, const OfxPointD &renderScale, const OfxPointD &penPos, const OfxPointI &penPosViewport, double pressure )
-{
-	return self.penDownAction( time, renderScale, penPos, penPosViewport, pressure );
-}
-
-OfxStatus interactPenUpAction( GafferOFXInteractInstance &self, double time, const OfxPointD &renderScale, const OfxPointD &penPos, const OfxPointI &penPosViewport, double pressure )
-{
-	return self.penUpAction( time, renderScale, penPos, penPosViewport, pressure );
-}
-
-OfxStatus interactKeyDownAction( GafferOFXInteractInstance &self, double time, const OfxPointD &renderScale, int key, std::string keyString )
-{
-	char *ks = const_cast<char*>( keyString.c_str() );
-	return self.keyDownAction( time, renderScale, key, ks );
-}
-
-OfxStatus interactKeyUpAction( GafferOFXInteractInstance &self, double time, const OfxPointD &renderScale, int key, std::string keyString )
-{
-	char *ks = const_cast<char*>( keyString.c_str() );
-	return self.keyUpAction( time, renderScale, key, ks );
-}
-
-OfxStatus interactGainFocusAction( GafferOFXInteractInstance &self, double time, const OfxPointD &renderScale )
-{
-	return self.gainFocusAction( time, renderScale );
-}
-
-OfxStatus interactLoseFocusAction( GafferOFXInteractInstance &self, double time, const OfxPointD &renderScale )
-{
-	return self.loseFocusAction( time, renderScale );
-}
-
 struct OfxPointI_to_tuple
 {
 	static PyObject* convert( const OfxPointI& p )
@@ -146,13 +94,98 @@ struct OfxPointI_to_tuple
 	}
 };
 
+struct PairToTuple
+{
+	static PyObject* convert( const std::pair<double, double>& p )
+	{
+		return incref( make_tuple( p.first, p.second ).ptr() );
+	}
+};
+
+namespace
+{
+
+OfxPointD pointDFromObject( const boost::python::object &o )
+{
+	OfxPointD r;
+	r.x = boost::python::extract<double>( o[0] );
+	r.y = boost::python::extract<double>( o[1] );
+	return r;
+}
+
+OfxPointI pointIFromObject( const boost::python::object &o )
+{
+	OfxPointI r;
+	r.x = boost::python::extract<int>( o[0] );
+	r.y = boost::python::extract<int>( o[1] );
+	return r;
+}
+
+}
+
+OfxStatus interactDrawAction( GafferOFXInteractInstance &self, double time, const boost::python::object &renderScaleObj )
+{
+	OfxPointD renderScale = pointDFromObject( renderScaleObj );
+	return self.drawAction( time, renderScale );
+}
+
+OfxStatus interactPenMotionAction( GafferOFXInteractInstance &self, double time, const boost::python::object &renderScaleObj, const boost::python::object &penPosObj, const boost::python::object &penPosViewportObj, double pressure )
+{
+	OfxPointD renderScale = pointDFromObject( renderScaleObj );
+	OfxPointD penPos = pointDFromObject( penPosObj );
+	OfxPointI penPosViewport = pointIFromObject( penPosViewportObj );
+	return self.penMotionAction( time, renderScale, penPos, penPosViewport, pressure );
+}
+
+OfxStatus interactPenDownAction( GafferOFXInteractInstance &self, double time, const boost::python::object &renderScaleObj, const boost::python::object &penPosObj, const boost::python::object &penPosViewportObj, double pressure )
+{
+	OfxPointD renderScale = pointDFromObject( renderScaleObj );
+	OfxPointD penPos = pointDFromObject( penPosObj );
+	OfxPointI penPosViewport = pointIFromObject( penPosViewportObj );
+	return self.penDownAction( time, renderScale, penPos, penPosViewport, pressure );
+}
+
+OfxStatus interactPenUpAction( GafferOFXInteractInstance &self, double time, const boost::python::object &renderScaleObj, const boost::python::object &penPosObj, const boost::python::object &penPosViewportObj, double pressure )
+{
+	OfxPointD renderScale = pointDFromObject( renderScaleObj );
+	OfxPointD penPos = pointDFromObject( penPosObj );
+	OfxPointI penPosViewport = pointIFromObject( penPosViewportObj );
+	return self.penUpAction( time, renderScale, penPos, penPosViewport, pressure );
+}
+
+OfxStatus interactKeyDownAction( GafferOFXInteractInstance &self, double time, const boost::python::object &renderScaleObj, int key, std::string keyString )
+{
+	OfxPointD renderScale = pointDFromObject( renderScaleObj );
+	char *ks = const_cast<char*>( keyString.c_str() );
+	return self.keyDownAction( time, renderScale, key, ks );
+}
+
+OfxStatus interactKeyUpAction( GafferOFXInteractInstance &self, double time, const boost::python::object &renderScaleObj, int key, std::string keyString )
+{
+	OfxPointD renderScale = pointDFromObject( renderScaleObj );
+	char *ks = const_cast<char*>( keyString.c_str() );
+	return self.keyUpAction( time, renderScale, key, ks );
+}
+
+OfxStatus interactGainFocusAction( GafferOFXInteractInstance &self, double time, const boost::python::object &renderScaleObj )
+{
+	OfxPointD renderScale = pointDFromObject( renderScaleObj );
+	return self.gainFocusAction( time, renderScale );
+}
+
+OfxStatus interactLoseFocusAction( GafferOFXInteractInstance &self, double time, const boost::python::object &renderScaleObj )
+{
+	OfxPointD renderScale = pointDFromObject( renderScaleObj );
+	return self.loseFocusAction( time, renderScale );
+}
+
 } // anonymous namespace
 
 BOOST_PYTHON_MODULE( _GafferOFX )
 {
-	to_python_converter<std::pair<double, double>, PairToTuple>();
 	to_python_converter<OfxPointD, OfxPointD_to_tuple>();
 	to_python_converter<OfxPointI, OfxPointI_to_tuple>();
+	to_python_converter<std::pair<double, double>, PairToTuple>();
 
 	class_<Host>("Host", no_init)
 		.def("findOFXPlugins", &Host::findOFXPlugins)
