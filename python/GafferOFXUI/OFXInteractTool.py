@@ -56,41 +56,37 @@ class OFXInteractTool( GafferUI.Tool ) :
 		self.__ofxNode = None
 		self.__overlayGadget = None
 		self.__interact = None
-
-		self.__preRenderConnection = view.viewportGadget().preRenderSignal().connect(
-			Gaffer.WeakMethod( self.__preRender )
-		)
-
+		self.__viewportGadget = view.viewportGadget()
+		self.__preRenderConnection = None
 		self.__buttonPressConnection = None
 		self.__buttonReleaseConnection = None
 		self.__mouseMoveConnection = None
 		self.__keyPressConnection = None
 		self.__keyReleaseConnection = None
+		self.__setupDone = False
+
+		# Use a one-shot preRender connection for initial setup only,
+		# then disconnect to avoid re-triggering renders.
+		self.__preRenderConnection = self.__viewportGadget.preRenderSignal().connect(
+			Gaffer.WeakMethod( self.__preRender )
+		)
 
 	def __preRender( self, viewportGadget ) :
 
-		if self.__ofxNode is not None :
-			self.__updateViewportSize()
+		if self.__setupDone :
 			return
-
-		IECore.msg( IECore.Msg.Level.Warning, "OFXInteractTool", "__preRender: looking for OFX node" )
 
 		node = self.__findOFXNode( viewportGadget )
 		if node is None :
-			IECore.msg( IECore.Msg.Level.Warning, "OFXInteractTool", "__preRender: no OFX node found" )
 			return
-
-		IECore.msg( IECore.Msg.Level.Warning, "OFXInteractTool", "__preRender: found node " + node.getName() )
 
 		self.__ofxNode = node
 		self.__interact = node.getInteract()
 		if self.__interact is None :
-			IECore.msg( IECore.Msg.Level.Warning, "OFXInteractTool", "__preRender: getInteract returned None" )
+			self.__ofxNode = None
 			return
 
-		IECore.msg( IECore.Msg.Level.Warning, "OFXInteractTool", "__preRender: got interact, creating overlay gadget" )
-
-		self.__overlayGadget = OFXOverlayGadget( self.__interact )
+		self.__overlayGadget = OFXOverlayGadget( self.__interact, self.__viewportGadget )
 
 		overlayName = "__ofxInteractOverlay"
 		existing = viewportGadget.getChild( overlayName )
@@ -99,19 +95,19 @@ class OFXInteractTool( GafferUI.Tool ) :
 
 		viewportGadget.setChild( overlayName, self.__overlayGadget )
 
-		self.__updateViewportSize()
 		self.__connectViewportSignals( viewportGadget )
 
-		IECore.msg( IECore.Msg.Level.Warning, "OFXInteractTool", "__preRender: overlay added successfully" )
+		# Disconnect after setup so setChild's renderRequest only fires once
+		self.__preRenderConnection.disconnect()
+		self.__preRenderConnection = None
+		self.__setupDone = True
 
 	def __findOFXNode( self, viewportGadget ) :
 
 		view = self.view()
 		visited = set()
 		if isinstance( view, GafferImageUI.ImageView ) :
-			IECore.msg( IECore.Msg.Level.Warning, "OFXInteractTool", "__findOFXNode: view is ImageView, searching..." )
 			return self.__findOFXNodeFromPlug( view["in"], visited )
-		IECore.msg( IECore.Msg.Level.Warning, "OFXInteractTool", "__findOFXNode: view is " + type( view ).__name__ + ", not ImageView" )
 		return None
 
 	@staticmethod
@@ -123,9 +119,7 @@ class OFXInteractTool( GafferUI.Tool ) :
 		visited.add( node )
 
 		if isinstance( node, GafferOFX.OFXImageNode ) :
-			hasO = node.hasOverlay()
-			IECore.msg( IECore.Msg.Level.Warning, "OFXInteractTool", "__findOFXNodeFromPlug: found OFXImageNode '" + node.getName() + "', hasOverlay=" + str( hasO ) )
-			if hasO :
+			if node.hasOverlay() :
 				return node
 
 		for childPlug in node.children( Gaffer.Plug ) :
@@ -137,26 +131,6 @@ class OFXInteractTool( GafferUI.Tool ) :
 						return result
 
 		return None
-
-	def __updateViewportSize( self ) :
-
-		if self.__interact is None :
-			return
-
-		# Use the image data window dimensions as the canonical coordinate space
-		# for the overlay projection. This matches the OFX convention where
-		# overlays draw in image-pixel (canonical) coordinates.
-		dataWindow = self.__ofxNode["out"]["dataWindow"].getValue()
-		iw = dataWindow.size().x
-		ih = dataWindow.size().y
-		IECore.msg( IECore.Msg.Level.Warning, "OFXInteractTool", "__updateViewportSize: image=" + str( iw ) + "x" + str( ih ) )
-
-		self.__interact.setViewportSize( float( iw ), float( ih ) )
-
-		with self.__ofxNode.scriptNode().context() :
-			frame = Gaffer.Context.current().getFrame()
-
-		self.__interact.setTime( frame )
 
 	def __connectViewportSignals( self, viewportGadget ) :
 
@@ -194,8 +168,9 @@ class OFXInteractTool( GafferUI.Tool ) :
 		return 1.0
 
 	def __buttonPress( self, viewportGadget, event ) :
-
+		print("button press")
 		if self.__interact is None :
+			print("button press with no interact")
 			return False
 
 		penPos = self.__viewportPosToOfx( viewportGadget, event )

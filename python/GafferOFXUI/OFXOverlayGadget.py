@@ -43,32 +43,42 @@ import GafferUI
 
 class OFXOverlayGadget( GafferUI.Gadget ) :
 
-	def __init__( self, interact, **kw ) :
+	def __init__( self, interact, viewportGadget ) :
 
 		GafferUI.Gadget.__init__( self )
 		self.__interact = interact
+		self.__viewportGadget = viewportGadget
+		self.__lastViewportSize = ( -1, -1 )
 
 	def renderLayer( self, layer, style, renderReason ) :
 
 		if self.__interact is None :
 			return
 
-		IECore.msg( IECore.Msg.Level.Warning, "OFXOverlayGadget", "renderLayer: layer=" + str( layer ) + " reason=" + str( renderReason ) )
+		# Only draw during the normal Draw pass.
+		if renderReason != GafferUI.Gadget.RenderReason.Draw :
+			return
 
+		self.__updateViewportSize()
 		self.__interact.setupGLProjection()
 		try :
-			if not getattr( self, "__focused", False ) :
-				IECore.msg( IECore.Msg.Level.Warning, "OFXOverlayGadget", "renderLayer: calling gainFocusAction" )
-				self.__interact.gainFocusAction( self.__interact.getTime(), ( 1.0, 1.0 ) )
-				self.__focused = True
-			result = self.__interact.drawAction( self.__interact.getTime(), ( 1.0, 1.0 ) )
-			IECore.msg( IECore.Msg.Level.Warning, "OFXOverlayGadget", "renderLayer: drawAction returned " + str( result ) )
+			self.__interact.debugDraw()
 		finally :
 			self.__interact.restoreGLProjection()
 
+	def __updateViewportSize( self ) :
+
+		vpSize = self.__viewportGadget.getViewport()
+		vw, vh = int( vpSize.x ), int( vpSize.y )
+		if ( vw, vh ) != self.__lastViewportSize :
+			self.__interact.setViewportSize( float( vw ), float( vh ) )
+			self.__lastViewportSize = ( vw, vh )
+
 	def layerMask( self ) :
 
-		return 32 # GafferUI.Gadget.Layer.Front
+		# LayerMask is not exposed to Python - return the raw int.
+		# 0x20 = OverlayFront, the topmost layer, correct for OFX overlays.
+		return 0x20
 
 	def renderBound( self ) :
 

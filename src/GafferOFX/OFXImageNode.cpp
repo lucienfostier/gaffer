@@ -1045,18 +1045,23 @@ bool OFXImageNode::hasOverlay() const
 {
 	if( !m_instance )
 		return false;
-	// Calling getOverlayDescriptor() triggers describe on the overlay interact
-	// and returns the descriptor. Its state tells us if the plugin has an overlay.
+	// Calling getOverlayDescriptor() triggers kOfxActionDescribe on the
+	// overlay interact if not already done and returns the descriptor.
+	// We accept both eDescribed (described but not yet instantiated) and
+	// eCreated (already instantiated) so that hasOverlay() stays true
+	// after createInstance() advances the state.
 	OFX::Host::Interact::Descriptor &desc = m_instance->getOverlayDescriptor();
 	OFX::Host::Interact::State state = desc.getState();
-	return state == OFX::Host::Interact::eDescribed;
+	return state == OFX::Host::Interact::eDescribed
+		|| state == OFX::Host::Interact::eCreated;
 }
 
 GafferOFXInteractInstance* OFXImageNode::getInteract()
 {
 	if( !m_interactInstance && m_instance && hasOverlay() )
 	{
-		m_interactInstance = std::make_unique<GafferOFXInteractInstance>( *m_instance );
+		// 32-bit float, hasAlpha=true — matches the float RGBA clips used throughout.
+		m_interactInstance = std::make_unique<GafferOFXInteractInstance>( *m_instance, 32, true );
 		m_interactInstance->createInstance();
 	}
 	return m_interactInstance.get();

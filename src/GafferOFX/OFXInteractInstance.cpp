@@ -38,6 +38,11 @@
 
 #include <GL/gl.h>
 
+// glUseProgram is part of OpenGL 2.0 and is exported directly
+// from libGL.so on all modern Linux systems. GafferOFX doesn't
+// link against GLEW, so we just declare it ourselves.
+extern "C" void glUseProgram( GLuint program );
+
 using namespace GafferOFX;
 
 GafferOFXInteractInstance::GafferOFXInteractInstance(
@@ -49,7 +54,8 @@ GafferOFXInteractInstance::GafferOFXInteractInstance(
 	  m_created( false ),
 	  m_viewportWidth( 100 ),
 	  m_viewportHeight( 100 ),
-	  m_time( 1.0 )
+	  m_time( 1.0 ),
+	  m_savedProgram( 0 )
 {
 }
 
@@ -147,22 +153,79 @@ void GafferOFXInteractInstance::setupGLProjection()
 	glMatrixMode( GL_MODELVIEW );
 	glPushMatrix();
 	glLoadIdentity();
+	// Save and unbind the active shader program so overlay draws use
+	// the fixed-function pipeline instead of the GLSL shader.
+	glGetIntegerv( GL_CURRENT_PROGRAM, &m_savedProgram );
+	if( m_savedProgram )
+	{
+		glUseProgram( 0 );
+		GLuint err = glGetError();
+		if( err ) std::cerr << "OFX: glUseProgram(0) error=" << err << std::endl;
+	}
+	// Check which framebuffer is active
+	GLint fb = -1;
+	glGetIntegerv( GL_DRAW_FRAMEBUFFER_BINDING, &fb );
+	GLint vp[4];
+	glGetIntegerv( GL_VIEWPORT, vp );
+	std::cerr << "OFX: setupGLProjection savedProgram=" << m_savedProgram << " fb=" << fb << " viewport=" << vp[0] << "," << vp[1] << " " << vp[2] << "x" << vp[3] << std::endl;
+}
+
+void GafferOFXInteractInstance::debugDraw()
+{
+	static int callCount = 0;
+	++callCount;
+	// Simple debug triangles — no push/pop attrib, setupGLProjection already
+	// handles the shader disable and orthographic projection.
+	float w = m_viewportWidth;
+	float h = m_viewportHeight;
+	glBegin( GL_TRIANGLES );
+	// Red triangle (lower-left corner)
+	glColor3f( 1.0f, 0.0f, 0.0f );
+	glVertex2f( 0.0f, 0.0f );
+	glVertex2f( w * 0.5f, 0.0f );
+	glVertex2f( 0.0f, h * 0.5f );
+	// Green triangle (upper-right corner)
+	glColor3f( 0.0f, 1.0f, 0.0f );
+	glVertex2f( w, h );
+	glVertex2f( w, h * 0.5f );
+	glVertex2f( w * 0.5f, h );
+	// Blue triangle (center)
+	glColor3f( 0.0f, 0.0f, 1.0f );
+	glVertex2f( w * 0.25f, h * 0.5f );
+	glVertex2f( w * 0.75f, h * 0.5f );
+	glVertex2f( w * 0.5f, h * 0.75f );
+	glEnd();
+	std::cerr << "OFX: debugDraw #" << callCount << " viewport=" << m_viewportWidth << "x" << m_viewportHeight << " savedProgram=" << m_savedProgram << std::endl;
 }
 
 void GafferOFXInteractInstance::restoreGLProjection()
 {
-	glMatrixMode( GL_PROJECTION );
-	glPopMatrix();
+	// Restore the previously active shader program
+	if( m_savedProgram )
+	{
+		glUseProgram( m_savedProgram );
+		GLuint err = glGetError();
+		if( err ) std::cerr << "OFX: glUseProgram restore error=" << err << std::endl;
+		std::cerr << "OFX: restoreGLProjection restored program=" << m_savedProgram << std::endl;
+	}
+	// Pop modelview then projection
 	glMatrixMode( GL_MODELVIEW );
+	glPopMatrix();
+	glMatrixMode( GL_PROJECTION );
 	glPopMatrix();
 }
 
 OfxStatus GafferOFXInteractInstance::swapBuffers()
 {
-	return kOfxStatOK;
+	// Gaffer manages its own buffer swapping — tell the plugin we handled it.
+	return kOfxStatReplyDefault;
 }
 
 OfxStatus GafferOFXInteractInstance::redraw()
 {
-	return kOfxStatOK;
+	// Returning kOfxStatOK tells the plugin the redraw was *scheduled*, causing
+	// it to call redraw() again on the next draw, creating an infinite loop.
+	// kOfxStatReplyDefault tells the plugin the host doesn't support
+	// plugin-requested redraws, which is the correct behaviour here.
+	return kOfxStatReplyDefault;
 }

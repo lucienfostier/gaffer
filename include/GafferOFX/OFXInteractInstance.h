@@ -75,6 +75,9 @@ class GAFFEROFX_API GafferOFXInteractInstance : public OFX::Host::ImageEffect::O
 		/// Must be called within a valid GL context before drawAction().
 		void setupGLProjection();
 
+		/// Draw a debug test shape to verify GL rendering works.
+		void debugDraw();
+
 		/// Restore GL state after drawAction().
 		void restoreGLProjection();
 
@@ -97,6 +100,7 @@ class GAFFEROFX_API GafferOFXInteractInstance : public OFX::Host::ImageEffect::O
 		double m_viewportWidth;
 		double m_viewportHeight;
 		OfxTime m_time;
+		int m_savedProgram;
 
 };
 
