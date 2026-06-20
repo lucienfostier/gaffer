@@ -43,28 +43,48 @@ import GafferUI
 
 class OFXOverlayGadget( GafferUI.Gadget ) :
 
-	def __init__( self, interact, viewportGadget ) :
+	def __init__( self, interact, viewportGadget, pixelAspect = 1.0, imageWidth = 0, imageHeight = 0 ) :
 
 		GafferUI.Gadget.__init__( self )
 		self.__interact = interact
 		self.__viewportGadget = viewportGadget
+		self.__pixelAspect = pixelAspect
+		self.__imageWidth = imageWidth
+		self.__imageHeight = imageHeight
 		self.__lastViewportSize = ( -1, -1 )
+		self.__gainedFocus = False
 
 	def renderLayer( self, layer, style, renderReason ) :
+
+		import sys
+		sys.stderr.write( f"OFXOverlayGadget.renderLayer: layer={layer} renderReason={renderReason} interact={self.__interact is not None}\n" )
 
 		if self.__interact is None :
 			return
 
-		# Only draw during the normal Draw pass.
 		if renderReason != GafferUI.Gadget.RenderReason.Draw :
 			return
 
 		self.__updateViewportSize()
-		self.__interact.setupGLProjection()
-		try :
-			self.__interact.debugDraw()
-		finally :
-			self.__interact.restoreGLProjection()
+
+		renderScale = ( 1.0, 1.0 )
+		time = self.__interact.getTime()
+
+		# Gain focus once on first render
+		if not self.__gainedFocus :
+			sys.stderr.write( "OFXOverlayGadget.renderLayer: calling gainFocusAction\n" )
+			result = self.__interact.gainFocusAction( time, renderScale )
+			sys.stderr.write( f"OFXOverlayGadget.renderLayer: gainFocusAction returned {result}\n" )
+			self.__gainedFocus = True
+
+		# renderOverlay sets up GL state (projection, modelview),
+		# dispatches drawAction to the plugin, then restores GL state.
+		sys.stderr.write( "OFXOverlayGadget.renderLayer: calling renderOverlay\n" )
+		self.__interact.renderOverlay(
+			time, 1.0, 1.0, self.__pixelAspect,
+			self.__imageWidth, self.__imageHeight
+		)
+		sys.stderr.write( "OFXOverlayGadget.renderLayer: done\n" )
 
 	def __updateViewportSize( self ) :
 

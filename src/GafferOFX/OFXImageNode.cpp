@@ -1046,10 +1046,10 @@ bool OFXImageNode::hasOverlay() const
 	if( !m_instance )
 		return false;
 	// Calling getOverlayDescriptor() triggers kOfxActionDescribe on the
-	// overlay interact if not already done and returns the descriptor.
-	// We accept both eDescribed (described but not yet instantiated) and
-	// eCreated (already instantiated) so that hasOverlay() stays true
-	// after createInstance() advances the state.
+	// overlay interact via the Context descriptor, which reads the
+	// overlay interact main entry from the Context descriptor's
+	// properties (set during DescribeInContext by the plugin's
+	// setOverlayInteractDescriptor() call).
 	OFX::Host::Interact::Descriptor &desc = m_instance->getOverlayDescriptor();
 	OFX::Host::Interact::State state = desc.getState();
 	return state == OFX::Host::Interact::eDescribed

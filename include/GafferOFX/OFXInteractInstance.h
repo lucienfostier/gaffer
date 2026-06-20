@@ -71,15 +71,13 @@ class GAFFEROFX_API GafferOFXInteractInstance : public OFX::Host::ImageEffect::O
 
 		OfxTime getTime() const;
 
-		/// Set up GL projection for raster-space drawing.
-		/// Must be called within a valid GL context before drawAction().
-		void setupGLProjection();
-
 		/// Draw a debug test shape to verify GL rendering works.
 		void debugDraw();
 
-		/// Restore GL state after drawAction().
-		void restoreGLProjection();
+		/// Render the overlay in image-pixel coordinates.
+		/// Sets up orthographic projection matching imagePixelWidth/Height,
+		/// dispatches drawAction to the plugin, then restores GL state.
+		void renderOverlay( double time, double renderScaleX, double renderScaleY, double pixelAspect, int imageWidth = 0, int imageHeight = 0 );
 
 		/// Override callEntry to pass the effect instance handle instead of the
 		/// interact instance handle. The plugin's dispatch maps overlay interact
@@ -100,7 +98,6 @@ class GAFFEROFX_API GafferOFXInteractInstance : public OFX::Host::ImageEffect::O
 		double m_viewportWidth;
 		double m_viewportHeight;
 		OfxTime m_time;
-		int m_savedProgram;
 
 };
 

@@ -38,10 +38,14 @@
 
 #include <GL/gl.h>
 
-// glUseProgram is part of OpenGL 2.0 and is exported directly
-// from libGL.so on all modern Linux systems. GafferOFX doesn't
-// link against GLEW, so we just declare it ourselves.
-extern "C" void glUseProgram( GLuint program );
+#include <iostream>
+
+// GafferOFX does not link GLEW, so we must declare GL 2.0 functions manually.
+extern "C" {
+	extern GLint glGetUniformLocation( GLuint program, const char *name );
+	extern void glUniform1i( GLint location, GLint v0 );
+	extern void glUseProgram( GLuint program );
+}
 
 using namespace GafferOFX;
 
@@ -54,8 +58,7 @@ GafferOFXInteractInstance::GafferOFXInteractInstance(
 	  m_created( false ),
 	  m_viewportWidth( 100 ),
 	  m_viewportHeight( 100 ),
-	  m_time( 1.0 ),
-	  m_savedProgram( 0 )
+	  m_time( 1.0 )
 {
 }
 
@@ -69,11 +72,9 @@ OfxStatus GafferOFXInteractInstance::callEntry( const char *action, OFX::Host::P
 	if( _state != OFX::Host::Interact::eFailed )
 	{
 		OfxPropertySetHandle inHandle = inArgs ? inArgs->getHandle() : NULL;
-		// Use the effect instance handle for interact-specific actions so the
-		// plugin can dispatch to the correct effect context.
-		void *handle = ( strncmp( action, "OfxInteractAction", 17 ) == 0 )
-			? _effectInstance
-			: getHandle();
+		// The plugin's support library expects the interact instance handle
+		// (this) so it can retrieve the Interact pointer via the interact suite.
+		void *handle = getHandle();
 		return _descriptor.callEntry( action, handle, inHandle, NULL );
 	}
 	return kOfxStatFailed;
@@ -83,10 +84,12 @@ OfxStatus GafferOFXInteractInstance::createInstance()
 {
 	if( m_created )
 		return kOfxStatOK;
-	// For create instance, use the overlay descriptor handle that was
-	// registered during describe(). The plugin maps descriptor handles
-	// to overlay interact creation.
-	OfxStatus s = _descriptor.callEntry( kOfxActionCreateInstance, _descriptor.getHandle(), NULL, NULL );
+	// Pass the interact instance handle (getHandle()) so the plugin's
+	// retrieveEffectFromInteractHandle can find kOfxPropEffectInstance
+	// in the instance's property set (set by the Host's Interact::Instance
+	// constructor). The descriptor handle lacks this property.
+	void *handle = getHandle();
+	OfxStatus s = _descriptor.callEntry( kOfxActionCreateInstance, handle, NULL, NULL );
 	if( s == kOfxStatOK || s == kOfxStatReplyDefault )
 	{
 		_state = OFX::Host::Interact::eCreated;
@@ -101,6 +104,7 @@ OfxStatus GafferOFXInteractInstance::createInstance()
 
 void GafferOFXInteractInstance::destroyInstance()
 {
+	std::cerr << "DEBUG destroyInstance called, m_created=" << m_created << std::endl;
 	m_created = false;
 }
 
@@ -141,78 +145,105 @@ void GafferOFXInteractInstance::getBackgroundColour( double &r, double &g, doubl
 
 bool GafferOFXInteractInstance::getSuggestedColour( double &r, double &g, double &b ) const
 {
-	return false;
-}
-
-void GafferOFXInteractInstance::setupGLProjection()
-{
-	glMatrixMode( GL_PROJECTION );
-	glPushMatrix();
-	glLoadIdentity();
-	glOrtho( 0, m_viewportWidth, 0, m_viewportHeight, -1, 1 );
-	glMatrixMode( GL_MODELVIEW );
-	glPushMatrix();
-	glLoadIdentity();
-	// Save and unbind the active shader program so overlay draws use
-	// the fixed-function pipeline instead of the GLSL shader.
-	glGetIntegerv( GL_CURRENT_PROGRAM, &m_savedProgram );
-	if( m_savedProgram )
-	{
-		glUseProgram( 0 );
-		GLuint err = glGetError();
-		if( err ) std::cerr << "OFX: glUseProgram(0) error=" << err << std::endl;
-	}
-	// Check which framebuffer is active
-	GLint fb = -1;
-	glGetIntegerv( GL_DRAW_FRAMEBUFFER_BINDING, &fb );
-	GLint vp[4];
-	glGetIntegerv( GL_VIEWPORT, vp );
-	std::cerr << "OFX: setupGLProjection savedProgram=" << m_savedProgram << " fb=" << fb << " viewport=" << vp[0] << "," << vp[1] << " " << vp[2] << "x" << vp[3] << std::endl;
+	r = 1.0; g = 0.0; b = 0.0;
+	return true;
 }
 
 void GafferOFXInteractInstance::debugDraw()
 {
-	static int callCount = 0;
-	++callCount;
-	// Simple debug triangles — no push/pop attrib, setupGLProjection already
-	// handles the shader disable and orthographic projection.
-	float w = m_viewportWidth;
-	float h = m_viewportHeight;
-	glBegin( GL_TRIANGLES );
-	// Red triangle (lower-left corner)
-	glColor3f( 1.0f, 0.0f, 0.0f );
-	glVertex2f( 0.0f, 0.0f );
-	glVertex2f( w * 0.5f, 0.0f );
-	glVertex2f( 0.0f, h * 0.5f );
-	// Green triangle (upper-right corner)
-	glColor3f( 0.0f, 1.0f, 0.0f );
-	glVertex2f( w, h );
-	glVertex2f( w, h * 0.5f );
-	glVertex2f( w * 0.5f, h );
-	// Blue triangle (center)
-	glColor3f( 0.0f, 0.0f, 1.0f );
-	glVertex2f( w * 0.25f, h * 0.5f );
-	glVertex2f( w * 0.75f, h * 0.5f );
-	glVertex2f( w * 0.5f, h * 0.75f );
+	GLint prog;
+	glGetIntegerv( GL_CURRENT_PROGRAM, &prog );
+	if( prog )
+	{
+		glUniform1i( glGetUniformLocation( prog, "isCurve" ), 0 );
+		glUniform1i( glGetUniformLocation( prog, "border" ), 0 );
+		glUniform1i( glGetUniformLocation( prog, "edgeAntiAliasing" ), 0 );
+		glUniform1i( glGetUniformLocation( prog, "textureType" ), 0 );
+	}
+
+	// Origin marker: magenta cross at (0,0) in current coordinate system
+	glColor3f( 1.0f, 0.0f, 1.0f );
+	glBegin( GL_LINES );
+	glVertex2f( -20.0f, 0.0f );
+	glVertex2f( 20.0f, 0.0f );
+	glVertex2f( 0.0f, -20.0f );
+	glVertex2f( 0.0f, 20.0f );
 	glEnd();
-	std::cerr << "OFX: debugDraw #" << callCount << " viewport=" << m_viewportWidth << "x" << m_viewportHeight << " savedProgram=" << m_savedProgram << std::endl;
+
+	// Red rect at (100,100,200,200)
+	glColor3f( 1.0f, 0.0f, 0.0f );
+	glBegin( GL_LINE_LOOP );
+	glVertex2f( 100.0f, 100.0f );
+	glVertex2f( 200.0f, 100.0f );
+	glVertex2f( 200.0f, 200.0f );
+	glVertex2f( 100.0f, 200.0f );
+	glEnd();
+
+	// Green rect at (500,500,600,600)  
+	glColor3f( 0.0f, 1.0f, 0.0f );
+	glBegin( GL_LINE_LOOP );
+	glVertex2f( 500.0f, 500.0f );
+	glVertex2f( 600.0f, 500.0f );
+	glVertex2f( 600.0f, 600.0f );
+	glVertex2f( 500.0f, 600.0f );
+	glEnd();
 }
 
-void GafferOFXInteractInstance::restoreGLProjection()
+void GafferOFXInteractInstance::renderOverlay( double time, double renderScaleX, double renderScaleY, double pixelAspect, int /*imageWidth*/, int /*imageHeight*/ )
 {
-	// Restore the previously active shader program
-	if( m_savedProgram )
-	{
-		glUseProgram( m_savedProgram );
-		GLuint err = glGetError();
-		if( err ) std::cerr << "OFX: glUseProgram restore error=" << err << std::endl;
-		std::cerr << "OFX: restoreGLProjection restored program=" << m_savedProgram << std::endl;
-	}
-	// Pop modelview then projection
+	std::cerr << "DEBUG renderOverlay called" << std::endl;
+
+	// Save GL state to avoid corrupting Gaffer's rendering pipeline
+	glPushAttrib( GL_ALL_ATTRIB_BITS );
+	glMatrixMode( GL_PROJECTION );
+	glPushMatrix();
 	glMatrixMode( GL_MODELVIEW );
-	glPopMatrix();
+	glPushMatrix();
+
+	// Gaffer's ImageView camera already maps pixel coordinates to screen.
+	// We leave the projection and modelview matrices as-is so the plugin's
+	// pixel-coordinate drawing (e.g. glVertex2f(32,32)) maps to the correct
+	// image pixel position, accounting for zoom/pan in the viewport.
+	// Only apply pixelAspect for non-square pixels.
+	glMatrixMode( GL_MODELVIEW );
+	glScalef( pixelAspect, 1.0f, 1.0f );
+
+	// Disable Gaffer's shader — plugins use fixed-function GL (glBegin/glEnd).
+	GLint prog;
+	glGetIntegerv( GL_CURRENT_PROGRAM, &prog );
+	if( prog )
+	{
+		glUseProgram( 0 );
+	}
+
+	// Clear accumulated GL errors before plugin draw
+	while( glGetError() != GL_NO_ERROR ) {}
+
+	// Dispatch draw to the plugin
+	OfxPointD renderScale = { renderScaleX, renderScaleY };
+	drawAction( time, renderScale );
+
+	// Log GL errors that the plugin may have left behind
+	GLenum err;
+	while( ( err = glGetError() ) != GL_NO_ERROR )
+	{
+		std::cerr << "DEBUG GL error after draw: 0x" << std::hex << err << std::dec << std::endl;
+	}
+
+	// Re-enable Gaffer's shader
+	if( prog )
+	{
+		glUseProgram( prog );
+	}
+
+	// Restore Gaffer's GL state
 	glMatrixMode( GL_PROJECTION );
 	glPopMatrix();
+	glMatrixMode( GL_MODELVIEW );
+	glPopMatrix();
+	glPopAttrib();
+
+	std::cerr << "DEBUG renderOverlay done" << std::endl;
 }
 
 OfxStatus GafferOFXInteractInstance::swapBuffers()

@@ -442,7 +442,7 @@ GafferOFX::StringInstance::StringInstance( GafferOFX::EffectImageInstance* effec
 {
 	// Don't set up the Gaffer plug in the constructor - wait until populate is done.
 	// The Gaffer plug will be created on first get() if it doesn't exist.
-	std::cerr << "DEBUG StringInstance constructor: this=" << this << " name=" << name << std::endl;
+
 }
 
 OfxStatus StringInstance::get( std::string& s )

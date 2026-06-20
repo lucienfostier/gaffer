@@ -129,6 +129,11 @@ OfxStatus interactDrawAction( GafferOFXInteractInstance &self, double time, cons
 	return self.drawAction( time, renderScale );
 }
 
+void interactRenderOverlay( GafferOFXInteractInstance &self, double time, double renderScaleX, double renderScaleY, double pixelAspect, int imageWidth = 0, int imageHeight = 0 )
+{
+	self.renderOverlay( time, renderScaleX, renderScaleY, pixelAspect, imageWidth, imageHeight );
+}
+
 OfxStatus interactPenMotionAction( GafferOFXInteractInstance &self, double time, const boost::python::object &renderScaleObj, const boost::python::object &penPosObj, const boost::python::object &penPosViewportObj, double pressure )
 {
 	OfxPointD renderScale = pointDFromObject( renderScaleObj );
@@ -198,9 +203,8 @@ BOOST_PYTHON_MODULE( _GafferOFX )
 		.def( "setViewportSize", &GafferOFXInteractInstance::setViewportSize )
 		.def( "setTime", &GafferOFXInteractInstance::setTime )
 		.def( "getTime", &GafferOFXInteractInstance::getTime )
-		.def( "setupGLProjection", &GafferOFXInteractInstance::setupGLProjection )
+		.def( "renderOverlay", &interactRenderOverlay )
 		.def( "debugDraw", &GafferOFXInteractInstance::debugDraw )
-		.def( "restoreGLProjection", &GafferOFXInteractInstance::restoreGLProjection )
 		.def( "drawAction", &interactDrawAction )
 		.def( "penMotionAction", &interactPenMotionAction )
 		.def( "penDownAction", &interactPenDownAction )
