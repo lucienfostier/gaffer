@@ -72,7 +72,6 @@ class OFXInteractTool( GafferUI.Tool ) :
 		)
 
 	def __preRender( self, viewportGadget ) :
-
 		if self.__setupDone :
 			return
 
@@ -295,7 +294,7 @@ Gaffer.Metadata.registerNode(
 	""",
 	plugs = {
 		"active" : [
-			"boolPlugValueWidget:image", lambda plug : "gafferSceneUICropWindowTool.png",
+			"boolPlugValueWidget:image", lambda plug : "gafferOFXTool.png",
 		],
 	}
 )
