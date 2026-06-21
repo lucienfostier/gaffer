@@ -45,7 +45,19 @@ extern "C" {
 	extern GLint glGetUniformLocation( GLuint program, const char *name );
 	extern void glUniform1i( GLint location, GLint v0 );
 	extern void glUseProgram( GLuint program );
+	extern void glBindFramebuffer( GLenum target, GLuint framebuffer );
 }
+
+// Framebuffer object constants not in <GL/gl.h>
+#ifndef GL_DRAW_FRAMEBUFFER
+#define GL_DRAW_FRAMEBUFFER 0x8CA9
+#endif
+#ifndef GL_READ_FRAMEBUFFER
+#define GL_READ_FRAMEBUFFER 0x8CA8
+#endif
+#ifndef GL_DRAW_FRAMEBUFFER_BINDING
+#define GL_DRAW_FRAMEBUFFER_BINDING 0x8CA6
+#endif
 
 using namespace GafferOFX;
 
@@ -104,7 +116,6 @@ OfxStatus GafferOFXInteractInstance::createInstance()
 
 void GafferOFXInteractInstance::destroyInstance()
 {
-	std::cerr << "DEBUG destroyInstance called, m_created=" << m_created << std::endl;
 	m_created = false;
 }
 
@@ -189,46 +200,141 @@ void GafferOFXInteractInstance::debugDraw()
 	glEnd();
 }
 
-void GafferOFXInteractInstance::renderOverlay( double time, double renderScaleX, double renderScaleY, double pixelAspect, int /*imageWidth*/, int /*imageHeight*/ )
+void GafferOFXInteractInstance::renderOverlay( double time, double renderScaleX, double renderScaleY, double pixelAspect, int imageWidth, int imageHeight )
 {
-	std::cerr << "DEBUG renderOverlay called" << std::endl;
-
-	// Save GL state to avoid corrupting Gaffer's rendering pipeline
-	glPushAttrib( GL_ALL_ATTRIB_BITS );
-	glMatrixMode( GL_PROJECTION );
-	glPushMatrix();
-	glMatrixMode( GL_MODELVIEW );
-	glPushMatrix();
-
-	// Gaffer's ImageView camera already maps pixel coordinates to screen.
-	// We leave the projection and modelview matrices as-is so the plugin's
-	// pixel-coordinate drawing (e.g. glVertex2f(32,32)) maps to the correct
-	// image pixel position, accounting for zoom/pan in the viewport.
-	// Only apply pixelAspect for non-square pixels.
-	glMatrixMode( GL_MODELVIEW );
-	glScalef( pixelAspect, 1.0f, 1.0f );
-
-	// Disable Gaffer's shader — plugins use fixed-function GL (glBegin/glEnd).
+	static int frameCount = 0;
+	static int nestDepth = 0;
+	frameCount++;
+	nestDepth++;
+	if( frameCount <= 300 )
+		std::cerr << "[renderOverlay frame=" << frameCount << ": entering (nest=" << nestDepth << ")]" << std::endl;
+	// Manually save the GL state that the plugin overlay may modify,
+	// so we can restore it regardless of push/pop stack limitations.
 	GLint prog;
 	glGetIntegerv( GL_CURRENT_PROGRAM, &prog );
+
+	GLint fboBinding;
+	glGetIntegerv( GL_DRAW_FRAMEBUFFER_BINDING, &fboBinding );
+
+	GLboolean blendWasEnabled = glIsEnabled( GL_BLEND );
+	GLint blendSrc, blendDst;
+	glGetIntegerv( GL_BLEND_SRC, &blendSrc );
+	glGetIntegerv( GL_BLEND_DST, &blendDst );
+
+	GLboolean depthTestWasEnabled = glIsEnabled( GL_DEPTH_TEST );
+	GLboolean cullFaceWasEnabled = glIsEnabled( GL_CULL_FACE );
+	GLboolean scissorTestWasEnabled = glIsEnabled( GL_SCISSOR_TEST );
+
+	// Disable Gaffer's shader — plugins use fixed-function GL (glBegin/glEnd).
 	if( prog )
 	{
 		glUseProgram( 0 );
 	}
 
-	// Clear accumulated GL errors before plugin draw
-	while( glGetError() != GL_NO_ERROR ) {}
+	glDisable( GL_DEPTH_TEST );
+	glDisable( GL_CULL_FACE );
+	glDisable( GL_SCISSOR_TEST );
+	glDisable( GL_BLEND );
 
-	// Dispatch draw to the plugin
-	OfxPointD renderScale = { renderScaleX, renderScaleY };
-	drawAction( time, renderScale );
+	// Save projection matrix — plugins like RectangleInteract modify it
+	// via glTranslated without push/pop, relying on a second translation
+	// to undo.  If that doesn't execute (early return, exception, etc.),
+	// the projection is left corrupted for our subsequent drawing.
+	GLdouble projMatrix[16];
+	glMatrixMode( GL_PROJECTION );
+	glGetDoublev( GL_PROJECTION_MATRIX, projMatrix );
+	glMatrixMode( GL_MODELVIEW );
 
-	// Log GL errors that the plugin may have left behind
-	GLenum err;
-	while( ( err = glGetError() ) != GL_NO_ERROR )
+	// The ImageGadget renders in "world space" where pixel (x, y) maps to
+	// world position (x * pixelAspect, y).  Push a modelview scale so that
+	// the plugin's pixel-space drawing (0..imageWidth, 0..imageHeight)
+	// lands in the same world space as the image.
+	const bool scalePixelAspect = ( pixelAspect > 0.0 && fabs( pixelAspect - 1.0 ) > 1e-6 );
+	if( scalePixelAspect )
 	{
-		std::cerr << "DEBUG GL error after draw: 0x" << std::hex << err << std::dec << std::endl;
+		glMatrixMode( GL_MODELVIEW );
+		glPushMatrix();
+		glScalef( pixelAspect, 1.0, 1.0 );
 	}
+
+	if( frameCount <= 300 )
+	{
+		GLint beforeFBO;
+		glGetIntegerv( GL_DRAW_FRAMEBUFFER_BINDING, &beforeFBO );
+		GLint viewport[4];
+		glGetIntegerv( GL_VIEWPORT, viewport );
+		std::cerr << "[renderOverlay frame=" << frameCount << ": pre-draw FBO=" << beforeFBO << " vp=" << viewport[2] << "x" << viewport[3] << "]" << std::endl;
+	}
+
+	// Draw a large white rect covering the area from (0,0) to (200,50)
+	// This should be clearly visible
+	glColor4f( 1.0f, 1.0f, 1.0f, 1.0f );
+	glRectf( 0.0f, 0.0f, 200.0f, 50.0f );
+
+	// Dispatch draw to the plugin (BYASSED: we don't call it to test if the pipeline itself is the issue)
+	// drawAction(time, renderScale);
+
+	// Restore projection matrix — override any corruption from the plugin.
+	glMatrixMode( GL_PROJECTION );
+	glLoadMatrixd( projMatrix );
+	glMatrixMode( GL_MODELVIEW );
+
+	// Restore modelview
+	if( scalePixelAspect )
+	{
+		glPopMatrix();
+	}
+	glMatrixMode( GL_MODELVIEW );
+
+	// Restore GL state that the plugin may have changed.
+	if( depthTestWasEnabled )
+	{
+		glEnable( GL_DEPTH_TEST );
+	}
+	else
+	{
+		glDisable( GL_DEPTH_TEST );
+	}
+	if( cullFaceWasEnabled )
+	{
+		glEnable( GL_CULL_FACE );
+	}
+	else
+	{
+		glDisable( GL_CULL_FACE );
+	}
+	// Restore FBO binding and scissor test similarly to the plugin's draw
+	if( scissorTestWasEnabled )
+	{
+		glEnable( GL_SCISSOR_TEST );
+	}
+	else
+	{
+		glDisable( GL_SCISSOR_TEST );
+	}
+	glBlendFunc( blendSrc, blendDst );
+	if( blendWasEnabled )
+	{
+		glEnable( GL_BLEND );
+	}
+	else
+	{
+		glDisable( GL_BLEND );
+	}
+
+	// Restore FBO binding (plugin may have changed it)
+	glBindFramebuffer( GL_DRAW_FRAMEBUFFER, fboBinding );
+
+	if( frameCount <= 300 )
+	{
+		GLint restoredFBO;
+		glGetIntegerv( GL_DRAW_FRAMEBUFFER_BINDING, &restoredFBO );
+		std::cerr << "[renderOverlay frame=" << frameCount << ": FBO after restore=" << restoredFBO << "]" << std::endl;
+	}
+
+	// Magenta rect AFTER state restore
+	glColor4f( 1.0f, 0.0f, 1.0f, 1.0f );
+	glRectf( 120.0f, 0.0f, 170.0f, 50.0f );
 
 	// Re-enable Gaffer's shader
 	if( prog )
@@ -236,14 +342,9 @@ void GafferOFXInteractInstance::renderOverlay( double time, double renderScaleX,
 		glUseProgram( prog );
 	}
 
-	// Restore Gaffer's GL state
-	glMatrixMode( GL_PROJECTION );
-	glPopMatrix();
-	glMatrixMode( GL_MODELVIEW );
-	glPopMatrix();
-	glPopAttrib();
-
-	std::cerr << "DEBUG renderOverlay done" << std::endl;
+	nestDepth--;
+	if( frameCount <= 300 )
+		std::cerr << "[renderOverlay frame=" << frameCount << ": done (nest=" << nestDepth << ")]" << std::endl;
 }
 
 OfxStatus GafferOFXInteractInstance::swapBuffers()

@@ -51,8 +51,6 @@ class OFXInteractTool( GafferUI.Tool ) :
 
 		GafferUI.Tool.__init__( self, view, name )
 
-		IECore.msg( IECore.Msg.Level.Warning, "OFXInteractTool", "__init__: tool created" )
-
 		self.__ofxNode = None
 		self.__overlayGadget = None
 		self.__interact = None
@@ -75,23 +73,15 @@ class OFXInteractTool( GafferUI.Tool ) :
 		if self.__setupDone :
 			return
 
-		IECore.msg( IECore.Msg.Level.Warning, "OFXInteractTool", "__preRender: looking for OFX node..." )
-
 		node = self.__findOFXNode( viewportGadget )
 		if node is None :
-			IECore.msg( IECore.Msg.Level.Warning, "OFXInteractTool", "__preRender: no OFX node with overlay found" )
 			return
-
-		IECore.msg( IECore.Msg.Level.Warning, "OFXInteractTool", "__preRender: found node" )
 
 		self.__ofxNode = node
 		self.__interact = node.getInteract()
 		if self.__interact is None :
-			IECore.msg( IECore.Msg.Level.Warning, "OFXInteractTool", "__preRender: getInteract() returned None" )
 			self.__ofxNode = None
 			return
-
-		IECore.msg( IECore.Msg.Level.Warning, "OFXInteractTool", "__preRender: got interact" )
 
 		# Compute pixel aspect and image dimensions from the OFX node's output format.
 		nodeFormat = node["out"]["format"].getValue()
@@ -107,8 +97,6 @@ class OFXInteractTool( GafferUI.Tool ) :
 			viewportGadget.removeChild( existing )
 
 		viewportGadget.setChild( overlayName, self.__overlayGadget )
-
-		IECore.msg( IECore.Msg.Level.Warning, "OFXInteractTool", "__preRender: gadget set" )
 
 		self.__connectViewportSignals( viewportGadget )
 
