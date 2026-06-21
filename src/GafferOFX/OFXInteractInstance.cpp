@@ -224,6 +224,16 @@ void GafferOFXInteractInstance::renderOverlay( double time, double renderScaleX,
 	GLboolean depthTestWasEnabled = glIsEnabled( GL_DEPTH_TEST );
 	GLboolean cullFaceWasEnabled = glIsEnabled( GL_CULL_FACE );
 	GLboolean scissorTestWasEnabled = glIsEnabled( GL_SCISSOR_TEST );
+	GLboolean texture2DWasEnabled = glIsEnabled( GL_TEXTURE_2D );
+	GLboolean lineSmoothWasEnabled = glIsEnabled( GL_LINE_SMOOTH );
+	GLint colorWriteMask[4];
+	glGetIntegerv( GL_COLOR_WRITEMASK, colorWriteMask );
+	GLint viewport[4];
+	glGetIntegerv( GL_VIEWPORT, viewport );
+	GLint matrixMode;
+	glGetIntegerv( GL_MATRIX_MODE, &matrixMode );
+	GLint activeTexture;
+	glGetIntegerv( GL_ACTIVE_TEXTURE, &activeTexture );
 
 	// Disable Gaffer's shader — plugins use fixed-function GL (glBegin/glEnd).
 	if( prog )
@@ -235,6 +245,8 @@ void GafferOFXInteractInstance::renderOverlay( double time, double renderScaleX,
 	glDisable( GL_CULL_FACE );
 	glDisable( GL_SCISSOR_TEST );
 	glDisable( GL_BLEND );
+	glDisable( GL_TEXTURE_2D );
+	glDisable( GL_LINE_SMOOTH );
 
 	// Save projection matrix — plugins like RectangleInteract modify it
 	// via glTranslated without push/pop, relying on a second translation
@@ -270,26 +282,14 @@ void GafferOFXInteractInstance::renderOverlay( double time, double renderScaleX,
 	glColor4f( 1.0f, 1.0f, 1.0f, 1.0f );
 	glRectf( 0.0f, 0.0f, 100.0f, 50.0f );
 
-	// Dispatch draw to the plugin, with full GL state save/restore
+	// Dispatch draw to the plugin
 	{
-		glPushAttrib( GL_ALL_ATTRIB_BITS );
-		// Also save projection matrix (not included in attrib stack)
-		GLdouble savedProj[16];
-		glMatrixMode( GL_PROJECTION );
-		glGetDoublev( GL_PROJECTION_MATRIX, savedProj );
-		glMatrixMode( GL_MODELVIEW );
-
 		OfxPointD renderScale = { renderScaleX, renderScaleY };
 		drawAction( time, renderScale );
-
-		glMatrixMode( GL_PROJECTION );
-		glLoadMatrixd( savedProj );
-		glMatrixMode( GL_MODELVIEW );
-		glPopAttrib();
 	}
 
-	// Draw red rect after plugin draw (should always be visible if glPushAttrib works)
-	glColor4f( 1.0f, 0.0f, 0.0f, 1.0f );
+	// Yellow rect AFTER plugin draw BEFORE any state restore
+	glColor4f( 1.0f, 1.0f, 0.0f, 1.0f );
 	glRectf( 110.0f, 0.0f, 210.0f, 50.0f );
 
 	// Restore projection matrix — override any corruption from the plugin.
@@ -342,6 +342,16 @@ void GafferOFXInteractInstance::renderOverlay( double time, double renderScaleX,
 
 	// Restore FBO binding (plugin may have changed it)
 	glBindFramebuffer( GL_DRAW_FRAMEBUFFER, fboBinding );
+
+	// Restore additional state modified by plugins
+	if( texture2DWasEnabled ) glEnable( GL_TEXTURE_2D );
+	else glDisable( GL_TEXTURE_2D );
+	if( lineSmoothWasEnabled ) glEnable( GL_LINE_SMOOTH );
+	else glDisable( GL_LINE_SMOOTH );
+	glColorMask( colorWriteMask[0], colorWriteMask[1], colorWriteMask[2], colorWriteMask[3] );
+	glViewport( viewport[0], viewport[1], viewport[2], viewport[3] );
+	glMatrixMode( matrixMode );
+	glActiveTexture( activeTexture );
 
 	if( frameCount <= 300 )
 	{
