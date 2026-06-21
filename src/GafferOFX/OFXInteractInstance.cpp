@@ -38,8 +38,6 @@
 
 #include <GL/gl.h>
 
-#include <iostream>
-
 // GafferOFX does not link GLEW, so we must declare GL 2.0 functions manually.
 extern "C" {
 	extern GLint glGetUniformLocation( GLuint program, const char *name );
@@ -162,52 +160,10 @@ bool GafferOFXInteractInstance::getSuggestedColour( double &r, double &g, double
 
 void GafferOFXInteractInstance::debugDraw()
 {
-	GLint prog;
-	glGetIntegerv( GL_CURRENT_PROGRAM, &prog );
-	if( prog )
-	{
-		glUniform1i( glGetUniformLocation( prog, "isCurve" ), 0 );
-		glUniform1i( glGetUniformLocation( prog, "border" ), 0 );
-		glUniform1i( glGetUniformLocation( prog, "edgeAntiAliasing" ), 0 );
-		glUniform1i( glGetUniformLocation( prog, "textureType" ), 0 );
-	}
-
-	// Origin marker: magenta cross at (0,0) in current coordinate system
-	glColor3f( 1.0f, 0.0f, 1.0f );
-	glBegin( GL_LINES );
-	glVertex2f( -20.0f, 0.0f );
-	glVertex2f( 20.0f, 0.0f );
-	glVertex2f( 0.0f, -20.0f );
-	glVertex2f( 0.0f, 20.0f );
-	glEnd();
-
-	// Red rect at (100,100,200,200)
-	glColor3f( 1.0f, 0.0f, 0.0f );
-	glBegin( GL_LINE_LOOP );
-	glVertex2f( 100.0f, 100.0f );
-	glVertex2f( 200.0f, 100.0f );
-	glVertex2f( 200.0f, 200.0f );
-	glVertex2f( 100.0f, 200.0f );
-	glEnd();
-
-	// Green rect at (500,500,600,600)  
-	glColor3f( 0.0f, 1.0f, 0.0f );
-	glBegin( GL_LINE_LOOP );
-	glVertex2f( 500.0f, 500.0f );
-	glVertex2f( 600.0f, 500.0f );
-	glVertex2f( 600.0f, 600.0f );
-	glVertex2f( 500.0f, 600.0f );
-	glEnd();
 }
 
 void GafferOFXInteractInstance::renderOverlay( double time, double renderScaleX, double renderScaleY, double pixelAspect, int imageWidth, int imageHeight )
 {
-	static int frameCount = 0;
-	static int nestDepth = 0;
-	frameCount++;
-	nestDepth++;
-	if( frameCount <= 300 )
-		std::cerr << "[renderOverlay frame=" << frameCount << ": entering (nest=" << nestDepth << ")]" << std::endl;
 	// Manually save the GL state that the plugin overlay may modify,
 	// so we can restore it regardless of push/pop stack limitations.
 	GLint prog;
@@ -226,14 +182,6 @@ void GafferOFXInteractInstance::renderOverlay( double time, double renderScaleX,
 	GLboolean scissorTestWasEnabled = glIsEnabled( GL_SCISSOR_TEST );
 	GLboolean texture2DWasEnabled = glIsEnabled( GL_TEXTURE_2D );
 	GLboolean lineSmoothWasEnabled = glIsEnabled( GL_LINE_SMOOTH );
-	GLint colorWriteMask[4];
-	glGetIntegerv( GL_COLOR_WRITEMASK, colorWriteMask );
-	GLint viewport[4];
-	glGetIntegerv( GL_VIEWPORT, viewport );
-	GLint matrixMode;
-	glGetIntegerv( GL_MATRIX_MODE, &matrixMode );
-	GLint activeTexture;
-	glGetIntegerv( GL_ACTIVE_TEXTURE, &activeTexture );
 
 	// Disable Gaffer's shader — plugins use fixed-function GL (glBegin/glEnd).
 	if( prog )
@@ -269,28 +217,11 @@ void GafferOFXInteractInstance::renderOverlay( double time, double renderScaleX,
 		glScalef( pixelAspect, 1.0, 1.0 );
 	}
 
-	if( frameCount <= 300 )
-	{
-		GLint beforeFBO;
-		glGetIntegerv( GL_DRAW_FRAMEBUFFER_BINDING, &beforeFBO );
-		GLint viewport[4];
-		glGetIntegerv( GL_VIEWPORT, viewport );
-		std::cerr << "[renderOverlay frame=" << frameCount << ": pre-draw FBO=" << beforeFBO << " vp=" << viewport[2] << "x" << viewport[3] << "]" << std::endl;
-	}
-
-	// Draw white rect before plugin draw
-	glColor4f( 1.0f, 1.0f, 1.0f, 1.0f );
-	glRectf( 0.0f, 0.0f, 100.0f, 50.0f );
-
 	// Dispatch draw to the plugin
 	{
 		OfxPointD renderScale = { renderScaleX, renderScaleY };
 		drawAction( time, renderScale );
 	}
-
-	// Yellow rect AFTER plugin draw BEFORE any state restore
-	glColor4f( 1.0f, 1.0f, 0.0f, 1.0f );
-	glRectf( 110.0f, 0.0f, 210.0f, 50.0f );
 
 	// Restore projection matrix — override any corruption from the plugin.
 	glMatrixMode( GL_PROJECTION );
@@ -306,73 +237,40 @@ void GafferOFXInteractInstance::renderOverlay( double time, double renderScaleX,
 
 	// Restore GL state that the plugin may have changed.
 	if( depthTestWasEnabled )
-	{
 		glEnable( GL_DEPTH_TEST );
-	}
 	else
-	{
 		glDisable( GL_DEPTH_TEST );
-	}
 	if( cullFaceWasEnabled )
-	{
 		glEnable( GL_CULL_FACE );
-	}
 	else
-	{
 		glDisable( GL_CULL_FACE );
-	}
-	// Restore FBO binding and scissor test similarly to the plugin's draw
 	if( scissorTestWasEnabled )
-	{
 		glEnable( GL_SCISSOR_TEST );
-	}
 	else
-	{
 		glDisable( GL_SCISSOR_TEST );
-	}
+	if( texture2DWasEnabled )
+		glEnable( GL_TEXTURE_2D );
+	else
+		glDisable( GL_TEXTURE_2D );
+	if( lineSmoothWasEnabled )
+		glEnable( GL_LINE_SMOOTH );
+	else
+		glDisable( GL_LINE_SMOOTH );
+
 	glBlendFunc( blendSrc, blendDst );
 	if( blendWasEnabled )
-	{
 		glEnable( GL_BLEND );
-	}
 	else
-	{
 		glDisable( GL_BLEND );
-	}
 
 	// Restore FBO binding (plugin may have changed it)
 	glBindFramebuffer( GL_DRAW_FRAMEBUFFER, fboBinding );
-
-	// Restore additional state modified by plugins
-	if( texture2DWasEnabled ) glEnable( GL_TEXTURE_2D );
-	else glDisable( GL_TEXTURE_2D );
-	if( lineSmoothWasEnabled ) glEnable( GL_LINE_SMOOTH );
-	else glDisable( GL_LINE_SMOOTH );
-	glColorMask( colorWriteMask[0], colorWriteMask[1], colorWriteMask[2], colorWriteMask[3] );
-	glViewport( viewport[0], viewport[1], viewport[2], viewport[3] );
-	glMatrixMode( matrixMode );
-	glActiveTexture( activeTexture );
-
-	if( frameCount <= 300 )
-	{
-		GLint restoredFBO;
-		glGetIntegerv( GL_DRAW_FRAMEBUFFER_BINDING, &restoredFBO );
-		std::cerr << "[renderOverlay frame=" << frameCount << ": FBO after restore=" << restoredFBO << "]" << std::endl;
-	}
-
-	// Magenta rect AFTER state restore
-	glColor4f( 1.0f, 0.0f, 1.0f, 1.0f );
-	glRectf( 120.0f, 0.0f, 170.0f, 50.0f );
 
 	// Re-enable Gaffer's shader
 	if( prog )
 	{
 		glUseProgram( prog );
 	}
-
-	nestDepth--;
-	if( frameCount <= 300 )
-		std::cerr << "[renderOverlay frame=" << frameCount << ": done (nest=" << nestDepth << ")]" << std::endl;
 }
 
 OfxStatus GafferOFXInteractInstance::swapBuffers()

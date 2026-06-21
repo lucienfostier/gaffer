@@ -163,7 +163,6 @@ OfxStatus BooleanInstance::get( bool& b )
 	if( plug )
 	{
 		b = plug->getValue();
-		std::cerr << "[BooleanInstance::get " << m_descriptor.getName() << " = " << b << "]" << std::endl;
 		return kOfxStatOK;
 	}
 	return kOfxStatFailed;
@@ -176,9 +175,6 @@ OfxStatus BooleanInstance::get( OfxTime time, bool& b )
 
 OfxStatus BooleanInstance::set( bool v )
 {
-	static int count = 0;
-	if( count++ < 10 )
-		std::cerr << "[BooleanInstance::set " << m_descriptor.getName() << " = " << v << "]" << std::endl;
 	return kOfxStatErrMissingHostFeature;
 }
 

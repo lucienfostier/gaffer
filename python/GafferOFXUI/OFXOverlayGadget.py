@@ -36,8 +36,6 @@
 
 import imath
 
-import IECore
-
 import Gaffer
 import GafferUI
 
@@ -64,10 +62,6 @@ class OFXOverlayGadget( GafferUI.Gadget ) :
 
 		if layer != GafferUI.Gadget.Layer.Front :
 			return
-
-		self._debugCounter = getattr( self, "_debugCounter", 0 ) + 1
-		if self._debugCounter <= 300 :
-			print( f"[OFXOverlayGadget renderLayer #{self._debugCounter}]" )
 
 		self.__updateViewportSize()
 
