@@ -91,12 +91,28 @@ GafferOFX::Image::Image( ClipInstance &clip, OfxTime time, int view, const OfxRe
 	setIntProperty(kOfxImagePropRegionOfDefinition, imageBounds.x2, 2);
 	setIntProperty(kOfxImagePropRegionOfDefinition, imageBounds.y2, 3);
 
-	// pixel depth and components
+	// pixel depth — we always use float
 	setStringProperty(kOfxImageEffectPropPixelDepth, kOfxBitDepthFloat);
-	setStringProperty(kOfxImageEffectPropComponents, kOfxImageComponentRGBA);
+	// Use the clip's resolved component type (set by setDefaultClipPreferences),
+	// falling back to RGBA for the Source clip (created before clip preferences
+	// are evaluated) or whenever the clip hasn't set a specific component.
+	// Note: getClipBits() reads from the property set which stays at
+	// kOfxImageComponentNone because setComponents() only updates _components.
+	const std::string &clipComps = clip.getComponents();
+	if( clipComps != kOfxImageComponentNone && !clipComps.empty() )
+	{
+		setStringProperty(kOfxImageEffectPropComponents, clipComps);
+	}
+	else
+	{
+		setStringProperty(kOfxImageEffectPropComponents, kOfxImageComponentRGBA);
+	}
 
 	// row bytes
 	setIntProperty(kOfxImagePropRowBytes, width * sizeof(OfxRGBAColourF));
+
+	// field order — unfielded/progressive
+	setStringProperty(kOfxImagePropField, kOfxImageFieldNone);
 }
 
 OfxRGBAColourF* Image::pixel( int x, int y ) const
@@ -132,7 +148,7 @@ void Image::setExternalData( const void* externalData, int width, int height, co
 	setIntProperty( kOfxImagePropRegionOfDefinition, bounds.x2, 2 );
 	setIntProperty( kOfxImagePropRegionOfDefinition, bounds.y2, 3 );
 
-	setStringProperty( kOfxImageEffectPropComponents, kOfxImageComponentRGBA );
+	// Components are left as set by ImageBase::getClipBits() — do not override.
 	setIntProperty( kOfxImagePropRowBytes, width * sizeof( OfxRGBAColourF ) );
 }
 

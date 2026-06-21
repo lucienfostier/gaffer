@@ -821,7 +821,7 @@ IECore::ConstCompoundObjectPtr OFXImageNode::computeOfxRenderBuffer( const Gaffe
 	{
 		OfxTime identityTime = frame;
 		std::string identityClip;
-		if( m_instance->isIdentityAction( identityTime, kOfxImageFieldBoth, renderWindow, renderScale, identityClip ) == kOfxStatOK )
+		if( m_instance->isIdentityAction( identityTime, kOfxImageFieldNone, renderWindow, renderScale, identityClip ) == kOfxStatOK )
 		{
 			if( identityClip == "Source" && hasInput && sourceClip )
 			{
@@ -970,7 +970,7 @@ IECore::ConstCompoundObjectPtr OFXImageNode::computeOfxRenderBuffer( const Gaffe
 		}
 
 		m_instance->beginRenderAction( frame, frame, 1.0, false, renderScale, true, false );
-		m_instance->renderAction( frame, kOfxImageFieldBoth, renderWindow, renderScale, true, false, false );
+		m_instance->renderAction( frame, kOfxImageFieldNone, renderWindow, renderScale, true, false, false );
 		m_instance->endRenderAction( frame, frame, 1.0, false, renderScale, true, false );
 
 		// Clear frame cache after render
