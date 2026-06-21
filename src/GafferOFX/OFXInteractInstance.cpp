@@ -266,13 +266,31 @@ void GafferOFXInteractInstance::renderOverlay( double time, double renderScaleX,
 		std::cerr << "[renderOverlay frame=" << frameCount << ": pre-draw FBO=" << beforeFBO << " vp=" << viewport[2] << "x" << viewport[3] << "]" << std::endl;
 	}
 
-	// Draw a large white rect covering the area from (0,0) to (200,50)
-	// This should be clearly visible
+	// Draw white rect before plugin draw
 	glColor4f( 1.0f, 1.0f, 1.0f, 1.0f );
-	glRectf( 0.0f, 0.0f, 200.0f, 50.0f );
+	glRectf( 0.0f, 0.0f, 100.0f, 50.0f );
 
-	// Dispatch draw to the plugin (BYASSED: we don't call it to test if the pipeline itself is the issue)
-	// drawAction(time, renderScale);
+	// Dispatch draw to the plugin, with full GL state save/restore
+	{
+		glPushAttrib( GL_ALL_ATTRIB_BITS );
+		// Also save projection matrix (not included in attrib stack)
+		GLdouble savedProj[16];
+		glMatrixMode( GL_PROJECTION );
+		glGetDoublev( GL_PROJECTION_MATRIX, savedProj );
+		glMatrixMode( GL_MODELVIEW );
+
+		OfxPointD renderScale = { renderScaleX, renderScaleY };
+		drawAction( time, renderScale );
+
+		glMatrixMode( GL_PROJECTION );
+		glLoadMatrixd( savedProj );
+		glMatrixMode( GL_MODELVIEW );
+		glPopAttrib();
+	}
+
+	// Draw red rect after plugin draw (should always be visible if glPushAttrib works)
+	glColor4f( 1.0f, 0.0f, 0.0f, 1.0f );
+	glRectf( 110.0f, 0.0f, 210.0f, 50.0f );
 
 	// Restore projection matrix — override any corruption from the plugin.
 	glMatrixMode( GL_PROJECTION );
