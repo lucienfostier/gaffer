@@ -101,9 +101,9 @@ class OFXInteractTool( GafferUI.Tool ) :
 		self.__connectViewportSignals( viewportGadget )
 
 		# Disconnect after setup so setChild's renderRequest only fires once
-		self.__preRenderConnection.disconnect()
-		self.__preRenderConnection = None
-		self.__setupDone = True
+		#self.__preRenderConnection.disconnect()
+		#self.__preRenderConnection = None
+		#self.__setupDone = True
 
 	def __findOFXNode( self, viewportGadget ) :
 

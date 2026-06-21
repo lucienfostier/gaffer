@@ -34,6 +34,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
+// MOVE THIS TO GAFFEROFXUI as it depends on GL
 #include "GafferOFX/OFXInteractInstance.h"
 
 #include <GL/gl.h>
@@ -154,7 +155,7 @@ void GafferOFXInteractInstance::getBackgroundColour( double &r, double &g, doubl
 
 bool GafferOFXInteractInstance::getSuggestedColour( double &r, double &g, double &b ) const
 {
-	r = 1.0; g = 0.0; b = 0.0;
+	r = 1.0; g = 1.0; b = 1.0;
 	return true;
 }
 

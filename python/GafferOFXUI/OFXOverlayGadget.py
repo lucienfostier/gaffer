@@ -92,6 +92,7 @@ class OFXOverlayGadget( GafferUI.Gadget ) :
 
 		# LayerMask is not exposed to Python - return the raw int.
 		# 0x20 = OverlayFront, the topmost layer, correct for OFX overlays.
+		# TODO use Layer::Front (might need to bind that to python)
 		return 0x20
 
 	def renderBound( self ) :
