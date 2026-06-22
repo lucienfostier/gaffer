@@ -37,7 +37,10 @@
 // MOVE THIS TO GAFFEROFXUI as it depends on GL
 #include "GafferOFX/OFXInteractInstance.h"
 
+#include <cstdio>
 #include <GL/gl.h>
+
+#define D(...) fprintf( stderr, "OFXINTERACT: " __VA_ARGS__ ), fflush( stderr )
 
 // GafferOFX does not link GLEW, so we must declare GL 2.0 functions manually.
 extern "C" {
@@ -86,7 +89,13 @@ OfxStatus GafferOFXInteractInstance::callEntry( const char *action, OFX::Host::P
 		// The plugin's support library expects the interact instance handle
 		// (this) so it can retrieve the Interact pointer via the interact suite.
 		void *handle = getHandle();
-		return _descriptor.callEntry( action, handle, inHandle, NULL );
+		OfxStatus s = _descriptor.callEntry( action, handle, inHandle, NULL );
+		// Only log pen/key actions for mouse interaction debugging
+		if( strstr( action, "Pen" ) || strstr( action, "Key" ) )
+		{
+			D( "%s returned %d\n", action, (int)s );
+		}
+		return s;
 	}
 	return kOfxStatFailed;
 }
@@ -276,15 +285,10 @@ void GafferOFXInteractInstance::renderOverlay( double time, double renderScaleX,
 
 OfxStatus GafferOFXInteractInstance::swapBuffers()
 {
-	// Gaffer manages its own buffer swapping — tell the plugin we handled it.
 	return kOfxStatReplyDefault;
 }
 
 OfxStatus GafferOFXInteractInstance::redraw()
 {
-	// Returning kOfxStatOK tells the plugin the redraw was *scheduled*, causing
-	// it to call redraw() again on the next draw, creating an infinite loop.
-	// kOfxStatReplyDefault tells the plugin the host doesn't support
-	// plugin-requested redraws, which is the correct behaviour here.
 	return kOfxStatReplyDefault;
 }

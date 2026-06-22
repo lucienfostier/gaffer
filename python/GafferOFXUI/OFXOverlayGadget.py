@@ -53,7 +53,7 @@ class OFXOverlayGadget( GafferUI.Gadget ) :
 		self.__gainedFocus = False
 
 	def renderLayer( self, layer, style, renderReason ) :
-		if not self.getVisible():
+		if not self.getVisible() :
 			return
 
 		if self.__interact is None :

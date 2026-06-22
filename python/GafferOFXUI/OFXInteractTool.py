@@ -34,6 +34,7 @@
 #
 ##########################################################################
 
+import sys
 import IECore
 
 import Gaffer
@@ -45,6 +46,10 @@ import GafferImageUI
 import GafferOFX
 from GafferOFXUI.OFXOverlayGadget import OFXOverlayGadget
 
+def D( msg ) :
+	sys.stderr.write( "OFXINTERACTOOL: " + msg + "\n" )
+	sys.stderr.flush()
+
 class OFXInteractTool( GafferUI.Tool ) :
 
 	def __init__( self, view, name = "OFXInteractTool" ) :
@@ -54,6 +59,7 @@ class OFXInteractTool( GafferUI.Tool ) :
 		self.__ofxNode = None
 		self.__overlayGadget = None
 		self.__interact = None
+		self.__overlaySetupDone = False
 		self.__viewportGadget = view.viewportGadget()
 
 		self.__preRenderConnection = self.__viewportGadget.preRenderSignal().connect(
@@ -61,8 +67,26 @@ class OFXInteractTool( GafferUI.Tool ) :
 		)
 		self.plugDirtiedSignal().connect( Gaffer.WeakMethod( self.__plugDirtied ) )
 
+		self.__viewportGadget.buttonPressSignal().connect(
+			Gaffer.WeakMethod( self.__buttonPress )
+		)
+		self.__viewportGadget.buttonReleaseSignal().connect(
+			Gaffer.WeakMethod( self.__buttonRelease )
+		)
+		self.__viewportGadget.mouseMoveSignal().connect(
+			Gaffer.WeakMethod( self.__mouseMove )
+		)
+		self.__viewportGadget.keyPressSignal().connect(
+			Gaffer.WeakMethod( self.__keyPress )
+		)
+		self.__viewportGadget.keyReleaseSignal().connect(
+			Gaffer.WeakMethod( self.__keyRelease )
+		)
+
 	def __plugDirtied( self, plug ) :
 		if plug.isSame( self["active"] ) :
+			if not self["active"].getValue() :
+				self.__destroyOverlay()
 			self.__viewportGadget.renderRequestSignal()( self.__viewportGadget )
 
 	def __preRender( self, viewportGadget ) :
@@ -75,11 +99,15 @@ class OFXInteractTool( GafferUI.Tool ) :
 			self.__setOverlayVisible( False )
 			return
 
-		if node is not self.__ofxNode :
-			self.__destroyOverlay()
-			self.__setupOverlay( node, viewportGadget )
-			if self.__interact is None :
-				return
+		if self.__overlaySetupDone and self.__interact is not None and self.__ofxNode is not None and node.isSame( self.__ofxNode ) :
+			self.__setOverlayVisible( True )
+			return
+
+		self.__destroyOverlay()
+		self.__setupOverlay( node, viewportGadget )
+		if self.__interact is None :
+			return
+		self.__overlaySetupDone = True
 
 		self.__setOverlayVisible( True )
 
@@ -117,6 +145,7 @@ class OFXInteractTool( GafferUI.Tool ) :
 		self.__overlayGadget = None
 		self.__ofxNode = None
 		self.__interact = None
+		self.__overlaySetupDone = False
 
 	def __setOverlayVisible( self, visible ) :
 		if self.__overlayGadget is not None and self.__overlayGadget.getVisible() != visible :
@@ -126,7 +155,8 @@ class OFXInteractTool( GafferUI.Tool ) :
 		view = self.view()
 		visited = set()
 		if isinstance( view, GafferImageUI.ImageView ) :
-			return self.__findOFXNodeFromPlug( view["in"], visited )
+			result = self.__findOFXNodeFromPlug( view["in"], visited )
+			return result
 		return None
 
 	@staticmethod
@@ -169,9 +199,7 @@ class OFXInteractTool( GafferUI.Tool ) :
 		return 1.0
 
 	def __buttonPress( self, viewportGadget, event ) :
-		print("button press")
 		if self.__interact is None :
-			print("button press with no interact")
 			return False
 
 		penPos = self.__viewportPosToOfx( viewportGadget, event )
@@ -184,7 +212,8 @@ class OFXInteractTool( GafferUI.Tool ) :
 		result = self.__interact.penDownAction(
 			self.__interact.getTime(), renderScale, penPos, penPosViewport, pressure
 		)
-		return result != 0
+		D( f"penDownAction returned {result}" )
+		return False
 
 	def __buttonRelease( self, viewportGadget, event ) :
 
@@ -200,7 +229,8 @@ class OFXInteractTool( GafferUI.Tool ) :
 		result = self.__interact.penUpAction(
 			self.__interact.getTime(), renderScale, penPos, penPosViewport, pressure
 		)
-		return result != 0
+		D( f"penUpAction returned {result}" )
+		return False
 
 	def __mouseMove( self, viewportGadget, event ) :
 
@@ -216,7 +246,8 @@ class OFXInteractTool( GafferUI.Tool ) :
 		result = self.__interact.penMotionAction(
 			self.__interact.getTime(), renderScale, penPos, penPosViewport, pressure
 		)
-		return result != 0
+		D( f"penMotionAction at ({int(penPos[0])},{int(penPos[1])}) returned {result}" )
+		return False
 
 	def __keyPress( self, gadget, event ) :
 
@@ -231,7 +262,8 @@ class OFXInteractTool( GafferUI.Tool ) :
 		result = self.__interact.keyDownAction(
 			self.__interact.getTime(), renderScale, _gafferKeyToOfx( key ), keyString
 		)
-		return result != 0
+		D( f"keyDownAction returned {result}" )
+		return False
 
 	def __keyRelease( self, gadget, event ) :
 
@@ -246,7 +278,8 @@ class OFXInteractTool( GafferUI.Tool ) :
 		result = self.__interact.keyUpAction(
 			self.__interact.getTime(), renderScale, _gafferKeyToOfx( key ), keyString
 		)
-		return result != 0
+		D( f"keyUpAction returned {result}" )
+		return False
 
 	def __del__( self ) :
 		self.__destroyOverlay()
