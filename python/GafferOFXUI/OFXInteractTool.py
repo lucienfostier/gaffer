@@ -65,11 +65,45 @@ class OFXInteractTool( GafferUI.Tool ) :
 
 		# Use a one-shot preRender connection for initial setup only,
 		# then disconnect to avoid re-triggering renders.
-		self.__preRenderConnection = self.__viewportGadget.preRenderSignal().connect(
-			Gaffer.WeakMethod( self.__preRender )
-		)
+		#self.__preRenderConnection = self.__viewportGadget.preRenderSignal().connect(
+		#	Gaffer.WeakMethod( self.__preRender )
+		#)
+		self.plugDirtiedSignal().connect(Gaffer.WeakMethod(self.__plugDirtied))
+
+	def __plugDirtied(self, plug):
+		print(f"dirtied {plug.getName()=}")
+		# Gaffer triggers this for EVERY plug change. 
+		# We only care if the changed plug is specifically our "active" plug.
+		if plug.isSame(self["active"]):
+			
+			# Read the new boolean state
+			isActive = self["active"].getValue()
+			
+			## Update Gadget visibility
+			#self.__handleGadget.setVisible(isActive)
+			#
+			## Optional: Force the viewer to redraw immediately so the UI updates
+			#self.view().viewportGadget().renderRequestSignal()(self.view().viewportGadget())
+			
+			if isActive:
+				print("Tool was turned ON")
+				self.__preRenderConnection = self.__viewportGadget.preRenderSignal().connect(
+					Gaffer.WeakMethod( self.__preRender )
+				)
+
+				# Do any setup required when the tool activates
+			else:
+				print("Tool was turned OFF")
+				# Clean up any temporary data, reset states, etc.
+				#self.__preRenderConnection.disconnect()
+				self.__overlayGadget.setVisible(False)
+
+			self.__viewportGadget.renderRequestSignal()(self.__viewportGadget)
 
 	def __preRender( self, viewportGadget ) :
+		self._setup(viewportGadget)
+
+	def _setup( self, viewportGadget ) :
 		if self.__setupDone :
 			return
 
@@ -137,21 +171,22 @@ class OFXInteractTool( GafferUI.Tool ) :
 
 	def __connectViewportSignals( self, viewportGadget ) :
 
-		self.__buttonPressConnection = viewportGadget.buttonPressSignal().connect(
-			Gaffer.WeakMethod( self.__buttonPress )
-		)
-		self.__buttonReleaseConnection = viewportGadget.buttonReleaseSignal().connect(
-			Gaffer.WeakMethod( self.__buttonRelease )
-		)
-		self.__mouseMoveConnection = viewportGadget.mouseMoveSignal().connect(
-			Gaffer.WeakMethod( self.__mouseMove )
-		)
-		self.__keyPressConnection = viewportGadget.keyPressSignal().connect(
-			Gaffer.WeakMethod( self.__keyPress )
-		)
-		self.__keyReleaseConnection = viewportGadget.keyReleaseSignal().connect(
-			Gaffer.WeakMethod( self.__keyRelease )
-		)
+		#self.__buttonPressConnection = viewportGadget.buttonPressSignal().connect(
+		#	Gaffer.WeakMethod( self.__buttonPress )
+		#)
+		#self.__buttonReleaseConnection = viewportGadget.buttonReleaseSignal().connect(
+		#	Gaffer.WeakMethod( self.__buttonRelease )
+		#)
+		#self.__mouseMoveConnection = viewportGadget.mouseMoveSignal().connect(
+		#	Gaffer.WeakMethod( self.__mouseMove )
+		#)
+		#self.__keyPressConnection = viewportGadget.keyPressSignal().connect(
+		#	Gaffer.WeakMethod( self.__keyPress )
+		#)
+		#self.__keyReleaseConnection = viewportGadget.keyReleaseSignal().connect(
+		#	Gaffer.WeakMethod( self.__keyRelease )
+		#)
+		pass
 
 	def __viewportPosToOfx( self, viewportGadget, event ) :
 
