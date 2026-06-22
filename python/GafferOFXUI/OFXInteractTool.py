@@ -55,75 +55,50 @@ class OFXInteractTool( GafferUI.Tool ) :
 		self.__overlayGadget = None
 		self.__interact = None
 		self.__viewportGadget = view.viewportGadget()
-		self.__preRenderConnection = None
-		self.__buttonPressConnection = None
-		self.__buttonReleaseConnection = None
-		self.__mouseMoveConnection = None
-		self.__keyPressConnection = None
-		self.__keyReleaseConnection = None
-		self.__setupDone = False
 
-		# Use a one-shot preRender connection for initial setup only,
-		# then disconnect to avoid re-triggering renders.
-		#self.__preRenderConnection = self.__viewportGadget.preRenderSignal().connect(
-		#	Gaffer.WeakMethod( self.__preRender )
-		#)
-		self.plugDirtiedSignal().connect(Gaffer.WeakMethod(self.__plugDirtied))
+		self.__preRenderConnection = self.__viewportGadget.preRenderSignal().connect(
+			Gaffer.WeakMethod( self.__preRender )
+		)
+		self.plugDirtiedSignal().connect( Gaffer.WeakMethod( self.__plugDirtied ) )
 
-	def __plugDirtied(self, plug):
-		print(f"dirtied {plug.getName()=}")
-		# Gaffer triggers this for EVERY plug change. 
-		# We only care if the changed plug is specifically our "active" plug.
-		if plug.isSame(self["active"]):
-			
-			# Read the new boolean state
-			isActive = self["active"].getValue()
-			
-			## Update Gadget visibility
-			#self.__handleGadget.setVisible(isActive)
-			#
-			## Optional: Force the viewer to redraw immediately so the UI updates
-			#self.view().viewportGadget().renderRequestSignal()(self.view().viewportGadget())
-			
-			if isActive:
-				print("Tool was turned ON")
-				self.__preRenderConnection = self.__viewportGadget.preRenderSignal().connect(
-					Gaffer.WeakMethod( self.__preRender )
-				)
-
-				# Do any setup required when the tool activates
-			else:
-				print("Tool was turned OFF")
-				# Clean up any temporary data, reset states, etc.
-				#self.__preRenderConnection.disconnect()
-				self.__overlayGadget.setVisible(False)
-
-			self.__viewportGadget.renderRequestSignal()(self.__viewportGadget)
+	def __plugDirtied( self, plug ) :
+		if plug.isSame( self["active"] ) :
+			self.__viewportGadget.renderRequestSignal()( self.__viewportGadget )
 
 	def __preRender( self, viewportGadget ) :
-		self._setup(viewportGadget)
-
-	def _setup( self, viewportGadget ) :
-		if self.__setupDone :
+		if not self["active"].getValue() :
+			self.__setOverlayVisible( False )
 			return
 
-		node = self.__findOFXNode( viewportGadget )
+		node = self.__findOFXNode()
 		if node is None :
+			self.__setOverlayVisible( False )
 			return
 
+		if node is not self.__ofxNode :
+			self.__destroyOverlay()
+			self.__setupOverlay( node, viewportGadget )
+			if self.__interact is None :
+				return
+
+		self.__setOverlayVisible( True )
+
+	def __setupOverlay( self, node, viewportGadget ) :
 		self.__ofxNode = node
 		self.__interact = node.getInteract()
 		if self.__interact is None :
 			self.__ofxNode = None
 			return
 
-		# Compute pixel aspect and image dimensions from the OFX node's output format.
 		nodeFormat = node["out"]["format"].getValue()
 		pixelAspect = nodeFormat.getPixelAspect()
 		imageWidth = nodeFormat.getDisplayWindow().size().x
 		imageHeight = nodeFormat.getDisplayWindow().size().y
 
-		self.__overlayGadget = OFXOverlayGadget( self.__interact, self.__viewportGadget, pixelAspect, imageWidth, imageHeight )
+		self.__overlayGadget = OFXOverlayGadget(
+			self.__interact, viewportGadget,
+			pixelAspect, imageWidth, imageHeight
+		)
 
 		overlayName = "__ofxInteractOverlay"
 		existing = viewportGadget.getChild( overlayName )
@@ -132,15 +107,22 @@ class OFXInteractTool( GafferUI.Tool ) :
 
 		viewportGadget.setChild( overlayName, self.__overlayGadget )
 
-		self.__connectViewportSignals( viewportGadget )
+	def __destroyOverlay( self ) :
+		if self.__ofxNode is not None :
+			self.__ofxNode.destroyInteract()
+		overlayName = "__ofxInteractOverlay"
+		existing = self.__viewportGadget.getChild( overlayName )
+		if existing is not None :
+			self.__viewportGadget.removeChild( existing )
+		self.__overlayGadget = None
+		self.__ofxNode = None
+		self.__interact = None
 
-		# Disconnect after setup so setChild's renderRequest only fires once
-		#self.__preRenderConnection.disconnect()
-		#self.__preRenderConnection = None
-		#self.__setupDone = True
+	def __setOverlayVisible( self, visible ) :
+		if self.__overlayGadget is not None :
+			self.__overlayGadget.setVisible( visible )
 
-	def __findOFXNode( self, viewportGadget ) :
-
+	def __findOFXNode( self ) :
 		view = self.view()
 		visited = set()
 		if isinstance( view, GafferImageUI.ImageView ) :
@@ -168,25 +150,6 @@ class OFXInteractTool( GafferUI.Tool ) :
 						return result
 
 		return None
-
-	def __connectViewportSignals( self, viewportGadget ) :
-
-		#self.__buttonPressConnection = viewportGadget.buttonPressSignal().connect(
-		#	Gaffer.WeakMethod( self.__buttonPress )
-		#)
-		#self.__buttonReleaseConnection = viewportGadget.buttonReleaseSignal().connect(
-		#	Gaffer.WeakMethod( self.__buttonRelease )
-		#)
-		#self.__mouseMoveConnection = viewportGadget.mouseMoveSignal().connect(
-		#	Gaffer.WeakMethod( self.__mouseMove )
-		#)
-		#self.__keyPressConnection = viewportGadget.keyPressSignal().connect(
-		#	Gaffer.WeakMethod( self.__keyPress )
-		#)
-		#self.__keyReleaseConnection = viewportGadget.keyReleaseSignal().connect(
-		#	Gaffer.WeakMethod( self.__keyRelease )
-		#)
-		pass
 
 	def __viewportPosToOfx( self, viewportGadget, event ) :
 
@@ -286,9 +249,7 @@ class OFXInteractTool( GafferUI.Tool ) :
 		return result != 0
 
 	def __del__( self ) :
-
-		if self.__ofxNode is not None :
-			self.__ofxNode.destroyInteract()
+		self.__destroyOverlay()
 
 _gafferKeyCodes = {
 	"BackSpace" : 8,
