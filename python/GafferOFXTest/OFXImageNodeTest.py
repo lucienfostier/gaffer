@@ -151,7 +151,7 @@ class OFXImageNodeTest( GafferTest.TestCase ) :
 		n = GafferOFX.OFXImageNode()
 		scriptNode.addChild( n )
 		n["in"].setInput( dc["out"] )
-		n["pluginId"].setValue( "uk.co.thefoundry.OfxInvertExample" )
+		n["pluginId"].setValue( "net.sf.openfx.Invert" )
 		n.createPluginInstance()
 
 		# The InvertExample describes RGBA output clips, so the output
@@ -213,7 +213,7 @@ class OFXImageNodeTest( GafferTest.TestCase ) :
 
 	def testInvertPlugin( self ) :
 
-		# Use the Foundry InvertExample which does not require a mask clip.
+		# Use the Natron Invert which supports float bit depth.
 		scriptNode = Gaffer.ScriptNode()
 
 		cb = GafferImage.Checkerboard()
@@ -225,7 +225,7 @@ class OFXImageNodeTest( GafferTest.TestCase ) :
 		n = GafferOFX.OFXImageNode()
 		scriptNode.addChild( n )
 		n["in"].setInput( cb["out"] )
-		n["pluginId"].setValue( "uk.co.thefoundry.OfxInvertExample" )
+		n["pluginId"].setValue( "net.sf.openfx.Invert" )
 		self.assertTrue( n.createPluginInstance() )
 
 		dw = n["out"]["dataWindow"].getValue()

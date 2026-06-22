@@ -119,7 +119,7 @@ class OFXInteractTool( GafferUI.Tool ) :
 		self.__interact = None
 
 	def __setOverlayVisible( self, visible ) :
-		if self.__overlayGadget is not None :
+		if self.__overlayGadget is not None and self.__overlayGadget.getVisible() != visible :
 			self.__overlayGadget.setVisible( visible )
 
 	def __findOFXNode( self ) :
