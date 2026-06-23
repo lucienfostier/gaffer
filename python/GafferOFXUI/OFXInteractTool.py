@@ -35,6 +35,7 @@
 ##########################################################################
 
 import sys
+import imath
 import IECore
 
 import Gaffer
@@ -59,28 +60,45 @@ class OFXInteractTool( GafferUI.Tool ) :
 		self.__ofxNode = None
 		self.__overlayGadget = None
 		self.__interact = None
+		self.__inInteraction = False
 		self.__overlaySetupDone = False
 		self.__viewportGadget = view.viewportGadget()
+		self.__buttonPressTime = None
 
 		self.__preRenderConnection = self.__viewportGadget.preRenderSignal().connect(
 			Gaffer.WeakMethod( self.__preRender )
 		)
 		self.plugDirtiedSignal().connect( Gaffer.WeakMethod( self.__plugDirtied ) )
 
+		self.__viewportGadget.keyPressSignal().connectFront(
+			Gaffer.WeakMethod( self.__keyPress )
+		)
+		self.__viewportGadget.keyReleaseSignal().connectFront(
+			Gaffer.WeakMethod( self.__keyRelease )
+		)
+
+		# Hover
+		self.__viewportGadget.mouseMoveSignal().connect(
+			Gaffer.WeakMethod( self.__mouseMove )
+		)
+		# Drag interaction chain
 		self.__viewportGadget.buttonPressSignal().connect(
 			Gaffer.WeakMethod( self.__buttonPress )
 		)
 		self.__viewportGadget.buttonReleaseSignal().connect(
 			Gaffer.WeakMethod( self.__buttonRelease )
 		)
-		self.__viewportGadget.mouseMoveSignal().connect(
-			Gaffer.WeakMethod( self.__mouseMove )
+		self.__viewportGadget.dragBeginSignal().connect(
+			Gaffer.WeakMethod( self.__dragBegin )
 		)
-		self.__viewportGadget.keyPressSignal().connect(
-			Gaffer.WeakMethod( self.__keyPress )
+		self.__viewportGadget.dragEnterSignal().connect(
+			Gaffer.WeakMethod( self.__dragEnter )
 		)
-		self.__viewportGadget.keyReleaseSignal().connect(
-			Gaffer.WeakMethod( self.__keyRelease )
+		self.__viewportGadget.dragMoveSignal().connect(
+			Gaffer.WeakMethod( self.__dragMove )
+		)
+		self.__viewportGadget.dragEndSignal().connect(
+			Gaffer.WeakMethod( self.__dragEnd )
 		)
 
 	def __plugDirtied( self, plug ) :
@@ -108,12 +126,12 @@ class OFXInteractTool( GafferUI.Tool ) :
 		if self.__interact is None :
 			return
 		self.__overlaySetupDone = True
-
 		self.__setOverlayVisible( True )
 
 	def __setupOverlay( self, node, viewportGadget ) :
 		self.__ofxNode = node
 		self.__interact = node.getInteract()
+		D( f"__setupOverlay: node={node.getName()}, interact={self.__interact}" )
 		if self.__interact is None :
 			self.__ofxNode = None
 			return
@@ -183,71 +201,147 @@ class OFXInteractTool( GafferUI.Tool ) :
 
 	def __viewportPosToOfx( self, viewportGadget, event ) :
 
-		w = viewportGadget.getViewport()
-		# Gaffer coordinate system: (0,0) top-left, Y down
-		# OFX coordinate system: (0,0) bottom-left, Y up
-		ofxX = event.line.p0.x
-		ofxY = w.y - event.line.p0.y
+		line = viewportGadget.rasterToWorldSpace( imath.V2f( event.line.p0.x, event.line.p0.y ) )
+		worldPos = line.p0
+		pixelAspect = self.__ofxNode["out"]["format"].getValue().getPixelAspect()
+		ofxX = worldPos.x / pixelAspect
+		ofxY = worldPos.y
 		return ( ofxX, ofxY )
+
+	def __penPosViewport( self, event ) :
+
+		vpSize = self.__viewportGadget.getViewport()
+		return (
+			int( event.line.p0.x ),
+			int( vpSize.y - event.line.p0.y )
+		)
 
 	def __getRenderScale( self ) :
 
 		return ( 1.0, 1.0 )
 
-	def __getPressure( self, event ) :
+	def __mouseMove( self, gadget, event ) :
 
-		return 1.0
-
-	def __buttonPress( self, viewportGadget, event ) :
+		D( "SIGNAL mouseMove" )
+		if not self["active"].getValue() :
+			return False
 		if self.__interact is None :
 			return False
 
-		penPos = self.__viewportPosToOfx( viewportGadget, event )
+		ofxPos = self.__viewportPosToOfx( gadget, event )
 		renderScale = self.__getRenderScale()
-		pressure = self.__getPressure( event )
-		vpSize = viewportGadget.getViewport()
-		penPosViewport = ( int( event.line.p0.x ), int( vpSize.y - event.line.p0.y ) )
+		ppv = self.__penPosViewport( event )
+
+		result = self.__interact.penMotionAction(
+			self.__interact.getTime(), renderScale, ofxPos, ppv, 1.0
+		)
+		D( f"penMotionAction (hover) at ({ofxPos[0]:.1f},{ofxPos[1]:.1f}) returned {result}" )
+		return result == 0
+
+	def __buttonPress( self, gadget, event ) :
+
+		D( f"SIGNAL buttonPress buttons={event.buttons} mods={event.modifiers}" )
+		if not self["active"].getValue() :
+			return False
+		if self.__interact is None :
+			return False
+		if event.buttons != event.Buttons.Left or event.modifiers :
+			return False
+
+		ofxPos = self.__viewportPosToOfx( gadget, event )
+		renderScale = self.__getRenderScale()
+		ppv = self.__penPosViewport( event )
 
 		self.__interact.setTime( self.__interact.getTime() )
 		result = self.__interact.penDownAction(
-			self.__interact.getTime(), renderScale, penPos, penPosViewport, pressure
+			self.__interact.getTime(), renderScale, ofxPos, ppv, 1.0
 		)
-		D( f"penDownAction returned {result}" )
+		D( f"penDownAction at ({ofxPos[0]:.1f},{ofxPos[1]:.1f}) returned {result}" )
+
+		if result == 0 :
+			self.__inInteraction = True
+			self.__buttonPressTime = self.__interact.getTime()
+			return True
+
 		return False
 
-	def __buttonRelease( self, viewportGadget, event ) :
+	def __buttonRelease( self, gadget, event ) :
+
+		if not self.__inInteraction :
+			return False
+
+		# Drag never started (mouse didn't move past threshold).
+		# We need to clean up the interaction that began in
+		# __buttonPress.
+		self.__inInteraction = False
+		self.__buttonPressTime = None
 
 		if self.__interact is None :
 			return False
 
-		penPos = self.__viewportPosToOfx( viewportGadget, event )
+		ofxPos = self.__viewportPosToOfx( gadget, event )
 		renderScale = self.__getRenderScale()
-		pressure = self.__getPressure( event )
-		vpSize = viewportGadget.getViewport()
-		penPosViewport = ( int( event.line.p0.x ), int( vpSize.y - event.line.p0.y ) )
+		ppv = self.__penPosViewport( event )
 
 		result = self.__interact.penUpAction(
-			self.__interact.getTime(), renderScale, penPos, penPosViewport, pressure
+			self.__interact.getTime(), renderScale, ofxPos, ppv, 1.0
 		)
-		D( f"penUpAction returned {result}" )
+		D( f"penUpAction (no-drag release) at ({ofxPos[0]:.1f},{ofxPos[1]:.1f}) returned {result}" )
+		return True
+
+	def __dragBegin( self, gadget, event ) :
+
+		if not self.__inInteraction :
+			return None
+
+		return { "time" : self.__buttonPressTime }
+
+	def __dragEnter( self, gadget, event ) :
+
+		if isinstance( event.data, dict ) and "time" in event.data :
+			return True
 		return False
 
-	def __mouseMove( self, viewportGadget, event ) :
+	def __dragMove( self, gadget, event ) :
+
+		if not self.__inInteraction :
+			return True
 
 		if self.__interact is None :
-			return False
+			return True
 
-		penPos = self.__viewportPosToOfx( viewportGadget, event )
+		ofxPos = self.__viewportPosToOfx( gadget, event )
 		renderScale = self.__getRenderScale()
-		pressure = self.__getPressure( event )
-		vpSize = viewportGadget.getViewport()
-		penPosViewport = ( int( event.line.p0.x ), int( vpSize.y - event.line.p0.y ) )
+		ppv = self.__penPosViewport( event )
 
 		result = self.__interact.penMotionAction(
-			self.__interact.getTime(), renderScale, penPos, penPosViewport, pressure
+			self.__interact.getTime(), renderScale, ofxPos, ppv, 1.0
 		)
-		D( f"penMotionAction at ({int(penPos[0])},{int(penPos[1])}) returned {result}" )
-		return False
+		D( f"penMotionAction (drag) at ({ofxPos[0]:.1f},{ofxPos[1]:.1f}) returned {result}" )
+		self.__viewportGadget.renderRequestSignal()( self.__viewportGadget )
+		return True
+
+	def __dragEnd( self, gadget, event ) :
+
+		if not self.__inInteraction :
+			return True
+
+		self.__inInteraction = False
+		self.__buttonPressTime = None
+
+		if self.__interact is None :
+			return True
+
+		ofxPos = self.__viewportPosToOfx( gadget, event )
+		renderScale = self.__getRenderScale()
+		ppv = self.__penPosViewport( event )
+
+		result = self.__interact.penUpAction(
+			self.__interact.getTime(), renderScale, ofxPos, ppv, 1.0
+		)
+		D( f"penUpAction at ({ofxPos[0]:.1f},{ofxPos[1]:.1f}) returned {result}" )
+		self.__viewportGadget.renderRequestSignal()( self.__viewportGadget )
+		return True
 
 	def __keyPress( self, gadget, event ) :
 
@@ -255,6 +349,9 @@ class OFXInteractTool( GafferUI.Tool ) :
 			return False
 
 		key = event.key
+		if key == "Escape" :
+			return False
+
 		keyString = key
 
 		renderScale = self.__getRenderScale()
@@ -263,7 +360,7 @@ class OFXInteractTool( GafferUI.Tool ) :
 			self.__interact.getTime(), renderScale, _gafferKeyToOfx( key ), keyString
 		)
 		D( f"keyDownAction returned {result}" )
-		return False
+		return True
 
 	def __keyRelease( self, gadget, event ) :
 
@@ -271,6 +368,9 @@ class OFXInteractTool( GafferUI.Tool ) :
 			return False
 
 		key = event.key
+		if key == "Escape" :
+			return False
+
 		keyString = key
 
 		renderScale = self.__getRenderScale()
@@ -279,7 +379,7 @@ class OFXInteractTool( GafferUI.Tool ) :
 			self.__interact.getTime(), renderScale, _gafferKeyToOfx( key ), keyString
 		)
 		D( f"keyUpAction returned {result}" )
-		return False
+		return True
 
 	def __del__( self ) :
 		self.__destroyOverlay()
