@@ -77,27 +77,29 @@ class OFXInteractTool( GafferUI.Tool ) :
 			Gaffer.WeakMethod( self.__keyRelease )
 		)
 
-		# Hover
-		self.__viewportGadget.mouseMoveSignal().connect(
+		# All signals use connectFront so we run before other handlers
+		# (e.g. ColorInspector) that would short-circuit with
+		# Accumulator.Or. Our handlers return False/None when not
+		# claiming the event, letting the combiner continue normally.
+		self.__viewportGadget.mouseMoveSignal().connectFront(
 			Gaffer.WeakMethod( self.__mouseMove )
 		)
-		# Drag interaction chain
-		self.__viewportGadget.buttonPressSignal().connect(
+		self.__viewportGadget.buttonPressSignal().connectFront(
 			Gaffer.WeakMethod( self.__buttonPress )
 		)
-		self.__viewportGadget.buttonReleaseSignal().connect(
+		self.__viewportGadget.buttonReleaseSignal().connectFront(
 			Gaffer.WeakMethod( self.__buttonRelease )
 		)
-		self.__viewportGadget.dragBeginSignal().connect(
+		self.__viewportGadget.dragBeginSignal().connectFront(
 			Gaffer.WeakMethod( self.__dragBegin )
 		)
-		self.__viewportGadget.dragEnterSignal().connect(
+		self.__viewportGadget.dragEnterSignal().connectFront(
 			Gaffer.WeakMethod( self.__dragEnter )
 		)
-		self.__viewportGadget.dragMoveSignal().connect(
+		self.__viewportGadget.dragMoveSignal().connectFront(
 			Gaffer.WeakMethod( self.__dragMove )
 		)
-		self.__viewportGadget.dragEndSignal().connect(
+		self.__viewportGadget.dragEndSignal().connectFront(
 			Gaffer.WeakMethod( self.__dragEnd )
 		)
 
@@ -267,6 +269,7 @@ class OFXInteractTool( GafferUI.Tool ) :
 
 	def __buttonRelease( self, gadget, event ) :
 
+		D( f"SIGNAL buttonRelease inInteraction={self.__inInteraction}" )
 		if not self.__inInteraction :
 			return False
 
@@ -291,21 +294,26 @@ class OFXInteractTool( GafferUI.Tool ) :
 
 	def __dragBegin( self, gadget, event ) :
 
+		D( f"SIGNAL dragBegin inInteraction={self.__inInteraction} time={self.__buttonPressTime}" )
 		if not self.__inInteraction :
 			return None
 
-		return { "time" : self.__buttonPressTime }
+		# Return True to claim the drag. We don't need to pass data
+		# through the event — __inInteraction is our state tracker.
+		return True
 
 	def __dragEnter( self, gadget, event ) :
 
-		if isinstance( event.data, dict ) and "time" in event.data :
+		D( f"SIGNAL dragEnter inInteraction={self.__inInteraction}" )
+		if self.__inInteraction :
 			return True
 		return False
 
 	def __dragMove( self, gadget, event ) :
 
+		D( f"SIGNAL dragMove inInteraction={self.__inInteraction}" )
 		if not self.__inInteraction :
-			return True
+			return False
 
 		if self.__interact is None :
 			return True
@@ -323,11 +331,13 @@ class OFXInteractTool( GafferUI.Tool ) :
 
 	def __dragEnd( self, gadget, event ) :
 
+		D( f"SIGNAL dragEnd inInteraction={self.__inInteraction}" )
 		if not self.__inInteraction :
-			return True
+			return False
 
 		self.__inInteraction = False
 		self.__buttonPressTime = None
+		GafferUI.Pointer.setCurrent( "" )
 
 		if self.__interact is None :
 			return True
