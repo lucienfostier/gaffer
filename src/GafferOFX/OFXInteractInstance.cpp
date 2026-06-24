@@ -292,3 +292,27 @@ OfxStatus GafferOFXInteractInstance::redraw()
 {
 	return kOfxStatReplyDefault;
 }
+
+void GafferOFXInteractInstance::notifyPluginEdited()
+{
+	// Dispatch instanceChanged for all OFX parameters so the plugin
+	// can finalize internal state changes from the interact session.
+	OFX::Host::ImageEffect::Instance &effect = _instance;
+
+	const double frame = effect.getFrameRecursive();
+	OfxPointD renderScale;
+	effect.getRenderScaleRecursive( renderScale.x, renderScale.y );
+
+	effect.beginInstanceChangedAction( kOfxChangePluginEdited );
+
+	const auto &params = effect.getParams();
+	for( const auto &[name, param] : params )
+	{
+		(void)name;
+		effect.paramInstanceChangedAction(
+			param->getName(), kOfxChangePluginEdited, frame, renderScale
+		);
+	}
+
+	effect.endInstanceChangedAction( kOfxChangePluginEdited );
+}

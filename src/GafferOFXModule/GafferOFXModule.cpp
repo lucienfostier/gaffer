@@ -213,6 +213,7 @@ BOOST_PYTHON_MODULE( _GafferOFX )
 		.def( "keyUpAction", &interactKeyUpAction )
 		.def( "gainFocusAction", &interactGainFocusAction )
 		.def( "loseFocusAction", &interactLoseFocusAction )
+		.def( "notifyPluginEdited", &GafferOFXInteractInstance::notifyPluginEdited )
 	;
 
 	DependencyNodeClass<OFXImageNode>()

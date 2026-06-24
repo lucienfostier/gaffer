@@ -84,6 +84,12 @@ class GAFFEROFX_API GafferOFXInteractInstance : public OFX::Host::ImageEffect::O
 		/// actions back to the image effect, and it only recognizes the effect handle.
 		OfxStatus callEntry( const char *action, OFX::Host::Property::Set *inArgs ) override;
 
+		/// After an interact action (penUp), notify the effect instance
+		/// that the plugin may have changed parameters during the interact.
+		/// This dispatches instanceChanged to all params so the plugin
+		/// can finalize its internal state (e.g. call paramSetValue).
+		void notifyPluginEdited();
+
 		/// Interact::Instance pure virtual implementations.
 		void getViewportSize( double &width, double &height ) const override;
 		void getPixelScale( double &xScale, double &yScale ) const override;
