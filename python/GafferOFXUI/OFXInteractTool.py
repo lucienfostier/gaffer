@@ -131,6 +131,8 @@ class OFXInteractTool( GafferUI.Tool ) :
 		self.__setOverlayVisible( True )
 
 	def __setupOverlay( self, node, viewportGadget ) :
+		self.__inInteraction = False
+		self.__buttonPressTime = None
 		self.__ofxNode = node
 		self.__interact = node.getInteract()
 		D( f"__setupOverlay: node={node.getName()}, interact={self.__interact}" )
@@ -224,9 +226,27 @@ class OFXInteractTool( GafferUI.Tool ) :
 
 	def __mouseMove( self, gadget, event ) :
 
-		D( "SIGNAL mouseMove" )
 		if not self["active"].getValue() :
 			return False
+
+		# If __inInteraction is True but no buttons are held,
+		# __dragEnd was dropped (GadgetWidget._makeCurrent() failed).
+		if self.__inInteraction and not event.buttons :
+			D( "stale recovery" )
+			self.__inInteraction = False
+			self.__buttonPressTime = None
+			GafferUI.Pointer.setCurrent( "" )
+			if self.__interact is not None :
+				ofxPos = self.__viewportPosToOfx( gadget, event )
+				renderScale = self.__getRenderScale()
+				ppv = self.__penPosViewport( event )
+				self.__interact.penUpAction(
+					self.__interact.getTime(), renderScale, ofxPos, ppv, 1.0
+				)
+				self.__interact.notifyPluginEdited()
+				self.__viewportGadget.renderRequestSignal()( self.__viewportGadget )
+			return False
+
 		if self.__interact is None :
 			return False
 
@@ -237,7 +257,6 @@ class OFXInteractTool( GafferUI.Tool ) :
 		result = self.__interact.penMotionAction(
 			self.__interact.getTime(), renderScale, ofxPos, ppv, 1.0
 		)
-		D( f"penMotionAction (hover) at ({ofxPos[0]:.1f},{ofxPos[1]:.1f}) returned {result}" )
 		return result == 0
 
 	def __buttonPress( self, gadget, event ) :
@@ -249,6 +268,21 @@ class OFXInteractTool( GafferUI.Tool ) :
 			return False
 		if event.buttons != event.Buttons.Left or event.modifiers :
 			return False
+
+		# Stale interaction recovery — __dragEnd was likely dropped.
+		if self.__inInteraction :
+			self.__inInteraction = False
+			self.__buttonPressTime = None
+			GafferUI.Pointer.setCurrent( "" )
+			ofxPos = self.__viewportPosToOfx( gadget, event )
+			renderScale = self.__getRenderScale()
+			ppv = self.__penPosViewport( event )
+			self.__interact.penUpAction(
+				self.__interact.getTime(), renderScale, ofxPos, ppv, 1.0
+			)
+			self.__interact.notifyPluginEdited()
+			self.__viewportGadget.renderRequestSignal()( self.__viewportGadget )
+			D( "penUpAction (stale recovery before penDown)" )
 
 		ofxPos = self.__viewportPosToOfx( gadget, event )
 		renderScale = self.__getRenderScale()
@@ -269,7 +303,6 @@ class OFXInteractTool( GafferUI.Tool ) :
 
 	def __buttonRelease( self, gadget, event ) :
 
-		D( f"SIGNAL buttonRelease inInteraction={self.__inInteraction}" )
 		if not self.__inInteraction :
 			return False
 
@@ -286,10 +319,11 @@ class OFXInteractTool( GafferUI.Tool ) :
 		renderScale = self.__getRenderScale()
 		ppv = self.__penPosViewport( event )
 
-		result = self.__interact.penUpAction(
+		self.__interact.penUpAction(
 			self.__interact.getTime(), renderScale, ofxPos, ppv, 1.0
 		)
-		D( f"penUpAction (no-drag release) at ({ofxPos[0]:.1f},{ofxPos[1]:.1f}) returned {result}" )
+		self.__interact.notifyPluginEdited()
+		self.__viewportGadget.renderRequestSignal()( self.__viewportGadget )
 		return True
 
 	def __dragBegin( self, gadget, event ) :
@@ -311,7 +345,6 @@ class OFXInteractTool( GafferUI.Tool ) :
 
 	def __dragMove( self, gadget, event ) :
 
-		D( f"SIGNAL dragMove inInteraction={self.__inInteraction}" )
 		if not self.__inInteraction :
 			return False
 
@@ -322,16 +355,14 @@ class OFXInteractTool( GafferUI.Tool ) :
 		renderScale = self.__getRenderScale()
 		ppv = self.__penPosViewport( event )
 
-		result = self.__interact.penMotionAction(
+		self.__interact.penMotionAction(
 			self.__interact.getTime(), renderScale, ofxPos, ppv, 1.0
 		)
-		D( f"penMotionAction (drag) at ({ofxPos[0]:.1f},{ofxPos[1]:.1f}) returned {result}" )
 		self.__viewportGadget.renderRequestSignal()( self.__viewportGadget )
 		return True
 
 	def __dragEnd( self, gadget, event ) :
 
-		D( f"SIGNAL dragEnd inInteraction={self.__inInteraction}" )
 		if not self.__inInteraction :
 			return False
 
@@ -346,10 +377,10 @@ class OFXInteractTool( GafferUI.Tool ) :
 		renderScale = self.__getRenderScale()
 		ppv = self.__penPosViewport( event )
 
-		result = self.__interact.penUpAction(
+		self.__interact.penUpAction(
 			self.__interact.getTime(), renderScale, ofxPos, ppv, 1.0
 		)
-		D( f"penUpAction at ({ofxPos[0]:.1f},{ofxPos[1]:.1f}) returned {result}" )
+		self.__interact.notifyPluginEdited()
 		self.__viewportGadget.renderRequestSignal()( self.__viewportGadget )
 		return True
 

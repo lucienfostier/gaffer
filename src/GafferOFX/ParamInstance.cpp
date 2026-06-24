@@ -32,6 +32,10 @@
 //
 //////////////////////////////////////////////////////////////////////////
 #include "GafferOFX/ParamInstance.h"
+
+#include <cstdio>
+
+#include <cstdio>
 #include "GafferOFX/OFXImageNode.h"
 
 #include "Gaffer/CompoundNumericPlug.h"
@@ -368,9 +372,14 @@ OfxStatus Double2DInstance::set( double x, double y )
 {
 	auto* node = const_cast<OFXImageNode*>( static_cast<const OFXImageNode*>( m_effect->node() ) );
 	auto* plug = node->parametersPlug()->getChild<V2fPlug>( m_descriptor.getName() );
+	fprintf( stderr, "DBG set(%s, %.4f, %.4f) plug=%p\n", m_descriptor.getName().c_str(), x, y, (void*)plug );
 	if( plug )
 	{
+		Imath::V2f before = plug->getValue();
 		plug->setValue( Imath::V2f( (float)x, (float)y ) );
+		Imath::V2f after = plug->getValue();
+		fprintf( stderr, "DBG set(%s) before=(%.4f,%.4f) after=(%.4f,%.4f)\n",
+			m_descriptor.getName().c_str(), before.x, before.y, after.x, after.y );
 		return kOfxStatOK;
 	}
 	return kOfxStatFailed;
@@ -378,6 +387,8 @@ OfxStatus Double2DInstance::set( double x, double y )
 
 OfxStatus Double2DInstance::set( OfxTime time, double x, double y )
 {
+	fprintf( stderr, "DBG set(%s, t=%.3f, %.4f, %.4f) -> time variant\n",
+		m_descriptor.getName().c_str(), time, x, y );
 	return set( x, y );
 }
 

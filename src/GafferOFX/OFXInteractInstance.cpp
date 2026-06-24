@@ -37,9 +37,7 @@
 // MOVE THIS TO GAFFEROFXUI as it depends on GL
 #include "GafferOFX/OFXInteractInstance.h"
 
-#include <cstdio>
 #include <GL/gl.h>
-
 #define D(...) fprintf( stderr, "OFXINTERACT: " __VA_ARGS__ ), fflush( stderr )
 
 // GafferOFX does not link GLEW, so we must declare GL 2.0 functions manually.
@@ -90,11 +88,6 @@ OfxStatus GafferOFXInteractInstance::callEntry( const char *action, OFX::Host::P
 		// (this) so it can retrieve the Interact pointer via the interact suite.
 		void *handle = getHandle();
 		OfxStatus s = _descriptor.callEntry( action, handle, inHandle, NULL );
-		// Only log pen/key actions for mouse interaction debugging
-		if( strstr( action, "Pen" ) || strstr( action, "Key" ) )
-		{
-			D( "%s returned %d\n", action, (int)s );
-		}
 		return s;
 	}
 	return kOfxStatFailed;
@@ -295,6 +288,7 @@ OfxStatus GafferOFXInteractInstance::redraw()
 
 void GafferOFXInteractInstance::notifyPluginEdited()
 {
+	fprintf( stderr, "DBG notifyPluginEdited enter\n" );
 	// Dispatch instanceChanged for all OFX parameters so the plugin
 	// can finalize internal state changes from the interact session.
 	OFX::Host::ImageEffect::Instance &effect = _instance;
@@ -309,10 +303,12 @@ void GafferOFXInteractInstance::notifyPluginEdited()
 	for( const auto &[name, param] : params )
 	{
 		(void)name;
+		fprintf( stderr, "DBG notifyPluginEdited dispatching '%s'\n", param->getName().c_str() );
 		effect.paramInstanceChangedAction(
 			param->getName(), kOfxChangePluginEdited, frame, renderScale
 		);
 	}
+	fprintf( stderr, "DBG notifyPluginEdited exit\n" );
 
 	effect.endInstanceChangedAction( kOfxChangePluginEdited );
 }
