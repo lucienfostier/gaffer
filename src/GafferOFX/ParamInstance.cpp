@@ -34,8 +34,6 @@
 #include "GafferOFX/ParamInstance.h"
 
 #include <cstdio>
-
-#include <cstdio>
 #include "GafferOFX/OFXImageNode.h"
 
 #include "Gaffer/CompoundNumericPlug.h"
@@ -49,9 +47,30 @@ using namespace GafferOFX;
 namespace
 {
 
-template<typename PlugType>
-Gaffer::Plug *setupTypedPlug( const IECore::InternedString &parameterName, Gaffer::GraphComponent *plugParent, Gaffer::Plug::Direction direction, const typename PlugType::ValueType &defaultValue )
+// Replace characters invalid for Gaffer plug names with underscores.
+// Gaffer::GraphComponent only allows A-Za-z0-9_: in names.
+std::string sanitizeName( const std::string &name )
 {
+	std::string result = name;
+	for( char &c : result )
+	{
+		if(
+			!( c >= 'A' && c <= 'Z' ) &&
+			!( c >= 'a' && c <= 'z' ) &&
+			!( c >= '0' && c <= '9' ) &&
+			c != '_' && c != ':'
+		)
+		{
+			c = '_';
+		}
+	}
+	return result;
+}
+
+template<typename PlugType>
+Gaffer::Plug *setupTypedPlug( const IECore::InternedString &parameterName_, Gaffer::GraphComponent *plugParent, Gaffer::Plug::Direction direction, const typename PlugType::ValueType &defaultValue )
+{
+	const std::string parameterName = sanitizeName( parameterName_.string() );
 	PlugType *existingPlug = plugParent->getChild<PlugType>( parameterName );
 	if(
 		existingPlug &&
@@ -358,6 +377,7 @@ OfxStatus Double2DInstance::get( double& x, double& y )
 	{
 		Imath::V2f v = plug->getValue();
 		x = v.x; y = v.y;
+		fprintf( stderr, "DBG get(%s) =(%.4f,%.4f)\n", m_descriptor.getName().c_str(), x, y );
 		return kOfxStatOK;
 	}
 	return kOfxStatFailed;
@@ -521,9 +541,10 @@ PushbuttonInstance::PushbuttonInstance( GafferOFX::EffectImageInstance* effect, 
 
 GafferOFX::StringInstance::StringInstance( GafferOFX::EffectImageInstance* effect, const std::string& name, OFX::Host::Param::Descriptor& descriptor ) : OFX::Host::Param::StringInstance( descriptor, effect ), m_effect( effect ), m_descriptor( descriptor )
 {
-	// Don't set up the Gaffer plug in the constructor - wait until populate is done.
-	// The Gaffer plug will be created on first get() if it doesn't exist.
-
+	auto* plugParent = const_cast<GafferOFX::OFXImageNode*>(static_cast<const GafferOFX::OFXImageNode*>(m_effect->node()))->parametersPlug();
+	std::string defaultValue;
+	try { defaultValue = descriptor.getProperties().getStringProperty( kOfxParamPropDefault ); } catch( ... ) {}
+	setupTypedPlug<StringPlug>( name, plugParent, Plug::In, defaultValue );
 }
 
 OfxStatus StringInstance::get( std::string& s )

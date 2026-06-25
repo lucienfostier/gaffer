@@ -52,10 +52,54 @@
 
 #include <iostream>
 
+namespace
+{
+
+// Must match sanitizeName in ParamInstance.cpp
+std::string sanitizeName( const std::string &name )
+{
+	std::string result = name;
+	for( char &c : result )
+	{
+		if(
+			!( c >= 'A' && c <= 'Z' ) &&
+			!( c >= 'a' && c <= 'z' ) &&
+			!( c >= '0' && c <= '9' ) &&
+			c != '_' && c != ':'
+		)
+		{
+			c = '_';
+		}
+	}
+	return result;
+}
+
+}
+
 using namespace GafferOFX;
+
+// Instance registration functions from libOfxGafferHost.so
+// Used to track valid Param::Instance* pointers for safe handle validation
+// without touching the handle's memory (avoids __dynamic_cast SIGSEGV).
+namespace OFX { namespace Host { namespace Param {
+	void registerInstance(Instance* inst, const void* descriptorHandle);
+	void unregisterInstance(Instance* inst);
+} } }
+
 
 EffectImageInstance::EffectImageInstance( OFX::Host::ImageEffect::ImageEffectPlugin* plugin, OFX::Host::ImageEffect::Descriptor& desc, const std::string& context): OFX::Host::ImageEffect::Instance(plugin,desc,context,false)
 {
+}
+
+EffectImageInstance::~EffectImageInstance()
+{
+	// Unregister all param instances before they are destroyed by ~SetInstance
+	try {
+		const auto& params = getParams();
+		for(const auto& [name, inst] : params) {
+			OFX::Host::Param::unregisterInstance(inst);
+		}
+	} catch(...) {}
 }
 
 OFX::Host::ImageEffect::ClipInstance* EffectImageInstance::newClipInstance(OFX::Host::ImageEffect::Instance* plugin, OFX::Host::ImageEffect::ClipDescriptor* descriptor, int index)
@@ -309,10 +353,17 @@ OFX::Host::Param::Instance* EffectImageInstance::newParam(const std::string& nam
 	{
 		result = new OFX::Host::Param::PageInstance(descriptor,this);
 	}
+	else if(descriptor.getType()==kOfxParamTypeCustom)
+	{
+		result = new StringInstance(this,name,descriptor);
+	}
 
 	if( result )
 	{
-		auto *plug = const_cast<OFXImageNode*>( static_cast<const OFXImageNode*>( node() ) )->parametersPlug()->getChild<Gaffer::Plug>( name );
+		// Register this Instance + its Descriptor handle in the validation registry
+		OFX::Host::Param::registerInstance(result, &descriptor);
+
+		auto *plug = const_cast<OFXImageNode*>( static_cast<const OFXImageNode*>( node() ) )->parametersPlug()->getChild<Gaffer::Plug>( sanitizeName( name ) );
 		if( plug )
 		{
 			registerParameterMetadata( plug, descriptor );

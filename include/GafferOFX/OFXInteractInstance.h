@@ -86,8 +86,8 @@ class GAFFEROFX_API GafferOFXInteractInstance : public OFX::Host::ImageEffect::O
 
 		/// After an interact action (penUp), notify the effect instance
 		/// that the plugin may have changed parameters during the interact.
-		/// This dispatches instanceChanged to all params so the plugin
-		/// can finalize its internal state (e.g. call paramSetValue).
+		/// This dispatches instanceChanged only to params that were
+		/// actually modified since the last call.
 		void notifyPluginEdited();
 
 		/// Interact::Instance pure virtual implementations.

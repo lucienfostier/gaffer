@@ -54,6 +54,8 @@ class GAFFEROFX_API EffectImageInstance : public OFX::Host::ImageEffect::Instanc
             const std::string& context
 			);
 
+		~EffectImageInstance() override;
+
 		const std::string &getDefaultOutputFielding() const override;
 		
 		OFX::Host::ImageEffect::ClipInstance* newClipInstance(

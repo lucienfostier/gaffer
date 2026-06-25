@@ -355,6 +355,8 @@ class OFXInteractTool( GafferUI.Tool ) :
 		renderScale = self.__getRenderScale()
 		ppv = self.__penPosViewport( event )
 
+		D( f"dragMove vp=({event.line.p0.x:.1f},{event.line.p0.y:.1f}) ofx=({ofxPos[0]:.1f},{ofxPos[1]:.1f})" )
+
 		self.__interact.penMotionAction(
 			self.__interact.getTime(), renderScale, ofxPos, ppv, 1.0
 		)

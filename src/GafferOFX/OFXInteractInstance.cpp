@@ -84,12 +84,13 @@ OfxStatus GafferOFXInteractInstance::callEntry( const char *action, OFX::Host::P
 	if( _state != OFX::Host::Interact::eFailed )
 	{
 		OfxPropertySetHandle inHandle = inArgs ? inArgs->getHandle() : NULL;
-		// The plugin's support library expects the interact instance handle
-		// (this) so it can retrieve the Interact pointer via the interact suite.
 		void *handle = getHandle();
 		OfxStatus s = _descriptor.callEntry( action, handle, inHandle, NULL );
+		fprintf( stderr, "DBG callEntry action=%s state=%d handle=%p ret=%d\n",
+			action, (int)_state, handle, (int)s );
 		return s;
 	}
+	fprintf( stderr, "DBG callEntry action=%s FAILED state=%d\n", action, (int)_state );
 	return kOfxStatFailed;
 }
 
