@@ -36,6 +36,7 @@
 
 // MOVE THIS TO GAFFEROFXUI as it depends on GL
 #include "GafferOFX/OFXInteractInstance.h"
+#include "GafferOFX/EffectImageInstance.h"
 
 #include <GL/gl.h>
 #define D(...) fprintf( stderr, "OFXINTERACT: " __VA_ARGS__ ), fflush( stderr )
@@ -70,6 +71,8 @@ GafferOFXInteractInstance::GafferOFXInteractInstance(
 	  m_created( false ),
 	  m_viewportWidth( 100 ),
 	  m_viewportHeight( 100 ),
+	  m_displayWindowMinX( 0 ),
+	  m_displayWindowMinY( 0 ),
 	  m_time( 1.0 )
 {
 }
@@ -119,6 +122,12 @@ OfxStatus GafferOFXInteractInstance::createInstance()
 void GafferOFXInteractInstance::destroyInstance()
 {
 	m_created = false;
+}
+
+void GafferOFXInteractInstance::setDisplayWindowOrigin( double x, double y )
+{
+	m_displayWindowMinX = x;
+	m_displayWindowMinY = y;
 }
 
 void GafferOFXInteractInstance::setViewportSize( double width, double height )
@@ -221,10 +230,46 @@ void GafferOFXInteractInstance::renderOverlay( double time, double renderScaleX,
 		glScalef( pixelAspect, 1.0, 1.0 );
 	}
 
+	// Debug: print GL state and draw reference crosshair at image center
+	{
+		GLdouble mv[16], proj[16];
+		glGetDoublev( GL_MODELVIEW_MATRIX, mv );
+		glGetDoublev( GL_PROJECTION_MATRIX, proj );
+		GLint vp[4];
+		glGetIntegerv( GL_VIEWPORT, vp );
+		fprintf( stderr, "DBG overlay: img=%dx%d pa=%.3f vp=%d,%d %dx%d\n",
+			imageWidth, imageHeight, pixelAspect,
+			vp[0], vp[1], vp[2], vp[3] );
+		fprintf( stderr, "DBG overlay MV: [%.2f %.2f %.2f %.2f] [%.2f %.2f %.2f %.2f] [%.2f %.2f %.2f %.2f] [%.2f %.2f %.2f %.2f]\n",
+			mv[0],mv[1],mv[2],mv[3], mv[4],mv[5],mv[6],mv[7],
+			mv[8],mv[9],mv[10],mv[11], mv[12],mv[13],mv[14],mv[15] );
+		fprintf( stderr, "DBG overlay PJ: [%.2f %.2f %.2f %.2f] [%.2f %.2f %.2f %.2f] [%.2f %.2f %.2f %.2f] [%.2f %.2f %.2f %.2f]\n",
+			proj[0],proj[1],proj[2],proj[3], proj[4],proj[5],proj[6],proj[7],
+			proj[8],proj[9],proj[10],proj[11], proj[12],proj[13],proj[14],proj[15] );
+	}
+
 	// Dispatch draw to the plugin
 	{
 		OfxPointD renderScale = { renderScaleX, renderScaleY };
 		drawAction( time, renderScale );
+	}
+
+	// Draw reference crosshair at image center
+	{
+		const float cx = imageWidth * 0.5f;
+		const float cy = imageHeight * 0.5f;
+		const float s = 10.0f;
+		glColor3f( 0.0f, 1.0f, 0.0f );
+		glBegin( GL_LINES );
+		glVertex2f( cx - s, cy ); glVertex2f( cx + s, cy );
+		glVertex2f( cx, cy - s ); glVertex2f( cx, cy + s );
+		glEnd();
+		// Also mark (0,0) with a tiny dot
+		glPointSize( 4.0f );
+		glBegin( GL_POINTS );
+		glVertex2f( 0.0f, 0.0f );
+		glEnd();
+		fprintf( stderr, "DBG overlay: drawn reference crosshair at (%.1f, %.1f), dot at (0,0)\n", cx, cy );
 	}
 
 	// Restore projection matrix — override any corruption from the plugin.
@@ -289,10 +334,16 @@ OfxStatus GafferOFXInteractInstance::redraw()
 
 void GafferOFXInteractInstance::notifyPluginEdited()
 {
-	fprintf( stderr, "DBG notifyPluginEdited enter\n" );
-	// Dispatch instanceChanged for all OFX parameters so the plugin
-	// can finalize internal state changes from the interact session.
 	OFX::Host::ImageEffect::Instance &effect = _instance;
+	auto *gafferEffect = dynamic_cast<GafferOFX::EffectImageInstance *>( &effect );
+	if( !gafferEffect )
+		return;
+
+	const auto &interacted = gafferEffect->interactedParams();
+	if( interacted.empty() )
+		return;
+
+	fprintf( stderr, "DBG notifyPluginEdited: %zu interacted params\n", interacted.size() );
 
 	const double frame = effect.getFrameRecursive();
 	OfxPointD renderScale;
@@ -300,16 +351,15 @@ void GafferOFXInteractInstance::notifyPluginEdited()
 
 	effect.beginInstanceChangedAction( kOfxChangePluginEdited );
 
-	const auto &params = effect.getParams();
-	for( const auto &[name, param] : params )
+	for( const auto &name : interacted )
 	{
-		(void)name;
-		fprintf( stderr, "DBG notifyPluginEdited dispatching '%s'\n", param->getName().c_str() );
+		fprintf( stderr, "DBG notifyPluginEdited dispatching '%s'\n", name.c_str() );
 		effect.paramInstanceChangedAction(
-			param->getName(), kOfxChangePluginEdited, frame, renderScale
+			name, kOfxChangePluginEdited, frame, renderScale
 		);
 	}
 	fprintf( stderr, "DBG notifyPluginEdited exit\n" );
 
 	effect.endInstanceChangedAction( kOfxChangePluginEdited );
+	gafferEffect->clearInteractedParams();
 }

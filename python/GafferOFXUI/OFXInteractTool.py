@@ -142,12 +142,13 @@ class OFXInteractTool( GafferUI.Tool ) :
 
 		nodeFormat = node["out"]["format"].getValue()
 		pixelAspect = nodeFormat.getPixelAspect()
-		imageWidth = nodeFormat.getDisplayWindow().size().x
-		imageHeight = nodeFormat.getDisplayWindow().size().y
+		dw = nodeFormat.getDisplayWindow()
+		imageWidth = dw.size().x
+		imageHeight = dw.size().y
 
 		self.__overlayGadget = OFXOverlayGadget(
 			self.__interact, viewportGadget,
-			pixelAspect, imageWidth, imageHeight
+			pixelAspect, imageWidth, imageHeight, dw.min().x, dw.min().y
 		)
 
 		overlayName = "__ofxInteractOverlay"

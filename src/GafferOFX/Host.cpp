@@ -37,6 +37,7 @@
 #include <cstring>
 
 #include <fstream>
+#include <map>
 
 using namespace GafferOFX;
 
@@ -181,6 +182,32 @@ std::vector<std::string> Host::pluginIDs()
 	for( const auto &[id, plugin] : m_pluginCache.getPluginsByID() )
 	{
 		result.push_back( id );
+	}
+	return result;
+}
+
+std::map<std::string, std::string> Host::pluginBundles()
+{
+	std::map<std::string, std::string> result;
+	for( const auto &[id, plugin] : m_pluginCache.getPluginsByID() )
+	{
+		std::string bundlePath = plugin->getBinary()->getBundlePath();
+		// Extract bundle name from path: "/path/to/Sapphire.ofx.bundle" → "Sapphire"
+		size_t slash = bundlePath.rfind( '/' );
+		std::string bundleName = ( slash != std::string::npos ) ? bundlePath.substr( slash + 1 ) : bundlePath;
+		// Strip .bundle suffix
+		{
+			size_t dot = bundleName.rfind( ".bundle" );
+			if( dot != std::string::npos )
+				bundleName = bundleName.substr( 0, dot );
+		}
+		// Strip .ofx suffix if present (often "Sapphire.ofx.bundle")
+		{
+			size_t dot = bundleName.rfind( ".ofx" );
+			if( dot != std::string::npos )
+				bundleName = bundleName.substr( 0, dot );
+		}
+		result[id] = bundleName;
 	}
 	return result;
 }

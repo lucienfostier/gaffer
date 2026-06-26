@@ -41,6 +41,8 @@
 #include "Gaffer/ScriptNode.h"
 #include "Gaffer/Node.h"
 
+#include <unordered_set>
+
 namespace GafferOFX
 {
 
@@ -105,9 +107,16 @@ class GAFFEROFX_API EffectImageInstance : public OFX::Host::ImageEffect::Instanc
 		const Gaffer::Node* node() const;
 		const Gaffer::ScriptNode* scriptNode() const;
 
+		/// Track params modified during an interact session.
+		/// notifyPluginEdited() dispatches only these.
+		void markParamInteracted( const std::string &name );
+		void clearInteractedParams();
+		const std::unordered_set<std::string> &interactedParams() const;
+
 		private:
 
 		const Gaffer::Node* m_node;
+		std::unordered_set<std::string> m_interactedParams;
 		
 };
 

@@ -102,7 +102,7 @@ IntegerInstance::IntegerInstance( GafferOFX::EffectImageInstance* effect, const 
 OfxStatus IntegerInstance::get( int& i )
 {
 	auto* node = static_cast<const OFXImageNode*>( m_effect->node() );
-	auto* plug = node->parametersPlug()->getChild<IntPlug>( m_descriptor.getName() );
+	auto* plug = node->parametersPlug()->getChild<IntPlug>( sanitizeName( m_descriptor.getName() ) );
 	if( plug )
 	{
 		i = plug->getValue();
@@ -119,9 +119,10 @@ OfxStatus IntegerInstance::get( OfxTime time, int& i )
 OfxStatus IntegerInstance::set( int value )
 {
 	auto* node = const_cast<OFXImageNode*>( static_cast<const OFXImageNode*>( m_effect->node() ) );
-	auto* plug = node->parametersPlug()->getChild<IntPlug>( m_descriptor.getName() );
+	auto* plug = node->parametersPlug()->getChild<IntPlug>( sanitizeName( m_descriptor.getName() ) );
 	if( plug )
 	{
+		m_effect->markParamInteracted( m_descriptor.getName() );
 		plug->setValue( value );
 		return kOfxStatOK;
 	}
@@ -144,7 +145,7 @@ GafferOFX::DoubleInstance::DoubleInstance( GafferOFX::EffectImageInstance* effec
 OfxStatus DoubleInstance::get( double& d )
 {
 	auto* node = static_cast<const OFXImageNode*>( m_effect->node() );
-	auto* plug = node->parametersPlug()->getChild<FloatPlug>( m_descriptor.getName() );
+	auto* plug = node->parametersPlug()->getChild<FloatPlug>( sanitizeName( m_descriptor.getName() ) );
 	if( plug )
 	{
 		d = plug->getValue();
@@ -161,9 +162,10 @@ OfxStatus DoubleInstance::get( OfxTime time, double& d )
 OfxStatus DoubleInstance::set( double value )
 {
 	auto* node = const_cast<OFXImageNode*>( static_cast<const OFXImageNode*>( m_effect->node() ) );
-	auto* plug = node->parametersPlug()->getChild<FloatPlug>( m_descriptor.getName() );
+	auto* plug = node->parametersPlug()->getChild<FloatPlug>( sanitizeName( m_descriptor.getName() ) );
 	if( plug )
 	{
+		m_effect->markParamInteracted( m_descriptor.getName() );
 		plug->setValue( (float)value );
 		return kOfxStatOK;
 	}
@@ -175,12 +177,12 @@ OfxStatus DoubleInstance::set( OfxTime time, double value )
 	return set( value );
 }
 
-OfxStatus DoubleInstance::derive( OfxTime time, double& )
+OfxStatus DoubleInstance::derive( OfxTime /*time*/, double& )
 {
 	return kOfxStatErrMissingHostFeature;
 }
 
-OfxStatus DoubleInstance::integrate( OfxTime time1, OfxTime time2, double& )
+OfxStatus DoubleInstance::integrate( OfxTime /*time1*/, OfxTime /*time2*/, double& )
 {
 	return kOfxStatErrMissingHostFeature;
 }
@@ -196,7 +198,7 @@ GafferOFX::BooleanInstance::BooleanInstance( GafferOFX::EffectImageInstance* eff
 OfxStatus BooleanInstance::get( bool& b )
 {
 	auto* node = static_cast<const OFXImageNode*>( m_effect->node() );
-	auto* plug = node->parametersPlug()->getChild<BoolPlug>( m_descriptor.getName() );
+	auto* plug = node->parametersPlug()->getChild<BoolPlug>( sanitizeName( m_descriptor.getName() ) );
 	if( plug )
 	{
 		b = plug->getValue();
@@ -213,9 +215,10 @@ OfxStatus BooleanInstance::get( OfxTime time, bool& b )
 OfxStatus BooleanInstance::set( bool v )
 {
 	auto* node = const_cast<OFXImageNode*>( static_cast<const OFXImageNode*>( m_effect->node() ) );
-	auto* plug = node->parametersPlug()->getChild<BoolPlug>( m_descriptor.getName() );
+	auto* plug = node->parametersPlug()->getChild<BoolPlug>( sanitizeName( m_descriptor.getName() ) );
 	if( plug )
 	{
+		m_effect->markParamInteracted( m_descriptor.getName() );
 		plug->setValue( v );
 		return kOfxStatOK;
 	}
@@ -244,7 +247,7 @@ GafferOFX::ChoiceInstance::ChoiceInstance( GafferOFX::EffectImageInstance* effec
 OfxStatus ChoiceInstance::get( int& i )
 {
 	auto* node = static_cast<const OFXImageNode*>( m_effect->node() );
-	auto* plug = node->parametersPlug()->getChild<IntPlug>( m_descriptor.getName() );
+	auto* plug = node->parametersPlug()->getChild<IntPlug>( sanitizeName( m_descriptor.getName() ) );
 	if( plug )
 	{
 		i = plug->getValue();
@@ -261,9 +264,10 @@ OfxStatus ChoiceInstance::get( OfxTime time, int& i )
 OfxStatus ChoiceInstance::set( int value )
 {
 	auto* node = const_cast<OFXImageNode*>( static_cast<const OFXImageNode*>( m_effect->node() ) );
-	auto* plug = node->parametersPlug()->getChild<IntPlug>( m_descriptor.getName() );
+	auto* plug = node->parametersPlug()->getChild<IntPlug>( sanitizeName( m_descriptor.getName() ) );
 	if( plug )
 	{
+		m_effect->markParamInteracted( m_descriptor.getName() );
 		plug->setValue( value );
 		return kOfxStatOK;
 	}
@@ -290,7 +294,7 @@ GafferOFX::RGBAInstance::RGBAInstance( GafferOFX::EffectImageInstance* effect, c
 OfxStatus RGBAInstance::get( double& r, double& g, double& b, double& a )
 {
 	auto* node = static_cast<const OFXImageNode*>( m_effect->node() );
-	auto* plug = node->parametersPlug()->getChild<Color4fPlug>( m_descriptor.getName() );
+	auto* plug = node->parametersPlug()->getChild<Color4fPlug>( sanitizeName( m_descriptor.getName() ) );
 	if( plug )
 	{
 		Imath::Color4f c = plug->getValue();
@@ -308,9 +312,10 @@ OfxStatus RGBAInstance::get( OfxTime time, double& r, double& g, double& b, doub
 OfxStatus RGBAInstance::set( double r, double g, double b, double a )
 {
 	auto* node = const_cast<OFXImageNode*>( static_cast<const OFXImageNode*>( m_effect->node() ) );
-	auto* plug = node->parametersPlug()->getChild<Color4fPlug>( m_descriptor.getName() );
+	auto* plug = node->parametersPlug()->getChild<Color4fPlug>( sanitizeName( m_descriptor.getName() ) );
 	if( plug )
 	{
+		m_effect->markParamInteracted( m_descriptor.getName() );
 		plug->setValue( Imath::Color4f( (float)r, (float)g, (float)b, (float)a ) );
 		return kOfxStatOK;
 	}
@@ -331,7 +336,7 @@ GafferOFX::RGBInstance::RGBInstance( GafferOFX::EffectImageInstance* effect, con
 OfxStatus RGBInstance::get( double& r, double& g, double& b )
 {
 	auto* node = static_cast<const OFXImageNode*>( m_effect->node() );
-	auto* plug = node->parametersPlug()->getChild<Color3fPlug>( m_descriptor.getName() );
+	auto* plug = node->parametersPlug()->getChild<Color3fPlug>( sanitizeName( m_descriptor.getName() ) );
 	if( plug )
 	{
 		Imath::Color3f c = plug->getValue();
@@ -349,9 +354,10 @@ OfxStatus RGBInstance::get( OfxTime time, double& r, double& g, double& b )
 OfxStatus RGBInstance::set( double r, double g, double b )
 {
 	auto* node = const_cast<OFXImageNode*>( static_cast<const OFXImageNode*>( m_effect->node() ) );
-	auto* plug = node->parametersPlug()->getChild<Color3fPlug>( m_descriptor.getName() );
+	auto* plug = node->parametersPlug()->getChild<Color3fPlug>( sanitizeName( m_descriptor.getName() ) );
 	if( plug )
 	{
+		m_effect->markParamInteracted( m_descriptor.getName() );
 		plug->setValue( Imath::Color3f( (float)r, (float)g, (float)b ) );
 		return kOfxStatOK;
 	}
@@ -372,12 +378,12 @@ GafferOFX::Double2DInstance::Double2DInstance( GafferOFX::EffectImageInstance* e
 OfxStatus Double2DInstance::get( double& x, double& y )
 {
 	auto* node = static_cast<const OFXImageNode*>( m_effect->node() );
-	auto* plug = node->parametersPlug()->getChild<V2fPlug>( m_descriptor.getName() );
+	auto* plug = node->parametersPlug()->getChild<V2fPlug>( sanitizeName( m_descriptor.getName() ) );
 	if( plug )
 	{
 		Imath::V2f v = plug->getValue();
 		x = v.x; y = v.y;
-		fprintf( stderr, "DBG get(%s) =(%.4f,%.4f)\n", m_descriptor.getName().c_str(), x, y );
+		fprintf( stderr, "DBG get(%s) =(%.4f,%.4f)\n", sanitizeName( m_descriptor.getName() ).c_str(), x, y );
 		return kOfxStatOK;
 	}
 	return kOfxStatFailed;
@@ -391,15 +397,16 @@ OfxStatus Double2DInstance::get( OfxTime time, double& x, double& y )
 OfxStatus Double2DInstance::set( double x, double y )
 {
 	auto* node = const_cast<OFXImageNode*>( static_cast<const OFXImageNode*>( m_effect->node() ) );
-	auto* plug = node->parametersPlug()->getChild<V2fPlug>( m_descriptor.getName() );
-	fprintf( stderr, "DBG set(%s, %.4f, %.4f) plug=%p\n", m_descriptor.getName().c_str(), x, y, (void*)plug );
+	auto* plug = node->parametersPlug()->getChild<V2fPlug>( sanitizeName( m_descriptor.getName() ) );
+	fprintf( stderr, "DBG set(%s, %.4f, %.4f) plug=%p\n", sanitizeName( m_descriptor.getName() ).c_str(), x, y, (void*)plug );
 	if( plug )
 	{
+		m_effect->markParamInteracted( m_descriptor.getName() );
 		Imath::V2f before = plug->getValue();
 		plug->setValue( Imath::V2f( (float)x, (float)y ) );
 		Imath::V2f after = plug->getValue();
 		fprintf( stderr, "DBG set(%s) before=(%.4f,%.4f) after=(%.4f,%.4f)\n",
-			m_descriptor.getName().c_str(), before.x, before.y, after.x, after.y );
+			sanitizeName( m_descriptor.getName() ).c_str(), before.x, before.y, after.x, after.y );
 		return kOfxStatOK;
 	}
 	return kOfxStatFailed;
@@ -408,7 +415,7 @@ OfxStatus Double2DInstance::set( double x, double y )
 OfxStatus Double2DInstance::set( OfxTime time, double x, double y )
 {
 	fprintf( stderr, "DBG set(%s, t=%.3f, %.4f, %.4f) -> time variant\n",
-		m_descriptor.getName().c_str(), time, x, y );
+		sanitizeName( m_descriptor.getName() ).c_str(), time, x, y );
 	return set( x, y );
 }
 
@@ -421,7 +428,7 @@ GafferOFX::Integer2DInstance::Integer2DInstance( GafferOFX::EffectImageInstance*
 OfxStatus Integer2DInstance::get( int& x, int& y )
 {
 	auto* node = static_cast<const OFXImageNode*>( m_effect->node() );
-	auto* plug = node->parametersPlug()->getChild<V2iPlug>( m_descriptor.getName() );
+	auto* plug = node->parametersPlug()->getChild<V2iPlug>( sanitizeName( m_descriptor.getName() ) );
 	if( plug )
 	{
 		Imath::V2i v = plug->getValue();
@@ -439,9 +446,10 @@ OfxStatus Integer2DInstance::get( OfxTime time, int& x, int& y )
 OfxStatus Integer2DInstance::set( int x, int y )
 {
 	auto* node = const_cast<OFXImageNode*>( static_cast<const OFXImageNode*>( m_effect->node() ) );
-	auto* plug = node->parametersPlug()->getChild<V2iPlug>( m_descriptor.getName() );
+	auto* plug = node->parametersPlug()->getChild<V2iPlug>( sanitizeName( m_descriptor.getName() ) );
 	if( plug )
 	{
+		m_effect->markParamInteracted( m_descriptor.getName() );
 		plug->setValue( Imath::V2i( x, y ) );
 		return kOfxStatOK;
 	}
@@ -462,7 +470,7 @@ GafferOFX::Double3DInstance::Double3DInstance( GafferOFX::EffectImageInstance* e
 OfxStatus Double3DInstance::get( double& x, double& y, double& z )
 {
 	auto* node = static_cast<const OFXImageNode*>( m_effect->node() );
-	auto* plug = node->parametersPlug()->getChild<V3fPlug>( m_descriptor.getName() );
+	auto* plug = node->parametersPlug()->getChild<V3fPlug>( sanitizeName( m_descriptor.getName() ) );
 	if( plug )
 	{
 		Imath::V3f v = plug->getValue();
@@ -480,9 +488,10 @@ OfxStatus Double3DInstance::get( OfxTime time, double& x, double& y, double& z )
 OfxStatus Double3DInstance::set( double x, double y, double z )
 {
 	auto* node = const_cast<OFXImageNode*>( static_cast<const OFXImageNode*>( m_effect->node() ) );
-	auto* plug = node->parametersPlug()->getChild<V3fPlug>( m_descriptor.getName() );
+	auto* plug = node->parametersPlug()->getChild<V3fPlug>( sanitizeName( m_descriptor.getName() ) );
 	if( plug )
 	{
+		m_effect->markParamInteracted( m_descriptor.getName() );
 		plug->setValue( Imath::V3f( (float)x, (float)y, (float)z ) );
 		return kOfxStatOK;
 	}
@@ -503,7 +512,7 @@ GafferOFX::Integer3DInstance::Integer3DInstance( GafferOFX::EffectImageInstance*
 OfxStatus Integer3DInstance::get( int& x, int& y, int& z )
 {
 	auto* node = static_cast<const OFXImageNode*>( m_effect->node() );
-	auto* plug = node->parametersPlug()->getChild<V3iPlug>( m_descriptor.getName() );
+	auto* plug = node->parametersPlug()->getChild<V3iPlug>( sanitizeName( m_descriptor.getName() ) );
 	if( plug )
 	{
 		Imath::V3i v = plug->getValue();
@@ -521,9 +530,10 @@ OfxStatus Integer3DInstance::get( OfxTime time, int& x, int& y, int& z )
 OfxStatus Integer3DInstance::set( int x, int y, int z )
 {
 	auto* node = const_cast<OFXImageNode*>( static_cast<const OFXImageNode*>( m_effect->node() ) );
-	auto* plug = node->parametersPlug()->getChild<V3iPlug>( m_descriptor.getName() );
+	auto* plug = node->parametersPlug()->getChild<V3iPlug>( sanitizeName( m_descriptor.getName() ) );
 	if( plug )
 	{
+		m_effect->markParamInteracted( m_descriptor.getName() );
 		plug->setValue( Imath::V3i( x, y, z ) );
 		return kOfxStatOK;
 	}
@@ -550,7 +560,7 @@ GafferOFX::StringInstance::StringInstance( GafferOFX::EffectImageInstance* effec
 OfxStatus StringInstance::get( std::string& s )
 {
 	auto* node = static_cast<const OFXImageNode*>( m_effect->node() );
-	auto* plug = node->parametersPlug()->getChild<StringPlug>( m_descriptor.getName() );
+	auto* plug = node->parametersPlug()->getChild<StringPlug>( sanitizeName( m_descriptor.getName() ) );
 	if( plug )
 	{
 		s = plug->getValue();

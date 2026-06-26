@@ -41,7 +41,7 @@ import GafferUI
 
 class OFXOverlayGadget( GafferUI.Gadget ) :
 
-	def __init__( self, interact, viewportGadget, pixelAspect = 1.0, imageWidth = 0, imageHeight = 0 ) :
+	def __init__( self, interact, viewportGadget, pixelAspect = 1.0, imageWidth = 0, imageHeight = 0, displayWindowMinX = 0, displayWindowMinY = 0 ) :
 
 		GafferUI.Gadget.__init__( self )
 		self.__interact = interact
@@ -49,6 +49,7 @@ class OFXOverlayGadget( GafferUI.Gadget ) :
 		self.__pixelAspect = pixelAspect
 		self.__imageWidth = imageWidth
 		self.__imageHeight = imageHeight
+		self.__interact.setDisplayWindowOrigin( float( displayWindowMinX ), float( displayWindowMinY ) )
 		self.__lastViewportSize = ( -1, -1 )
 		self.__gainedFocus = False
 

@@ -63,6 +63,9 @@ class GAFFEROFX_API GafferOFXInteractInstance : public OFX::Host::ImageEffect::O
 		OfxStatus createInstance();
 		void destroyInstance();
 
+		/// Set the image display window origin (bottom-left pixel).
+		void setDisplayWindowOrigin( double x, double y );
+
 		/// Set viewport dimensions (pixel space). Must be called before drawAction.
 		void setViewportSize( double width, double height );
 
@@ -103,6 +106,8 @@ class GAFFEROFX_API GafferOFXInteractInstance : public OFX::Host::ImageEffect::O
 		bool m_created;
 		double m_viewportWidth;
 		double m_viewportHeight;
+		double m_displayWindowMinX;
+		double m_displayWindowMinY;
 		OfxTime m_time;
 
 };

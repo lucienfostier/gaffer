@@ -243,10 +243,21 @@ void registerParameterMetadata( Gaffer::Plug *plug, const OFX::Host::Param::Desc
 	{
 	}
 
-	// Secret params — hide nodule
+	// Secret or disabled params — hide nodule
 	try
 	{
 		if( props.getIntProperty( kOfxParamPropSecret ) )
+		{
+			Gaffer::Metadata::registerValue( plug, "nodule:type", new IECore::StringData( "" ), false );
+		}
+	}
+	catch( ... )
+	{
+	}
+
+	try
+	{
+		if( !props.getIntProperty( kOfxParamPropEnabled ) )
 		{
 			Gaffer::Metadata::registerValue( plug, "nodule:type", new IECore::StringData( "" ), false );
 		}
@@ -296,6 +307,19 @@ void registerParameterMetadata( Gaffer::Plug *plug, const OFX::Host::Param::Desc
 		}
 
 		Gaffer::Metadata::registerValue( plug, "plugValueWidget:type", new IECore::StringData( "GafferUI.PresetsPlugValueWidget" ), false );
+	}
+
+	// Section (page/group membership)
+	try
+	{
+		std::string parentName = props.getStringProperty( kOfxParamPropParent );
+		if( !parentName.empty() )
+		{
+			Gaffer::Metadata::registerValue( plug, "layout:section", new IECore::StringData( parentName ), false );
+		}
+	}
+	catch( ... )
+	{
 	}
 }
 
@@ -431,6 +455,21 @@ const Gaffer::ScriptNode* EffectImageInstance::scriptNode() const
 void EffectImageInstance::setNode(const Gaffer::Node* node)
 {
 	m_node = node;
+}
+
+void EffectImageInstance::markParamInteracted( const std::string &name )
+{
+	m_interactedParams.insert( name );
+}
+
+void EffectImageInstance::clearInteractedParams()
+{
+	m_interactedParams.clear();
+}
+
+const std::unordered_set<std::string> &EffectImageInstance::interactedParams() const
+{
+	return m_interactedParams;
 }
 
 // Helper: detect if this is a Mode 1 call (vtable[13](this) → return handle)

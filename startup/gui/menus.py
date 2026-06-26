@@ -594,14 +594,33 @@ if os.environ.get( "OFX_ROOT" ) and moduleSearchPath.find( "GafferOFX" ) :
 		return node
 
 	if plugins :
-		for pluginId in sorted( plugins ) :
-			label = __ofxPluginLabel( pluginId )
-			nodeName = pluginId.rsplit( ".", 1 )[-1]
-			nodeMenu.append(
-				"/OFX/" + label,
-				functools.partial( __ofxNodeCreator, nodeName, pluginId ),
-				searchText = pluginId,
-			)
+		bundles = GafferOFX.Host.pluginBundles()
+		byBundle = {}
+		for pluginId in plugins :
+			bundleName = bundles.get( pluginId, "" )
+			if not bundleName :
+				bundleName = "Other"
+			byBundle.setdefault( bundleName, [] ).append( pluginId )
+		for bundleName in sorted( byBundle ) :
+			pluginIds = byBundle[bundleName]
+			if len( pluginIds ) == 1 :
+				pluginId = pluginIds[0]
+				label = __ofxPluginLabel( pluginId )
+				nodeName = pluginId.rsplit( ".", 1 )[-1]
+				nodeMenu.append(
+					"/OFX/" + label,
+					functools.partial( __ofxNodeCreator, nodeName, pluginId ),
+					searchText = pluginId,
+				)
+			else :
+				for pluginId in sorted( pluginIds ) :
+					label = __ofxPluginLabel( pluginId )
+					nodeName = pluginId.rsplit( ".", 1 )[-1]
+					nodeMenu.append(
+						"/OFX/" + bundleName + "/" + label,
+						functools.partial( __ofxNodeCreator, nodeName, pluginId ),
+						searchText = pluginId,
+					)
 		nodeMenu.definition().append( "/OFX/__Divider__", { "divider" : True } )
 
 	nodeMenu.append( "/OFX/Custom OFXNode...", GafferOFX.OFXImageNode, searchText = "OFXImageNode" )

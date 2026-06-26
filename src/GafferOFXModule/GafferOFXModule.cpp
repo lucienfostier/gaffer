@@ -43,6 +43,7 @@
 #include "GafferOFX/OFXInteractInstance.h"
 
 #include "IECorePython/RunTimeTypedBinding.h"
+#include "IECorePython/ScopedGILRelease.h"
 
 using namespace boost::python;
 using namespace GafferBindings;
@@ -57,6 +58,16 @@ boost::python::list pluginIDsWrapper()
 	for( const auto &id : Host::pluginIDs() )
 	{
 		result.append( id );
+	}
+	return result;
+}
+
+boost::python::dict pluginBundlesWrapper()
+{
+	boost::python::dict result;
+	for( const auto &[id, bundle] : Host::pluginBundles() )
+	{
+		result[id] = bundle;
 	}
 	return result;
 }
@@ -126,11 +137,13 @@ OfxPointI pointIFromObject( const boost::python::object &o )
 OfxStatus interactDrawAction( GafferOFXInteractInstance &self, double time, const boost::python::object &renderScaleObj )
 {
 	OfxPointD renderScale = pointDFromObject( renderScaleObj );
+	IECorePython::ScopedGILRelease gilRelease;
 	return self.drawAction( time, renderScale );
 }
 
 void interactRenderOverlay( GafferOFXInteractInstance &self, double time, double renderScaleX, double renderScaleY, double pixelAspect, int imageWidth = 0, int imageHeight = 0 )
 {
+	IECorePython::ScopedGILRelease gilRelease;
 	self.renderOverlay( time, renderScaleX, renderScaleY, pixelAspect, imageWidth, imageHeight );
 }
 
@@ -139,6 +152,7 @@ OfxStatus interactPenMotionAction( GafferOFXInteractInstance &self, double time,
 	OfxPointD renderScale = pointDFromObject( renderScaleObj );
 	OfxPointD penPos = pointDFromObject( penPosObj );
 	OfxPointI penPosViewport = pointIFromObject( penPosViewportObj );
+	IECorePython::ScopedGILRelease gilRelease;
 	return self.penMotionAction( time, renderScale, penPos, penPosViewport, pressure );
 }
 
@@ -147,6 +161,7 @@ OfxStatus interactPenDownAction( GafferOFXInteractInstance &self, double time, c
 	OfxPointD renderScale = pointDFromObject( renderScaleObj );
 	OfxPointD penPos = pointDFromObject( penPosObj );
 	OfxPointI penPosViewport = pointIFromObject( penPosViewportObj );
+	IECorePython::ScopedGILRelease gilRelease;
 	return self.penDownAction( time, renderScale, penPos, penPosViewport, pressure );
 }
 
@@ -155,6 +170,7 @@ OfxStatus interactPenUpAction( GafferOFXInteractInstance &self, double time, con
 	OfxPointD renderScale = pointDFromObject( renderScaleObj );
 	OfxPointD penPos = pointDFromObject( penPosObj );
 	OfxPointI penPosViewport = pointIFromObject( penPosViewportObj );
+	IECorePython::ScopedGILRelease gilRelease;
 	return self.penUpAction( time, renderScale, penPos, penPosViewport, pressure );
 }
 
@@ -162,6 +178,7 @@ OfxStatus interactKeyDownAction( GafferOFXInteractInstance &self, double time, c
 {
 	OfxPointD renderScale = pointDFromObject( renderScaleObj );
 	char *ks = const_cast<char*>( keyString.c_str() );
+	IECorePython::ScopedGILRelease gilRelease;
 	return self.keyDownAction( time, renderScale, key, ks );
 }
 
@@ -169,19 +186,32 @@ OfxStatus interactKeyUpAction( GafferOFXInteractInstance &self, double time, con
 {
 	OfxPointD renderScale = pointDFromObject( renderScaleObj );
 	char *ks = const_cast<char*>( keyString.c_str() );
+	IECorePython::ScopedGILRelease gilRelease;
 	return self.keyUpAction( time, renderScale, key, ks );
 }
 
 OfxStatus interactGainFocusAction( GafferOFXInteractInstance &self, double time, const boost::python::object &renderScaleObj )
 {
 	OfxPointD renderScale = pointDFromObject( renderScaleObj );
+	IECorePython::ScopedGILRelease gilRelease;
 	return self.gainFocusAction( time, renderScale );
 }
 
 OfxStatus interactLoseFocusAction( GafferOFXInteractInstance &self, double time, const boost::python::object &renderScaleObj )
 {
 	OfxPointD renderScale = pointDFromObject( renderScaleObj );
+	IECorePython::ScopedGILRelease gilRelease;
 	return self.loseFocusAction( time, renderScale );
+}
+
+void interactNotifyPluginEdited( GafferOFXInteractInstance &self )
+{
+	// Release GIL before calling into plugin code — some plugins
+	// (e.g. Sapphire) spin on GL or spawn threads that may need
+	// the GIL internally.  Holding the GIL during native plugin
+	// dispatch can deadlock or crash the Python UI thread.
+	IECorePython::ScopedGILRelease gilRelease;
+	self.notifyPluginEdited();
 }
 
 } // anonymous namespace
@@ -197,10 +227,13 @@ BOOST_PYTHON_MODULE( _GafferOFX )
 		.staticmethod("findOFXPlugins")
 		.def("pluginIDs", &pluginIDsWrapper)
 		.staticmethod("pluginIDs")
+		.def("pluginBundles", &pluginBundlesWrapper)
+		.staticmethod("pluginBundles")
 	;
 
 	class_<GafferOFXInteractInstance, boost::noncopyable>( "OFXInteractInstance", no_init )
 		.def( "setViewportSize", &GafferOFXInteractInstance::setViewportSize )
+		.def( "setDisplayWindowOrigin", &GafferOFXInteractInstance::setDisplayWindowOrigin )
 		.def( "setTime", &GafferOFXInteractInstance::setTime )
 		.def( "getTime", &GafferOFXInteractInstance::getTime )
 		.def( "renderOverlay", &interactRenderOverlay )
@@ -213,7 +246,7 @@ BOOST_PYTHON_MODULE( _GafferOFX )
 		.def( "keyUpAction", &interactKeyUpAction )
 		.def( "gainFocusAction", &interactGainFocusAction )
 		.def( "loseFocusAction", &interactLoseFocusAction )
-		.def( "notifyPluginEdited", &GafferOFXInteractInstance::notifyPluginEdited )
+		.def( "notifyPluginEdited", &interactNotifyPluginEdited )
 	;
 
 	DependencyNodeClass<OFXImageNode>()
