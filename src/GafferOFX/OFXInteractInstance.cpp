@@ -219,70 +219,41 @@ void GafferOFXInteractInstance::renderOverlay( double time, double renderScaleX,
 	glMatrixMode( GL_MODELVIEW );
 
 	// The ImageGadget renders in "world space" where pixel (x, y) maps to
-	// world position (x * pixelAspect, y).  Push a modelview scale so that
-	// the plugin's pixel-space drawing (0..imageWidth, 0..imageHeight)
-	// lands in the same world space as the image.
-	const bool scalePixelAspect = ( pixelAspect > 0.0 && fabs( pixelAspect - 1.0 ) > 1e-6 );
-	if( scalePixelAspect )
+	// world position (x * pixelAspect, y).  OFX plugins draw in PROJECT
+	// FORMAT coordinates, which may differ from the image size.  We scale
+	// the modelview so that format-coordinate (fx, fy) lands at the same
+	// world position as image-coordinate (fx * iw/fw, fy * ih/fh).
+	double formatW = (double)imageWidth, formatH = (double)imageHeight;
 	{
-		glMatrixMode( GL_MODELVIEW );
-		glPushMatrix();
-		glScalef( pixelAspect, 1.0, 1.0 );
+		auto *gafferEffect = dynamic_cast<EffectImageInstance *>( &_instance );
+		if( gafferEffect )
+		{
+			gafferEffect->getProjectSize( formatW, formatH );
+		}
 	}
+	const float scaleX = formatW > 0 ? pixelAspect * imageWidth / formatW : pixelAspect;
+	const float scaleY = formatH > 0 ? (float)imageHeight / formatH : 1.0f;
 
-	// Debug: print GL state and draw reference crosshair at image center
-	{
-		GLdouble mv[16], proj[16];
-		glGetDoublev( GL_MODELVIEW_MATRIX, mv );
-		glGetDoublev( GL_PROJECTION_MATRIX, proj );
-		GLint vp[4];
-		glGetIntegerv( GL_VIEWPORT, vp );
-		fprintf( stderr, "DBG overlay: img=%dx%d pa=%.3f vp=%d,%d %dx%d\n",
-			imageWidth, imageHeight, pixelAspect,
-			vp[0], vp[1], vp[2], vp[3] );
-		fprintf( stderr, "DBG overlay MV: [%.2f %.2f %.2f %.2f] [%.2f %.2f %.2f %.2f] [%.2f %.2f %.2f %.2f] [%.2f %.2f %.2f %.2f]\n",
-			mv[0],mv[1],mv[2],mv[3], mv[4],mv[5],mv[6],mv[7],
-			mv[8],mv[9],mv[10],mv[11], mv[12],mv[13],mv[14],mv[15] );
-		fprintf( stderr, "DBG overlay PJ: [%.2f %.2f %.2f %.2f] [%.2f %.2f %.2f %.2f] [%.2f %.2f %.2f %.2f] [%.2f %.2f %.2f %.2f]\n",
-			proj[0],proj[1],proj[2],proj[3], proj[4],proj[5],proj[6],proj[7],
-			proj[8],proj[9],proj[10],proj[11], proj[12],proj[13],proj[14],proj[15] );
-	}
+	// Push modelview and apply the format→image scale.
+	glMatrixMode( GL_MODELVIEW );
+	glPushMatrix();
+	glScalef( scaleX, scaleY, 1.0f );
 
-	// Dispatch draw to the plugin
+	// Dispatch draw to the plugin.  The plugin draws at format coordinates
+	// (e.g. 960,540 for HD center).  Our modelview maps those to the
+	// correct image world position: (960 * scaleX, 540 * scaleY) =
+	// (960 * iw/fw, 540 * ih/fh) = (320, 240) for a 640×480 image
+	// in a 1920×1080 format → image center.
 	{
 		OfxPointD renderScale = { renderScaleX, renderScaleY };
 		drawAction( time, renderScale );
 	}
 
-	// Draw reference crosshair at image center
-	{
-		const float cx = imageWidth * 0.5f;
-		const float cy = imageHeight * 0.5f;
-		const float s = 10.0f;
-		glColor3f( 0.0f, 1.0f, 0.0f );
-		glBegin( GL_LINES );
-		glVertex2f( cx - s, cy ); glVertex2f( cx + s, cy );
-		glVertex2f( cx, cy - s ); glVertex2f( cx, cy + s );
-		glEnd();
-		// Also mark (0,0) with a tiny dot
-		glPointSize( 4.0f );
-		glBegin( GL_POINTS );
-		glVertex2f( 0.0f, 0.0f );
-		glEnd();
-		fprintf( stderr, "DBG overlay: drawn reference crosshair at (%.1f, %.1f), dot at (0,0)\n", cx, cy );
-	}
-
-	// Restore projection matrix — override any corruption from the plugin.
+	// Restore projection and modelview.
 	glMatrixMode( GL_PROJECTION );
 	glLoadMatrixd( projMatrix );
 	glMatrixMode( GL_MODELVIEW );
-
-	// Restore modelview
-	if( scalePixelAspect )
-	{
-		glPopMatrix();
-	}
-	glMatrixMode( GL_MODELVIEW );
+	glPopMatrix();
 
 	// Restore GL state that the plugin may have changed.
 	if( depthTestWasEnabled )

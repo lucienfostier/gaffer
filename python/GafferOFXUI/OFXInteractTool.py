@@ -64,6 +64,10 @@ class OFXInteractTool( GafferUI.Tool ) :
 		self.__overlaySetupDone = False
 		self.__viewportGadget = view.viewportGadget()
 		self.__buttonPressTime = None
+		self.__imageWidth = 640
+		self.__imageHeight = 480
+		self.__formatWidth = 1920
+		self.__formatHeight = 1080
 
 		self.__preRenderConnection = self.__viewportGadget.preRenderSignal().connect(
 			Gaffer.WeakMethod( self.__preRender )
@@ -146,6 +150,20 @@ class OFXInteractTool( GafferUI.Tool ) :
 		imageWidth = dw.size().x
 		imageHeight = dw.size().y
 
+		# Store image dimensions for consistent use in mouse conversion.
+		self.__imageWidth = imageWidth
+		self.__imageHeight = imageHeight
+
+		# Get project format — the plugin draws mouse events in format coords.
+		ctx = Gaffer.Context.current()
+		if ctx is not None :
+			projectFormat = GafferImage.FormatPlug.getDefaultFormat( ctx )
+		else :
+			projectFormat = nodeFormat
+		self.__formatWidth = projectFormat.width()
+		self.__formatHeight = projectFormat.height()
+		D( f"__setupOverlay: image={imageWidth}x{imageHeight}, format={self.__formatWidth}x{self.__formatHeight}" )
+
 		self.__overlayGadget = OFXOverlayGadget(
 			self.__interact, viewportGadget,
 			pixelAspect, imageWidth, imageHeight, dw.min().x, dw.min().y
@@ -208,9 +226,14 @@ class OFXInteractTool( GafferUI.Tool ) :
 
 		line = viewportGadget.rasterToWorldSpace( imath.V2f( event.line.p0.x, event.line.p0.y ) )
 		worldPos = line.p0
-		pixelAspect = self.__ofxNode["out"]["format"].getValue().getPixelAspect()
-		ofxX = worldPos.x / pixelAspect
-		ofxY = worldPos.y
+		nodeFormat = self.__ofxNode["out"]["format"].getValue()
+		pixelAspect = nodeFormat.getPixelAspect()
+		iw, ih = self.__imageWidth, self.__imageHeight
+		fw, fh = self.__formatWidth, self.__formatHeight
+		scaleX = (fw / iw) if iw > 0 else 1.0
+		scaleY = (fh / ih) if ih > 0 else 1.0
+		ofxX = worldPos.x / pixelAspect * scaleX
+		ofxY = worldPos.y * scaleY
 		return ( ofxX, ofxY )
 
 	def __penPosViewport( self, event ) :
