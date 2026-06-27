@@ -616,8 +616,16 @@ if os.environ.get( "OFX_ROOT" ) and moduleSearchPath.find( "GafferOFX" ) :
 				for pluginId in sorted( pluginIds ) :
 					label = __ofxPluginLabel( pluginId )
 					nodeName = pluginId.rsplit( ".", 1 )[-1]
+					parts = pluginId.split( "." )
+					if len( parts ) >= 4 :
+						category = parts[-2]
+						categoryLabel = re.sub( r"(?<=[a-z])(?=[A-Z])", " ", category )
+						categoryLabel = re.sub( r"(?<=[A-Z])(?=[A-Z][a-z])", " ", categoryLabel )
+						menuPath = "/OFX/" + bundleName + "/" + categoryLabel + "/" + label
+					else :
+						menuPath = "/OFX/" + bundleName + "/" + label
 					nodeMenu.append(
-						"/OFX/" + bundleName + "/" + label,
+						menuPath,
 						functools.partial( __ofxNodeCreator, nodeName, pluginId ),
 						searchText = pluginId,
 					)

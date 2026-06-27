@@ -34,6 +34,8 @@
 #include "GafferOFX/Host.h"
 #include "GafferOFX/EffectImageInstance.h"
 
+#include "ofxGPURender.h"
+
 #include <cstring>
 
 #include <fstream>
@@ -52,6 +54,7 @@ Host::Host()
 	_properties.setStringProperty(kOfxPropVersionLabel, "1.0");
 	_properties.setIntProperty(kOfxImageEffectHostPropIsBackground, 0);
 	_properties.setIntProperty(kOfxImageEffectPropSupportsOverlays, 1);
+	_properties.setStringProperty(kOfxImageEffectPropOpenGLRenderSupported, "true");
 	_properties.setIntProperty(kOfxImageEffectPropSupportsMultiResolution, 0);
 	_properties.setIntProperty(kOfxImageEffectPropSupportsTiles, true);
 	_properties.setIntProperty(kOfxImageEffectPropTemporalClipAccess, true);
@@ -166,6 +169,11 @@ OfxStatus Host::setPersistentMessage(const char* type,
 }
 
 OfxStatus Host::clearPersistentMessage()
+{
+	return kOfxStatOK;
+}
+
+OfxStatus Host::flushOpenGLResources() const
 {
 	return kOfxStatOK;
 }

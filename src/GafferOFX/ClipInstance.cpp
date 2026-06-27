@@ -237,6 +237,14 @@ bool ClipInstance::getContinuousSamples() const
 }
 
 
+#ifdef OFX_SUPPORTS_OPENGLRENDER
+OFX::Host::ImageEffect::Texture* ClipInstance::loadTexture(OfxTime time, const char *format, const OfxRectD *optionalBounds)
+{
+	return nullptr;
+}
+#endif
+
+
 OfxRectD ClipInstance::getRegionOfDefinition(OfxTime time) const
 {
 	if( m_renderWindowSet )

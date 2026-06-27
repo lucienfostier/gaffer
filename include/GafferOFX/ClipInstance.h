@@ -198,6 +198,12 @@ namespace GafferOFX
 			/// override this to return the rod on the clip
 			 OfxRectD getRegionOfDefinition(OfxTime time) const override;
 
+#ifdef OFX_SUPPORTS_OPENGLRENDER
+			/// load a texture from the given clip, for OpenGL-based rendering.
+			/// We don't support this, so we return null.
+			 OFX::Host::ImageEffect::Texture* loadTexture(OfxTime time, const char *format, const OfxRectD *optionalBounds) override;
+#endif
+
 	};
 
 }

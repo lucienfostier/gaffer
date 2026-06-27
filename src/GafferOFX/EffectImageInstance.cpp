@@ -212,7 +212,7 @@ void EffectImageInstance::getRenderScaleRecursive(double &x, double &y) const
 namespace
 {
 
-void registerParameterMetadata( Gaffer::Plug *plug, const OFX::Host::Param::Descriptor &descriptor )
+void registerParameterMetadata( Gaffer::Plug *plug, const OFX::Host::Param::Descriptor &descriptor, const OFX::Host::Param::SetDescriptor *setDescriptor )
 {
 	const auto &props = descriptor.getProperties();
 	const std::string type = descriptor.getType();
@@ -266,6 +266,22 @@ void registerParameterMetadata( Gaffer::Plug *plug, const OFX::Host::Param::Desc
 	{
 	}
 
+	// Multi-line string parameters
+	if( type == kOfxParamTypeString )
+	{
+		try
+		{
+			std::string stringMode = props.getStringProperty( kOfxParamPropStringMode );
+			if( stringMode == kOfxParamStringIsMultiLine )
+			{
+				Gaffer::Metadata::registerValue( plug, "plugValueWidget:type", new IECore::StringData( "GafferUI.MultiLineStringPlugValueWidget" ), false );
+			}
+		}
+		catch( ... )
+		{
+		}
+	}
+
 	// Numeric range limits
 	if( type == kOfxParamTypeInteger || type == kOfxParamTypeDouble )
 	{
@@ -315,7 +331,23 @@ void registerParameterMetadata( Gaffer::Plug *plug, const OFX::Host::Param::Desc
 		std::string parentName = props.getStringProperty( kOfxParamPropParent );
 		if( !parentName.empty() )
 		{
-			Gaffer::Metadata::registerValue( plug, "layout:section", new IECore::StringData( parentName ), false );
+			std::string sectionName = parentName;
+			if( setDescriptor )
+			{
+				const auto &paramMap = setDescriptor->getParams();
+				auto it = paramMap.find( parentName );
+				if( it != paramMap.end() )
+				{
+					try
+					{
+						std::string groupLabel = it->second->getProperties().getStringProperty( kOfxPropLabel );
+						if( !groupLabel.empty() )
+							sectionName = groupLabel;
+					}
+					catch( ... ) {}
+				}
+			}
+			Gaffer::Metadata::registerValue( plug, "layout:section", new IECore::StringData( sectionName ), false );
 		}
 	}
 	catch( ... )
@@ -390,7 +422,7 @@ OFX::Host::Param::Instance* EffectImageInstance::newParam(const std::string& nam
 		auto *plug = const_cast<OFXImageNode*>( static_cast<const OFXImageNode*>( node() ) )->parametersPlug()->getChild<Gaffer::Plug>( sanitizeName( name ) );
 		if( plug )
 		{
-			registerParameterMetadata( plug, descriptor );
+			registerParameterMetadata( plug, descriptor, &getDescriptor() );
 		}
 	}
 

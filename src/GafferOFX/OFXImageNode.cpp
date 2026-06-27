@@ -95,6 +95,9 @@ OFXImageNode::~OFXImageNode()
 
 bool OFXImageNode::createPluginInstance()
 {
+	if( m_instance )
+		return true;
+
 	Host& host = Host::instance();
 	std::string pluginId = pluginIdPlug()->getValue();
 	auto plugin = host.m_pluginCache.getPluginById(pluginId);

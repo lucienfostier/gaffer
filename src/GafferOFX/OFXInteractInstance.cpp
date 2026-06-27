@@ -39,7 +39,6 @@
 #include "GafferOFX/EffectImageInstance.h"
 
 #include <GL/gl.h>
-#define D(...) fprintf( stderr, "OFXINTERACT: " __VA_ARGS__ ), fflush( stderr )
 
 // GafferOFX does not link GLEW, so we must declare GL 2.0 functions manually.
 extern "C" {
@@ -88,12 +87,8 @@ OfxStatus GafferOFXInteractInstance::callEntry( const char *action, OFX::Host::P
 	{
 		OfxPropertySetHandle inHandle = inArgs ? inArgs->getHandle() : NULL;
 		void *handle = getHandle();
-		OfxStatus s = _descriptor.callEntry( action, handle, inHandle, NULL );
-		fprintf( stderr, "DBG callEntry action=%s state=%d handle=%p ret=%d\n",
-			action, (int)_state, handle, (int)s );
-		return s;
+		return _descriptor.callEntry( action, handle, inHandle, NULL );
 	}
-	fprintf( stderr, "DBG callEntry action=%s FAILED state=%d\n", action, (int)_state );
 	return kOfxStatFailed;
 }
 
@@ -314,8 +309,6 @@ void GafferOFXInteractInstance::notifyPluginEdited()
 	if( interacted.empty() )
 		return;
 
-	fprintf( stderr, "DBG notifyPluginEdited: %zu interacted params\n", interacted.size() );
-
 	const double frame = effect.getFrameRecursive();
 	OfxPointD renderScale;
 	effect.getRenderScaleRecursive( renderScale.x, renderScale.y );
@@ -324,12 +317,10 @@ void GafferOFXInteractInstance::notifyPluginEdited()
 
 	for( const auto &name : interacted )
 	{
-		fprintf( stderr, "DBG notifyPluginEdited dispatching '%s'\n", name.c_str() );
 		effect.paramInstanceChangedAction(
 			name, kOfxChangePluginEdited, frame, renderScale
 		);
 	}
-	fprintf( stderr, "DBG notifyPluginEdited exit\n" );
 
 	effect.endInstanceChangedAction( kOfxChangePluginEdited );
 	gafferEffect->clearInteractedParams();
