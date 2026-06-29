@@ -54,6 +54,7 @@ Host::Host()
 	_properties.setStringProperty(kOfxPropVersionLabel, "1.0");
 	_properties.setIntProperty(kOfxImageEffectHostPropIsBackground, 0);
 	_properties.setIntProperty(kOfxImageEffectPropSupportsOverlays, 1);
+	_properties.setStringProperty(kOfxImageEffectPropOpenGLRenderSupported, "true");
 	_properties.setIntProperty(kOfxImageEffectPropSupportsMultiResolution, 0);
 	_properties.setIntProperty(kOfxImageEffectPropSupportsTiles, true);
 	_properties.setIntProperty(kOfxImageEffectPropTemporalClipAccess, true);
