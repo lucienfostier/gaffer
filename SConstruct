@@ -1165,12 +1165,12 @@ libraries = {
 			"CXXFLAGS" : [ systemIncludeArgument, "$OFX_ROOT/include/openfx", systemIncludeArgument, "$OFX_ROOT/include/openfx/HostSupport" ],
 			"CPPDEFINES" : [ "OFX_DEBUG_ACTIONS", "OFX_SUPPORTS_OPENGLRENDER" ],
 			"LIBPATH" : [ "$OFX_ROOT/lib" ],
-			"LIBS" : [ "Gaffer", "GafferImage", "OfxGafferHost", "GL", "expat" ],
+			"LIBS" : [ "Gaffer", "GafferImage", "OfxGafferHost", "GL", "X11", "OSMesa", "expat" ],
 		},
 		"pythonEnvAppends" : {
 			"CXXFLAGS" : [ systemIncludeArgument, "$OFX_ROOT/include/openfx", systemIncludeArgument, "$OFX_ROOT/include/openfx/HostSupport" ],
 			"CPPDEFINES" : [ "OFX_DEBUG_ACTIONS", "OFX_SUPPORTS_OPENGLRENDER" ],
-			"LIBS" : [ "GafferBindings", "GafferImage", "GafferOFX", "OfxGafferHost", "GL", "expat" ],
+			"LIBS" : [ "GafferBindings", "GafferImage", "GafferOFX", "OfxGafferHost", "GL", "X11", "OSMesa", "expat" ],
 		},
 		"requiredOptions" : [ "OFX_ROOT" ],
 	},
@@ -1517,6 +1517,8 @@ else :
 
 	libraries["GafferCycles"]["envAppends"]["LIBS"].extend( [ "dl" ] )
 	libraries["GafferOFX"]["envAppends"]["LIBS"].extend( [ "dl" ] )
+	libraries["GafferOFX"]["envAppends"]["LIBS"].append( "GLEW$GLEW_LIB_SUFFIX" )
+	libraries["GafferOFX"]["pythonEnvAppends"]["LIBS"].append( "GLEW$GLEW_LIB_SUFFIX" )
 
 # Optionally add vTune requirements
 

@@ -85,6 +85,9 @@ namespace GafferOFX
 			bool m_renderWindowSet;
 			std::mutex m_outputImageMutex;
 
+			// GL output texture ID for OpenGL rendering
+			unsigned int m_outputTexture = 0;
+
 			// Frame cache for temporal clip access
 			std::map<OfxTime, std::unique_ptr<OfxRGBAColourF[]>> m_frameCache;
 			int m_frameCacheWidth = 0;
@@ -204,6 +207,33 @@ namespace GafferOFX
 			 OFX::Host::ImageEffect::Texture* loadTexture(OfxTime time, const char *format, const OfxRectD *optionalBounds) override;
 #endif
 
+			/// Set an output OpenGL texture that the plugin will render into.
+			void setOutputTexture( 			unsigned int textureId ) { m_outputTexture = textureId; }
+			unsigned int outputTexture() const { return m_outputTexture; }
+
+	};
+
+	/// A texture subclass that deletes the GL texture on destruction.
+	class GafferTexture : public OFX::Host::ImageEffect::Texture
+	{
+		public :
+			GafferTexture(
+				ClipInstance& instance,
+				double renderScaleX,
+				double renderScaleY,
+				unsigned int index,
+				unsigned int target,
+				const OfxRectI &bounds,
+				const OfxRectI &rod,
+				int rowBytes,
+				const std::string &field,
+				const std::string &uniqueIdentifier
+			);
+
+			~GafferTexture() override;
+
+		private :
+			unsigned int m_textureId;
 	};
 
 }

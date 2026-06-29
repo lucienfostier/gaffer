@@ -31,9 +31,13 @@
 //  SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //
 //////////////////////////////////////////////////////////////////////////
+// Include GLEW before any Gaffer/OFX headers to avoid X11 macro conflicts.
+#include <GL/glew.h>
+
 #include "GafferOFX/ClipInstance.h"
 #include "GafferOFX/Host.h"
 #include "GafferOFX/EffectImageInstance.h"
+#include "GafferOFX/GLContextManager.h"
 
 #include "Gaffer/Context.h"
 
@@ -237,14 +241,6 @@ bool ClipInstance::getContinuousSamples() const
 }
 
 
-#ifdef OFX_SUPPORTS_OPENGLRENDER
-OFX::Host::ImageEffect::Texture* ClipInstance::loadTexture(OfxTime time, const char *format, const OfxRectD *optionalBounds)
-{
-	return nullptr;
-}
-#endif
-
-
 OfxRectD ClipInstance::getRegionOfDefinition(OfxTime time) const
 {
 	if( m_renderWindowSet )
@@ -340,4 +336,75 @@ OFX::Host::ImageEffect::Image* ClipInstance::getImage(OfxTime time, const OfxRec
 		Image *image = new Image( *this, time, 0, useBounds );
 		return image;
 	}
+}
+
+#ifdef OFX_SUPPORTS_OPENGLRENDER
+OFX::Host::ImageEffect::Texture* ClipInstance::loadTexture( OfxTime time, const char *format, const OfxRectD *optionalBounds )
+{
+	if( !m_externalBuffer || m_bufferWidth <= 0 || m_bufferHeight <= 0 )
+		return nullptr;
+
+	GLContextManager& mgr = GLContextManager::instance();
+	if( !mgr.makeCurrent() )
+		return nullptr;
+
+	OfxRectI bounds;
+	bounds.x1 = 0; bounds.y1 = 0;
+	bounds.x2 = m_bufferWidth; bounds.y2 = m_bufferHeight;
+
+	unsigned int texId;
+	glGenTextures( 1, &texId );
+	glBindTexture( GL_TEXTURE_2D, texId );
+	glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR );
+	glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR );
+	glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE );
+	glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE );
+
+	glTexImage2D( GL_TEXTURE_2D, 0, GL_RGBA32F, m_bufferWidth, m_bufferHeight, 0, GL_RGBA, GL_FLOAT, m_externalBuffer );
+
+	mgr.registerTexture( texId );
+
+	return new GafferTexture(
+		*this,
+		1.0, 1.0,
+		texId, GL_TEXTURE_2D,
+		bounds, bounds,
+		m_bufferWidth * 4 * (int)sizeof(float),
+		"none",
+		""
+	);
+}
+#endif
+
+GafferTexture::GafferTexture(
+	ClipInstance& instance,
+	double renderScaleX,
+	double renderScaleY,
+	unsigned int index,
+	unsigned int target,
+	const OfxRectI &bounds,
+	const OfxRectI &rod,
+	int rowBytes,
+	const std::string &field,
+	const std::string &uniqueIdentifier
+)
+	: OFX::Host::ImageEffect::Texture(
+		instance,
+		renderScaleX,
+		renderScaleY,
+		index,
+		target,
+		bounds,
+		rod,
+		rowBytes,
+		field,
+		uniqueIdentifier
+	),
+	m_textureId( index )
+{
+}
+
+GafferTexture::~GafferTexture()
+{
+	// Don't delete texture here — it's cleaned up via GLContextManager::cleanupTextures()
 }
