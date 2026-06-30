@@ -119,6 +119,7 @@ OfxStatus IntegerInstance::get( OfxTime time, int& i )
 OfxStatus IntegerInstance::set( int value )
 {
 	auto* node = const_cast<OFXImageNode*>( static_cast<const OFXImageNode*>( m_effect->node() ) );
+	if( node->rendering() ) return kOfxStatOK;
 	auto* plug = node->parametersPlug()->getChild<IntPlug>( sanitizeName( m_descriptor.getName() ) );
 	if( plug )
 	{
@@ -162,6 +163,7 @@ OfxStatus DoubleInstance::get( OfxTime time, double& d )
 OfxStatus DoubleInstance::set( double value )
 {
 	auto* node = const_cast<OFXImageNode*>( static_cast<const OFXImageNode*>( m_effect->node() ) );
+	if( node->rendering() ) return kOfxStatOK;
 	auto* plug = node->parametersPlug()->getChild<FloatPlug>( sanitizeName( m_descriptor.getName() ) );
 	if( plug )
 	{
@@ -215,6 +217,7 @@ OfxStatus BooleanInstance::get( OfxTime time, bool& b )
 OfxStatus BooleanInstance::set( bool v )
 {
 	auto* node = const_cast<OFXImageNode*>( static_cast<const OFXImageNode*>( m_effect->node() ) );
+	if( node->rendering() ) return kOfxStatOK;
 	auto* plug = node->parametersPlug()->getChild<BoolPlug>( sanitizeName( m_descriptor.getName() ) );
 	if( plug )
 	{
@@ -264,6 +267,7 @@ OfxStatus ChoiceInstance::get( OfxTime time, int& i )
 OfxStatus ChoiceInstance::set( int value )
 {
 	auto* node = const_cast<OFXImageNode*>( static_cast<const OFXImageNode*>( m_effect->node() ) );
+	if( node->rendering() ) return kOfxStatOK;
 	auto* plug = node->parametersPlug()->getChild<IntPlug>( sanitizeName( m_descriptor.getName() ) );
 	if( plug )
 	{
@@ -312,6 +316,7 @@ OfxStatus RGBAInstance::get( OfxTime time, double& r, double& g, double& b, doub
 OfxStatus RGBAInstance::set( double r, double g, double b, double a )
 {
 	auto* node = const_cast<OFXImageNode*>( static_cast<const OFXImageNode*>( m_effect->node() ) );
+	if( node->rendering() ) return kOfxStatOK;
 	auto* plug = node->parametersPlug()->getChild<Color4fPlug>( sanitizeName( m_descriptor.getName() ) );
 	if( plug )
 	{
@@ -354,6 +359,7 @@ OfxStatus RGBInstance::get( OfxTime time, double& r, double& g, double& b )
 OfxStatus RGBInstance::set( double r, double g, double b )
 {
 	auto* node = const_cast<OFXImageNode*>( static_cast<const OFXImageNode*>( m_effect->node() ) );
+	if( node->rendering() ) return kOfxStatOK;
 	auto* plug = node->parametersPlug()->getChild<Color3fPlug>( sanitizeName( m_descriptor.getName() ) );
 	if( plug )
 	{
@@ -397,6 +403,7 @@ OfxStatus Double2DInstance::get( OfxTime time, double& x, double& y )
 OfxStatus Double2DInstance::set( double x, double y )
 {
 	auto* node = const_cast<OFXImageNode*>( static_cast<const OFXImageNode*>( m_effect->node() ) );
+	if( node->rendering() ) return kOfxStatOK;
 	auto* plug = node->parametersPlug()->getChild<V2fPlug>( sanitizeName( m_descriptor.getName() ) );
 	fprintf( stderr, "DBG set(%s, %.4f, %.4f) plug=%p\n", sanitizeName( m_descriptor.getName() ).c_str(), x, y, (void*)plug );
 	if( plug )
@@ -446,6 +453,7 @@ OfxStatus Integer2DInstance::get( OfxTime time, int& x, int& y )
 OfxStatus Integer2DInstance::set( int x, int y )
 {
 	auto* node = const_cast<OFXImageNode*>( static_cast<const OFXImageNode*>( m_effect->node() ) );
+	if( node->rendering() ) return kOfxStatOK;
 	auto* plug = node->parametersPlug()->getChild<V2iPlug>( sanitizeName( m_descriptor.getName() ) );
 	if( plug )
 	{
@@ -488,6 +496,7 @@ OfxStatus Double3DInstance::get( OfxTime time, double& x, double& y, double& z )
 OfxStatus Double3DInstance::set( double x, double y, double z )
 {
 	auto* node = const_cast<OFXImageNode*>( static_cast<const OFXImageNode*>( m_effect->node() ) );
+	if( node->rendering() ) return kOfxStatOK;
 	auto* plug = node->parametersPlug()->getChild<V3fPlug>( sanitizeName( m_descriptor.getName() ) );
 	if( plug )
 	{
@@ -530,6 +539,7 @@ OfxStatus Integer3DInstance::get( OfxTime time, int& x, int& y, int& z )
 OfxStatus Integer3DInstance::set( int x, int y, int z )
 {
 	auto* node = const_cast<OFXImageNode*>( static_cast<const OFXImageNode*>( m_effect->node() ) );
+	if( node->rendering() ) return kOfxStatOK;
 	auto* plug = node->parametersPlug()->getChild<V3iPlug>( sanitizeName( m_descriptor.getName() ) );
 	if( plug )
 	{
@@ -576,14 +586,8 @@ OfxStatus StringInstance::get( OfxTime time, std::string& s )
 
 OfxStatus StringInstance::set( const char* s )
 {
-	// The sublabel is typically a display-only string set by the plugin
-	// during CreateInstance (e.g. FrameHold::updateSublabel).  Gaffer's
-	// Plug::setValue goes through the undo system and cannot be safely
-	// called from inside createInstanceAction().  We acknowledge the
-	// value but do not store it on the Gaffer plug.
-
-	// Set the plug value but wrap it in a blocking context to avoid
-	// undo/action issues during CreateInstance.
+	// Skipped intentionally — String plugs set during CreateInstance
+	// (e.g. FrameHold::updateSublabel) trigger undo/action issues.
 	return kOfxStatOK;
 }
 

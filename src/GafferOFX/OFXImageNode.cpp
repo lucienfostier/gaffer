@@ -98,6 +98,20 @@ void OFXImageNode::plugSet( Gaffer::Plug *plug )
 		m_instance.reset();
 		createPluginInstance();
 	}
+	else if( m_instance && parametersPlug()->isAncestorOf( plug ) )
+	{
+		if( m_rendering )
+			return;
+		OfxTime time = 0.0;
+		if( const Gaffer::Context *ctx = Gaffer::Context::current() )
+		{
+			time = ctx->getFrame();
+		}
+		OfxPointD renderScale = { 1.0, 1.0 };
+		m_instance->beginInstanceChangedAction( kOfxChangeUserEdited );
+		m_instance->paramInstanceChangedAction( plug->getName().string(), kOfxChangeUserEdited, time, renderScale );
+		m_instance->endInstanceChangedAction( kOfxChangeUserEdited );
+	}
 }
 
 OFXImageNode::~OFXImageNode()
@@ -108,6 +122,8 @@ bool OFXImageNode::createPluginInstance()
 {
 	if( m_instance )
 		return true;
+
+	m_clipPreferencesFetched = false;
 
 	Host& host = Host::instance();
 	std::string pluginId = pluginIdPlug()->getValue();
@@ -632,6 +648,20 @@ void OFXImageNode::hashOfxRenderBuffer( const Gaffer::Context *context, IECore::
 			valuePlug->hash( h );
 		}
 	}
+
+	// Include the frame in the hash so that time-varying OFX plugins
+	// (whether they declare _frameVarying or not) correctly invalidate
+	// the cache across frames.  Call getClipPreferences here to give
+	// plugins a chance to set up frame-dependent state.
+	if( m_instance )
+	{
+		if( !m_clipPreferencesFetched )
+		{
+			m_instance->getClipPreferences();
+			m_clipPreferencesFetched = true;
+		}
+		h.append( context->getFrame() );
+	}
 }
 
 namespace
@@ -984,6 +1014,7 @@ IECore::ConstCompoundObjectPtr OFXImageNode::computeOfxRenderBuffer( const Gaffe
 		}
 
 		// CPU rendering path
+		m_rendering = true;
 		m_instance->beginRenderAction( frame, frame, 1.0, false, renderScale, true, false );
 		m_instance->renderAction( frame, kOfxImageFieldNone, renderWindow, renderScale, true, false, false );
 		m_instance->endRenderAction( frame, frame, 1.0, false, renderScale, true, false );
@@ -992,6 +1023,7 @@ IECore::ConstCompoundObjectPtr OFXImageNode::computeOfxRenderBuffer( const Gaffe
 		m_instance->beginRenderAction( frame, frame, 1.0, false, renderScale, true, false );
 		m_instance->renderAction( frame, kOfxImageFieldNone, renderWindow, renderScale, true, false, false );
 		m_instance->endRenderAction( frame, frame, 1.0, false, renderScale, true, false );
+		m_rendering = false;
 
 		// Clear frame cache after render
 		if( sourceClip )

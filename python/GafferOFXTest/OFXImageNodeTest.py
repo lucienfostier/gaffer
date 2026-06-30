@@ -699,6 +699,166 @@ class OFXImageNodeTest( GafferTest.TestCase ) :
 		self.assertNotEqual( h1, h2 )
 
 
+	# -----------------------------------------------------------------------
+	# Shadertoy tests — uses OSMesa GL rendering
+	# -----------------------------------------------------------------------
+
+	def testShadertoyDefaultShader( self ) :
+
+		s = Gaffer.ScriptNode()
+
+		cb = GafferImage.Checkerboard()
+		s.addChild( cb )
+		cb["format"].setValue( GafferImage.Format( 64, 64 ) )
+
+		n = GafferOFX.OFXImageNode()
+		s.addChild( n )
+		n["in"].setInput( cb["out"] )
+		n["pluginId"].setValue( "net.sf.openfx.Shadertoy" )
+		self.assertTrue( n.createPluginInstance() )
+
+		dw = n["out"]["dataWindow"].getValue()
+		self.assertGreater( dw.size().x, 0 )
+		self.assertGreater( dw.size().y, 0 )
+		self.assertEqual( list( n["out"]["channelNames"].getValue() ), [ "R", "G", "B", "A" ] )
+
+		tileSize = n["out"].tileSize()
+		for ch in [ "R", "G", "B", "A" ] :
+			tile = n["out"].channelData( ch, imath.V2i( 0 ) )
+			self.assertEqual( len( tile ), tileSize * tileSize )
+			nonZero = sum( 1 for v in tile if abs( v ) > 1e-6 )
+			self.assertGreater( nonZero, 0 )
+
+	def testShadertoyFrameVarying( self ) :
+
+		s = Gaffer.ScriptNode()
+
+		cb = GafferImage.Checkerboard()
+		s.addChild( cb )
+		cb["format"].setValue( GafferImage.Format( 64, 64 ) )
+
+		n = GafferOFX.OFXImageNode()
+		s.addChild( n )
+		n["in"].setInput( cb["out"] )
+		n["pluginId"].setValue( "net.sf.openfx.Shadertoy" )
+		self.assertTrue( n.createPluginInstance() )
+
+		# The default shader uses iTime in the blue channel only.
+		# Blue channel should differ across frames.
+		def blueAtFrame( f ) :
+			ctx = Gaffer.Context()
+			ctx.setFrame( f )
+			with ctx :
+				return n["out"].channelData( "B", imath.V2i( 0 ) )[0]
+
+		b1 = blueAtFrame( 1 )
+		b2 = blueAtFrame( 10 )
+		self.assertNotEqual( b1, b2, "iTime should vary across frames" )
+
+		# Red channel does not use iTime in the default shader
+		def redAtFrame( f ) :
+			ctx = Gaffer.Context()
+			ctx.setFrame( f )
+			with ctx :
+				return n["out"].channelData( "R", imath.V2i( 0 ) )[0]
+
+		r1 = redAtFrame( 1 )
+		r2 = redAtFrame( 10 )
+		self.assertEqual( r1, r2, "Red channel should be frame-independent" )
+
+	def testShadertoyHashChangesWithSource( self ) :
+
+		s = Gaffer.ScriptNode()
+
+		cb = GafferImage.Checkerboard()
+		s.addChild( cb )
+		cb["format"].setValue( GafferImage.Format( 64, 64 ) )
+
+		n = GafferOFX.OFXImageNode()
+		s.addChild( n )
+		n["in"].setInput( cb["out"] )
+		n["pluginId"].setValue( "net.sf.openfx.Shadertoy" )
+		self.assertTrue( n.createPluginInstance() )
+
+		h1 = n["out"].channelDataHash( "R", imath.V2i( 0 ) )
+
+		# Changing the imageShaderSource should invalidate the hash.
+		n["parameters"]["imageShaderSource"].setValue(
+			"void mainImage( out vec4 f, in vec2 v ) { f = vec4( 1, 0, 0, 1 ); }"
+		)
+		h2 = n["out"].channelDataHash( "R", imath.V2i( 0 ) )
+		self.assertNotEqual( h1, h2 )
+
+	# -----------------------------------------------------------------------
+	# Sapphire S_Blur tests
+	# -----------------------------------------------------------------------
+
+	def testSBlurPlugin( self ) :
+
+		s = Gaffer.ScriptNode()
+
+		cb = GafferImage.Checkerboard()
+		s.addChild( cb )
+		cb["format"].setValue( GafferImage.Format( 128, 128 ) )
+
+		n = GafferOFX.OFXImageNode()
+		s.addChild( n )
+		n["in"].setInput( cb["out"] )
+		n["pluginId"].setValue( "com.genarts.sapphire.BlurSharpen.S_Blur" )
+		self.assertTrue( n.createPluginInstance() )
+
+		dw = n["out"]["dataWindow"].getValue()
+		self.assertGreater( dw.size().x, 0 )
+		self.assertGreater( dw.size().y, 0 )
+		self.assertEqual( list( n["out"]["channelNames"].getValue() ), [ "R", "G", "B", "A" ] )
+
+		tileSize = n["out"].tileSize()
+		for ch in [ "R", "G", "B", "A" ] :
+			tile = n["out"].channelData( ch, imath.V2i( 0 ) )
+			self.assertEqual( len( tile ), tileSize * tileSize )
+			nonZero = sum( 1 for v in tile if abs( v ) > 1e-6 )
+			self.assertGreater( nonZero, 0 )
+
+	def testSBlurPassThrough( self ) :
+
+		s = Gaffer.ScriptNode()
+
+		cb = GafferImage.Checkerboard()
+		s.addChild( cb )
+		cb["format"].setValue( GafferImage.Format( 128, 128 ) )
+
+		n = GafferOFX.OFXImageNode()
+		s.addChild( n )
+		n["in"].setInput( cb["out"] )
+		n["pluginId"].setValue( "com.genarts.sapphire.BlurSharpen.S_Blur" )
+		self.assertTrue( n.createPluginInstance() )
+
+		self.assertEqual( cb["out"]["format"].getValue(), n["out"]["format"].getValue() )
+		self.assertEqual( cb["out"]["dataWindow"].getValue(), n["out"]["dataWindow"].getValue() )
+
+	def testSBlurHashChangesWithParam( self ) :
+
+		s = Gaffer.ScriptNode()
+
+		cb = GafferImage.Checkerboard()
+		s.addChild( cb )
+		cb["format"].setValue( GafferImage.Format( 128, 128 ) )
+
+		n = GafferOFX.OFXImageNode()
+		s.addChild( n )
+		n["in"].setInput( cb["out"] )
+		n["pluginId"].setValue( "com.genarts.sapphire.BlurSharpen.S_Blur" )
+		self.assertTrue( n.createPluginInstance() )
+
+		h1 = n["out"].channelDataHash( "R", imath.V2i( 0 ) )
+
+		# S_Blur Blur_Amount param — changing it should change the hash.
+		self.assertIn( "Blur_Amount", n["parameters"] )
+		n["parameters"]["Blur_Amount"].setValue( 0.5 )
+		h2 = n["out"].channelDataHash( "R", imath.V2i( 0 ) )
+		self.assertNotEqual( h1, h2 )
+
+
 if __name__ == "__main__" :
 	unittest.main()
 

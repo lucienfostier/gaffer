@@ -110,6 +110,8 @@ class GAFFEROFX_API OFXImageNode : public GafferImage::ImageProcessor
 		class GafferOFXInteractInstance* getInteract();
 		void destroyInteract();
 
+		bool rendering() const { return m_rendering; }
+
 	private :
 
 		void plugSet( Gaffer::Plug *plug );
@@ -118,6 +120,8 @@ class GAFFEROFX_API OFXImageNode : public GafferImage::ImageProcessor
 
 		static size_t g_firstPlugIndex;
 		mutable std::unique_ptr<GafferOFX::EffectImageInstance> m_instance;
+		mutable bool m_clipPreferencesFetched = false;
+		mutable bool m_rendering = false;
 		mutable std::mutex m_renderMutex;
 		std::vector<std::string> m_clipPlugNames;
 		std::unique_ptr<GafferOFXInteractInstance> m_interactInstance;
