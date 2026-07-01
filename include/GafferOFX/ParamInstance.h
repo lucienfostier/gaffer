@@ -191,12 +191,19 @@ class StringInstance : public OFX::Host::Param::StringInstance
 	protected : 
 		GafferOFX::EffectImageInstance*   m_effect;
 		OFX::Host::Param::Descriptor& m_descriptor;
+		mutable std::string m_returnValue;
 	public :
 		StringInstance( GafferOFX::EffectImageInstance* effect,  const std::string& name, OFX::Host::Param::Descriptor& descriptor );
 		OfxStatus get( std::string& ) override;
 		OfxStatus get( OfxTime time, std::string& ) override;
 		OfxStatus set( const char* ) override;
 		OfxStatus set( OfxTime time, const char* ) override;
+
+		// Override getV to use our own m_returnValue instead of
+		// the HostSupport's _returnValue, which may be at a wrong
+		// offset due to std::string ABI differences between libraries.
+		OfxStatus getV( va_list arg ) override;
+		OfxStatus getV( OfxTime time, va_list arg ) override;
 };
 
 }

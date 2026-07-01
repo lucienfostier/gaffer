@@ -39,6 +39,8 @@
 
 #include "GafferOFX/OFXImageNode.h"
 
+#include "IECore/StringAlgo.h"
+
 #include "Gaffer/CompoundNumericPlug.h"
 #include "Gaffer/PlugAlgo.h"
 #include "Gaffer/StringPlug.h"
@@ -675,22 +677,70 @@ GafferOFX::StringInstance::StringInstance( GafferOFX::EffectImageInstance* effec
 	auto* plugParent = const_cast<GafferOFX::OFXImageNode*>(static_cast<const GafferOFX::OFXImageNode*>(m_effect->node()))->parametersPlug();
 	std::string defaultValue;
 	try { defaultValue = descriptor.getProperties().getStringProperty( kOfxParamPropDefault ); } catch( ... ) {}
-	setupTypedPlug<StringPlug>( name, plugParent, Plug::In, defaultValue );
+	const std::string paramName = sanitizeName( name );
+	StringPlug *existingPlug = plugParent->getChild<StringPlug>( paramName );
+	if(
+		existingPlug &&
+		existingPlug->direction() == Plug::In &&
+		existingPlug->defaultValue() == defaultValue
+	)
+	{
+		return;
+	}
+	StringPlug::Ptr plug = new StringPlug( paramName, Plug::In, defaultValue, Plug::Default, IECore::StringAlgo::NoSubstitutions );
+	plug->setFlags( Gaffer::Plug::Dynamic, true );
+	PlugAlgo::replacePlug( plugParent, plug );
 }
 
 OfxStatus StringInstance::get( std::string& s )
 {
 	auto* node = static_cast<const OFXImageNode*>( m_effect->node() );
-	auto* plug = node->parametersPlug()->getChild<StringPlug>( sanitizeName( m_descriptor.getName() ) );
+	auto* plugParent = node->parametersPlug();
+	std::string sanitized = sanitizeName( m_descriptor.getName() );
+	auto* plug = plugParent->getChild<StringPlug>( sanitized );
+#if DEBUG_OFX
+	fprintf( stderr, "DEBUG OFX: StringInstance::get(%s) sanitized='%s' plugParent=%p\n", m_descriptor.getName().c_str(), sanitized.c_str(), (void*)plugParent );
+	int count = 0;
+	for( size_t i = 0; i < plugParent->children().size(); ++i )
+	{
+		const auto* c = plugParent->getChild<const Gaffer::Plug>( i );
+		if( c && c->getName() == sanitized )
+		{
+			count++;
+			if( IECore::runTimeCast<const Gaffer::StringPlug>( c ) )
+			{
+				fprintf( stderr, "DEBUG OFX:   child[%zu] name='%s' type=StringPlug addr=%p\n", i, c->getName().c_str(), (void*)c );
+			}
+			else
+			{
+				fprintf( stderr, "DEBUG OFX:   child[%zu] name='%s' type=NON-StringPlug(%s) addr=%p\n", i, c->getName().c_str(), c->typeName(), (void*)c );
+			}
+		}
+	}
+	fprintf( stderr, "DEBUG OFX:   total children named '%s' = %d\n", sanitized.c_str(), count );
+#endif
 	if( plug )
 	{
 		s = plug->getValue();
-#if DEBUG_OFX
-		fprintf( stderr, "DEBUG OFX: StringInstance::get(%s) = \"%s\"\n", m_descriptor.getName().c_str(), s.c_str() );
-#endif
 		return kOfxStatOK;
 	}
 	return kOfxStatFailed;
+}
+
+OfxStatus StringInstance::getV( va_list arg )
+{
+	const char **value = va_arg(arg, const char **);
+	OfxStatus stat = get( m_returnValue );
+	*value = m_returnValue.c_str();
+	return stat;
+}
+
+OfxStatus StringInstance::getV( OfxTime time, va_list arg )
+{
+	const char **value = va_arg(arg, const char **);
+	OfxStatus stat = get( time, m_returnValue );
+	*value = m_returnValue.c_str();
+	return stat;
 }
 
 OfxStatus StringInstance::get( OfxTime time, std::string& s )
@@ -713,6 +763,11 @@ OfxStatus StringInstance::set( const char* s )
 	{
 #if DEBUG_OFX
 		fprintf( stderr, "DEBUG OFX: StringInstance::set(%s, \"%s\")\n", m_descriptor.getName().c_str(), s );
+		if( strstr( s, "define" ) )
+		{
+			const unsigned char* p = (const unsigned char*)strstr( s, "define" ) - 4;
+			fprintf( stderr, "DEBUG OFX: hex around #define: %02x %02x %02x %02x %02x %02x %02x\n", p[0], p[1], p[2], p[3], p[4], p[5], p[6] );
+		}
 #endif
 		m_effect->markParamInteracted( m_descriptor.getName() );
 		SettingFromPluginScope scope( node );

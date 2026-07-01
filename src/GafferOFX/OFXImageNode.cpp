@@ -127,7 +127,7 @@ void OFXImageNode::plugSet( Gaffer::Plug *plug )
 			plugValue = std::to_string( fp->getValue() );
 		else if( auto *ip = runTimeCast<const Gaffer::IntPlug>( plug ) )
 			plugValue = std::to_string( ip->getValue() );
-		fprintf( stderr, "DEBUG OFX: plugSet(%s) value=%s dispatching userEdited\n", plug->getName().c_str(), plugValue.c_str() );
+		fprintf( stderr, "DEBUG OFX: plugSet(%s) plug=%p parent=%p value=%s dispatching userEdited\n", plug->getName().c_str(), (void*)plug, (void*)plug->parent<Plug>(), plugValue.c_str() );
 #endif
 		OfxTime time = 0.0;
 		if( const Gaffer::Context *ctx = Gaffer::Context::current() )
