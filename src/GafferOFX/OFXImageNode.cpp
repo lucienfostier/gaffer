@@ -60,11 +60,8 @@
 #include "ofxGPURender.h"
 #endif
 
-#define DEBUG_OFX 1
-
 #include <algorithm>
 #include <cctype>
-#include <iostream>
 #include <vector>
 
 using namespace std;
@@ -96,9 +93,6 @@ void OFXImageNode::plugSet( Gaffer::Plug *plug )
 {
 	if( plug == pluginIdPlug() )
 	{
-#if DEBUG_OFX
-		fprintf( stderr, "DEBUG OFX: plugSet(pluginId=%s) destroying/recreating instance\n", pluginIdPlug()->getValue().c_str() );
-#endif
 		destroyInteract();
 		m_instance.reset();
 		createPluginInstance();
@@ -107,28 +101,12 @@ void OFXImageNode::plugSet( Gaffer::Plug *plug )
 	{
 		if( m_rendering )
 		{
-#if DEBUG_OFX
-			fprintf( stderr, "DEBUG OFX: plugSet(%s) SKIPPED (rendering)\n", plug->getName().c_str() );
-#endif
 			return;
 		}
 		if( m_settingFromPlugin )
 		{
-#if DEBUG_OFX
-			fprintf( stderr, "DEBUG OFX: plugSet(%s) SKIPPED (settingFromPlugin) — OFX host will dispatch pluginEdited\n", plug->getName().c_str() );
-#endif
 			return;
 		}
-#if DEBUG_OFX
-		std::string plugValue = "?";
-		if( auto *sp = runTimeCast<const Gaffer::StringPlug>( plug ) )
-			plugValue = "\"" + sp->getValue() + "\"";
-		else if( auto *fp = runTimeCast<const Gaffer::FloatPlug>( plug ) )
-			plugValue = std::to_string( fp->getValue() );
-		else if( auto *ip = runTimeCast<const Gaffer::IntPlug>( plug ) )
-			plugValue = std::to_string( ip->getValue() );
-		fprintf( stderr, "DEBUG OFX: plugSet(%s) plug=%p parent=%p value=%s dispatching userEdited\n", plug->getName().c_str(), (void*)plug, (void*)plug->parent<Plug>(), plugValue.c_str() );
-#endif
 		OfxTime time = 0.0;
 		if( const Gaffer::Context *ctx = Gaffer::Context::current() )
 		{
@@ -673,14 +651,6 @@ void OFXImageNode::hashOfxRenderBuffer( const Gaffer::Context *context, IECore::
 		if( auto *valuePlug = runTimeCast<const ValuePlug>( child.get() ) )
 		{
 			valuePlug->hash( h );
-#if DEBUG_OFX
-			if( auto *sp = runTimeCast<const Gaffer::StringPlug>( valuePlug ) )
-			{
-				static int logCount = 0;
-				if( ++logCount <= 5 )
-					fprintf( stderr, "DEBUG OFX: hash param %s = \"%s\"\n", child->getName().c_str(), sp->getValue().c_str() );
-			}
-#endif
 		}
 	}
 
@@ -1049,17 +1019,11 @@ IECore::ConstCompoundObjectPtr OFXImageNode::computeOfxRenderBuffer( const Gaffe
 		}
 
 		// CPU rendering path
-#if DEBUG_OFX
-		fprintf( stderr, "DEBUG OFX: render START frame=%.0f window=(%d,%d)-(%d,%d)\n", frame, renderWindow.x1, renderWindow.y1, renderWindow.x2, renderWindow.y2 );
-#endif
 		m_rendering = true;
 		m_instance->beginRenderAction( frame, frame, 1.0, false, renderScale, true, false );
 		m_instance->renderAction( frame, kOfxImageFieldNone, renderWindow, renderScale, true, false, false );
 		m_instance->endRenderAction( frame, frame, 1.0, false, renderScale, true, false );
 		m_rendering = false;
-#if DEBUG_OFX
-		fprintf( stderr, "DEBUG OFX: render END frame=%.0f\n", frame );
-#endif
 
 		// Clear frame cache after render
 		if( sourceClip )

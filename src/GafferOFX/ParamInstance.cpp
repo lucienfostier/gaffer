@@ -31,11 +31,7 @@
 //  SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //
 //////////////////////////////////////////////////////////////////////////
-#define DEBUG_OFX 1
-
 #include "GafferOFX/ParamInstance.h"
-
-#include <cstdio>
 
 #include "GafferOFX/OFXImageNode.h"
 
@@ -137,17 +133,11 @@ OfxStatus IntegerInstance::set( int value )
 	auto* node = const_cast<OFXImageNode*>( static_cast<const OFXImageNode*>( m_effect->node() ) );
 	if( node->rendering() )
 	{
-#if DEBUG_OFX
-		fprintf( stderr, "DEBUG OFX: IntegerInstance::set(%s, %d) SKIPPED (rendering)\n", m_descriptor.getName().c_str(), value );
-#endif
 		return kOfxStatOK;
 	}
 	auto* plug = node->parametersPlug()->getChild<IntPlug>( sanitizeName( m_descriptor.getName() ) );
 	if( plug )
 	{
-#if DEBUG_OFX
-		fprintf( stderr, "DEBUG OFX: IntegerInstance::set(%s, %d)\n", m_descriptor.getName().c_str(), value );
-#endif
 		m_effect->markParamInteracted( m_descriptor.getName() );
 		SettingFromPluginScope scope( node );
 		plug->setValue( value );
@@ -191,17 +181,11 @@ OfxStatus DoubleInstance::set( double value )
 	auto* node = const_cast<OFXImageNode*>( static_cast<const OFXImageNode*>( m_effect->node() ) );
 	if( node->rendering() )
 	{
-#if DEBUG_OFX
-		fprintf( stderr, "DEBUG OFX: DoubleInstance::set(%s, %.6f) SKIPPED (rendering)\n", m_descriptor.getName().c_str(), value );
-#endif
 		return kOfxStatOK;
 	}
 	auto* plug = node->parametersPlug()->getChild<FloatPlug>( sanitizeName( m_descriptor.getName() ) );
 	if( plug )
 	{
-#if DEBUG_OFX
-		fprintf( stderr, "DEBUG OFX: DoubleInstance::set(%s, %.6f)\n", m_descriptor.getName().c_str(), value );
-#endif
 		m_effect->markParamInteracted( m_descriptor.getName() );
 		SettingFromPluginScope scope( node );
 		plug->setValue( (float)value );
@@ -255,17 +239,11 @@ OfxStatus BooleanInstance::set( bool v )
 	auto* node = const_cast<OFXImageNode*>( static_cast<const OFXImageNode*>( m_effect->node() ) );
 	if( node->rendering() )
 	{
-#if DEBUG_OFX
-		fprintf( stderr, "DEBUG OFX: BooleanInstance::set(%s, %d) SKIPPED (rendering)\n", m_descriptor.getName().c_str(), (int)v );
-#endif
 		return kOfxStatOK;
 	}
 	auto* plug = node->parametersPlug()->getChild<BoolPlug>( sanitizeName( m_descriptor.getName() ) );
 	if( plug )
 	{
-#if DEBUG_OFX
-		fprintf( stderr, "DEBUG OFX: BooleanInstance::set(%s, %d)\n", m_descriptor.getName().c_str(), (int)v );
-#endif
 		m_effect->markParamInteracted( m_descriptor.getName() );
 		SettingFromPluginScope scope( node );
 		plug->setValue( v );
@@ -315,17 +293,11 @@ OfxStatus ChoiceInstance::set( int value )
 	auto* node = const_cast<OFXImageNode*>( static_cast<const OFXImageNode*>( m_effect->node() ) );
 	if( node->rendering() )
 	{
-#if DEBUG_OFX
-		fprintf( stderr, "DEBUG OFX: ChoiceInstance::set(%s, %d) SKIPPED (rendering)\n", m_descriptor.getName().c_str(), value );
-#endif
 		return kOfxStatOK;
 	}
 	auto* plug = node->parametersPlug()->getChild<IntPlug>( sanitizeName( m_descriptor.getName() ) );
 	if( plug )
 	{
-#if DEBUG_OFX
-		fprintf( stderr, "DEBUG OFX: ChoiceInstance::set(%s, %d)\n", m_descriptor.getName().c_str(), value );
-#endif
 		m_effect->markParamInteracted( m_descriptor.getName() );
 		SettingFromPluginScope scope( node );
 		plug->setValue( value );
@@ -374,17 +346,11 @@ OfxStatus RGBAInstance::set( double r, double g, double b, double a )
 	auto* node = const_cast<OFXImageNode*>( static_cast<const OFXImageNode*>( m_effect->node() ) );
 	if( node->rendering() )
 	{
-#if DEBUG_OFX
-		fprintf( stderr, "DEBUG OFX: RGBAInstance::set(%s, %.3f,%.3f,%.3f,%.3f) SKIPPED (rendering)\n", m_descriptor.getName().c_str(), r, g, b, a );
-#endif
 		return kOfxStatOK;
 	}
 	auto* plug = node->parametersPlug()->getChild<Color4fPlug>( sanitizeName( m_descriptor.getName() ) );
 	if( plug )
 	{
-#if DEBUG_OFX
-		fprintf( stderr, "DEBUG OFX: RGBAInstance::set(%s, %.3f,%.3f,%.3f,%.3f)\n", m_descriptor.getName().c_str(), r, g, b, a );
-#endif
 		m_effect->markParamInteracted( m_descriptor.getName() );
 		SettingFromPluginScope scope( node );
 		plug->setValue( Imath::Color4f( (float)r, (float)g, (float)b, (float)a ) );
@@ -427,17 +393,11 @@ OfxStatus RGBInstance::set( double r, double g, double b )
 	auto* node = const_cast<OFXImageNode*>( static_cast<const OFXImageNode*>( m_effect->node() ) );
 	if( node->rendering() )
 	{
-#if DEBUG_OFX
-		fprintf( stderr, "DEBUG OFX: RGBInstance::set(%s, %.3f,%.3f,%.3f) SKIPPED (rendering)\n", m_descriptor.getName().c_str(), r, g, b );
-#endif
 		return kOfxStatOK;
 	}
 	auto* plug = node->parametersPlug()->getChild<Color3fPlug>( sanitizeName( m_descriptor.getName() ) );
 	if( plug )
 	{
-#if DEBUG_OFX
-		fprintf( stderr, "DEBUG OFX: RGBInstance::set(%s, %.3f,%.3f,%.3f)\n", m_descriptor.getName().c_str(), r, g, b );
-#endif
 		m_effect->markParamInteracted( m_descriptor.getName() );
 		SettingFromPluginScope scope( node );
 		plug->setValue( Imath::Color3f( (float)r, (float)g, (float)b ) );
@@ -465,7 +425,6 @@ OfxStatus Double2DInstance::get( double& x, double& y )
 	{
 		Imath::V2f v = plug->getValue();
 		x = v.x; y = v.y;
-		fprintf( stderr, "DBG get(%s) =(%.4f,%.4f)\n", sanitizeName( m_descriptor.getName() ).c_str(), x, y );
 		return kOfxStatOK;
 	}
 	return kOfxStatFailed;
@@ -481,22 +440,16 @@ OfxStatus Double2DInstance::set( double x, double y )
 	auto* node = const_cast<OFXImageNode*>( static_cast<const OFXImageNode*>( m_effect->node() ) );
 	if( node->rendering() )
 	{
-		fprintf( stderr, "DBG set(%s, %.4f, %.4f) SKIPPED (rendering)\n", sanitizeName( m_descriptor.getName() ).c_str(), x, y );
 		return kOfxStatOK;
 	}
 	auto* plug = node->parametersPlug()->getChild<V2fPlug>( sanitizeName( m_descriptor.getName() ) );
-	fprintf( stderr, "DBG set(%s, %.4f, %.4f) plug=%p\n", sanitizeName( m_descriptor.getName() ).c_str(), x, y, (void*)plug );
 	if( plug )
 	{
 		m_effect->markParamInteracted( m_descriptor.getName() );
-		Imath::V2f before = plug->getValue();
 		{
 			SettingFromPluginScope scope( node );
 			plug->setValue( Imath::V2f( (float)x, (float)y ) );
 		}
-		Imath::V2f after = plug->getValue();
-		fprintf( stderr, "DBG set(%s) before=(%.4f,%.4f) after=(%.4f,%.4f)\n",
-			sanitizeName( m_descriptor.getName() ).c_str(), before.x, before.y, after.x, after.y );
 		return kOfxStatOK;
 	}
 	return kOfxStatFailed;
@@ -504,8 +457,6 @@ OfxStatus Double2DInstance::set( double x, double y )
 
 OfxStatus Double2DInstance::set( OfxTime time, double x, double y )
 {
-	fprintf( stderr, "DBG set(%s, t=%.3f, %.4f, %.4f) -> time variant\n",
-		sanitizeName( m_descriptor.getName() ).c_str(), time, x, y );
 	return set( x, y );
 }
 
@@ -538,17 +489,11 @@ OfxStatus Integer2DInstance::set( int x, int y )
 	auto* node = const_cast<OFXImageNode*>( static_cast<const OFXImageNode*>( m_effect->node() ) );
 	if( node->rendering() )
 	{
-#if DEBUG_OFX
-		fprintf( stderr, "DEBUG OFX: Integer2DInstance::set(%s, %d,%d) SKIPPED (rendering)\n", m_descriptor.getName().c_str(), x, y );
-#endif
 		return kOfxStatOK;
 	}
 	auto* plug = node->parametersPlug()->getChild<V2iPlug>( sanitizeName( m_descriptor.getName() ) );
 	if( plug )
 	{
-#if DEBUG_OFX
-		fprintf( stderr, "DEBUG OFX: Integer2DInstance::set(%s, %d,%d)\n", m_descriptor.getName().c_str(), x, y );
-#endif
 		m_effect->markParamInteracted( m_descriptor.getName() );
 		SettingFromPluginScope scope( node );
 		plug->setValue( Imath::V2i( x, y ) );
@@ -591,17 +536,11 @@ OfxStatus Double3DInstance::set( double x, double y, double z )
 	auto* node = const_cast<OFXImageNode*>( static_cast<const OFXImageNode*>( m_effect->node() ) );
 	if( node->rendering() )
 	{
-#if DEBUG_OFX
-		fprintf( stderr, "DEBUG OFX: Double3DInstance::set(%s, %.3f,%.3f,%.3f) SKIPPED (rendering)\n", m_descriptor.getName().c_str(), x, y, z );
-#endif
 		return kOfxStatOK;
 	}
 	auto* plug = node->parametersPlug()->getChild<V3fPlug>( sanitizeName( m_descriptor.getName() ) );
 	if( plug )
 	{
-#if DEBUG_OFX
-		fprintf( stderr, "DEBUG OFX: Double3DInstance::set(%s, %.3f,%.3f,%.3f)\n", m_descriptor.getName().c_str(), x, y, z );
-#endif
 		m_effect->markParamInteracted( m_descriptor.getName() );
 		SettingFromPluginScope scope( node );
 		plug->setValue( Imath::V3f( (float)x, (float)y, (float)z ) );
@@ -644,17 +583,11 @@ OfxStatus Integer3DInstance::set( int x, int y, int z )
 	auto* node = const_cast<OFXImageNode*>( static_cast<const OFXImageNode*>( m_effect->node() ) );
 	if( node->rendering() )
 	{
-#if DEBUG_OFX
-		fprintf( stderr, "DEBUG OFX: Integer3DInstance::set(%s, %d,%d,%d) SKIPPED (rendering)\n", m_descriptor.getName().c_str(), x, y, z );
-#endif
 		return kOfxStatOK;
 	}
 	auto* plug = node->parametersPlug()->getChild<V3iPlug>( sanitizeName( m_descriptor.getName() ) );
 	if( plug )
 	{
-#if DEBUG_OFX
-		fprintf( stderr, "DEBUG OFX: Integer3DInstance::set(%s, %d,%d,%d)\n", m_descriptor.getName().c_str(), x, y, z );
-#endif
 		m_effect->markParamInteracted( m_descriptor.getName() );
 		SettingFromPluginScope scope( node );
 		plug->setValue( Imath::V3i( x, y, z ) );
@@ -698,27 +631,6 @@ OfxStatus StringInstance::get( std::string& s )
 	auto* plugParent = node->parametersPlug();
 	std::string sanitized = sanitizeName( m_descriptor.getName() );
 	auto* plug = plugParent->getChild<StringPlug>( sanitized );
-#if DEBUG_OFX
-	fprintf( stderr, "DEBUG OFX: StringInstance::get(%s) sanitized='%s' plugParent=%p\n", m_descriptor.getName().c_str(), sanitized.c_str(), (void*)plugParent );
-	int count = 0;
-	for( size_t i = 0; i < plugParent->children().size(); ++i )
-	{
-		const auto* c = plugParent->getChild<const Gaffer::Plug>( i );
-		if( c && c->getName() == sanitized )
-		{
-			count++;
-			if( IECore::runTimeCast<const Gaffer::StringPlug>( c ) )
-			{
-				fprintf( stderr, "DEBUG OFX:   child[%zu] name='%s' type=StringPlug addr=%p\n", i, c->getName().c_str(), (void*)c );
-			}
-			else
-			{
-				fprintf( stderr, "DEBUG OFX:   child[%zu] name='%s' type=NON-StringPlug(%s) addr=%p\n", i, c->getName().c_str(), c->typeName(), (void*)c );
-			}
-		}
-	}
-	fprintf( stderr, "DEBUG OFX:   total children named '%s' = %d\n", sanitized.c_str(), count );
-#endif
 	if( plug )
 	{
 		s = plug->getValue();
@@ -753,22 +665,11 @@ OfxStatus StringInstance::set( const char* s )
 	auto* node = const_cast<OFXImageNode*>( static_cast<const OFXImageNode*>( m_effect->node() ) );
 	if( node->rendering() )
 	{
-#if DEBUG_OFX
-		fprintf( stderr, "DEBUG OFX: StringInstance::set(%s, \"%s\") SKIPPED (rendering)\n", m_descriptor.getName().c_str(), s );
-#endif
 		return kOfxStatOK;
 	}
 	auto* plug = node->parametersPlug()->getChild<StringPlug>( sanitizeName( m_descriptor.getName() ) );
 	if( plug )
 	{
-#if DEBUG_OFX
-		fprintf( stderr, "DEBUG OFX: StringInstance::set(%s, \"%s\")\n", m_descriptor.getName().c_str(), s );
-		if( strstr( s, "define" ) )
-		{
-			const unsigned char* p = (const unsigned char*)strstr( s, "define" ) - 4;
-			fprintf( stderr, "DEBUG OFX: hex around #define: %02x %02x %02x %02x %02x %02x %02x\n", p[0], p[1], p[2], p[3], p[4], p[5], p[6] );
-		}
-#endif
 		m_effect->markParamInteracted( m_descriptor.getName() );
 		SettingFromPluginScope scope( node );
 		plug->setValue( s );
