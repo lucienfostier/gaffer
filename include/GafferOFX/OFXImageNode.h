@@ -111,6 +111,8 @@ class GAFFEROFX_API OFXImageNode : public GafferImage::ImageProcessor
 		void destroyInteract();
 
 		bool rendering() const { return m_rendering; }
+		bool settingFromPlugin() const { return m_settingFromPlugin; }
+		void setSettingFromPlugin( bool v ) const { m_settingFromPlugin = v; }
 
 	private :
 
@@ -122,6 +124,7 @@ class GAFFEROFX_API OFXImageNode : public GafferImage::ImageProcessor
 		mutable std::unique_ptr<GafferOFX::EffectImageInstance> m_instance;
 		mutable bool m_clipPreferencesFetched = false;
 		mutable bool m_rendering = false;
+		mutable bool m_settingFromPlugin = false;
 		mutable std::mutex m_renderMutex;
 		std::vector<std::string> m_clipPlugNames;
 		std::unique_ptr<GafferOFXInteractInstance> m_interactInstance;

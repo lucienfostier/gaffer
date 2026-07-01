@@ -266,7 +266,7 @@ void registerParameterMetadata( Gaffer::Plug *plug, const OFX::Host::Param::Desc
 	{
 	}
 
-	// Multi-line string parameters
+	// Multi-line and file-path string parameters
 	if( type == kOfxParamTypeString )
 	{
 		try
@@ -275,6 +275,10 @@ void registerParameterMetadata( Gaffer::Plug *plug, const OFX::Host::Param::Desc
 			if( stringMode == kOfxParamStringIsMultiLine )
 			{
 				Gaffer::Metadata::registerValue( plug, "plugValueWidget:type", new IECore::StringData( "GafferUI.MultiLineStringPlugValueWidget" ), false );
+			}
+			else if( stringMode == kOfxParamStringIsFilePath )
+			{
+				Gaffer::Metadata::registerValue( plug, "nodule:type", new IECore::StringData( "" ), false );
 			}
 		}
 		catch( ... )
