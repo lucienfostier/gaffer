@@ -1018,12 +1018,22 @@ IECore::ConstCompoundObjectPtr OFXImageNode::computeOfxRenderBuffer( const Gaffe
 			outputClip->getImage( frame, nullptr );
 		}
 
+		// Make the OFX GL context current so plugins (e.g. Shadertoy) that
+		// need GL for their render don't grab/corrupt Gaffer's viewport context.
+		// makeCurrent() is reentrant, so nested calls from the plugin (e.g. via
+		// ClipInstance::loadTexture) are safe — only the outermost release()
+		// restores Gaffer's original context.
+		GLContextManager &glMgr = GLContextManager::instance();
+		glMgr.makeCurrent();
+
 		// CPU rendering path
 		m_rendering = true;
 		m_instance->beginRenderAction( frame, frame, 1.0, false, renderScale, true, false );
 		m_instance->renderAction( frame, kOfxImageFieldNone, renderWindow, renderScale, true, false, false );
 		m_instance->endRenderAction( frame, frame, 1.0, false, renderScale, true, false );
 		m_rendering = false;
+
+		glMgr.release();
 
 		// Clear frame cache after render
 		if( sourceClip )
