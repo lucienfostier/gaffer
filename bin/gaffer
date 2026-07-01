@@ -318,6 +318,19 @@ if [[ -n $ONNX_ROOT ]] ; then
 
 fi
 
+# Set up OFX
+##########################################################################
+
+if [[ -n $OFX_ROOT ]] ; then
+
+	if [[ `uname` = "Linux" ]] ; then
+		appendToPath "$OFX_ROOT/lib" LD_LIBRARY_PATH
+	else
+		appendToPath "$OFX_ROOT/lib" DYLD_LIBRARY_PATH
+	fi
+
+fi
+
 # Set up 3rd Party extensions
 ##########################################################################
 
