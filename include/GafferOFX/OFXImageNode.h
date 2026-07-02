@@ -46,6 +46,7 @@
 #include "GafferImage/ImageProcessor.h"
 
 #include <mutex>
+#include <atomic>
 
 namespace GafferOFX
 {
@@ -123,7 +124,7 @@ class GAFFEROFX_API OFXImageNode : public GafferImage::ImageProcessor
 		static size_t g_firstPlugIndex;
 		mutable std::unique_ptr<GafferOFX::EffectImageInstance> m_instance;
 		mutable bool m_clipPreferencesFetched = false;
-		mutable bool m_rendering = false;
+		mutable std::atomic<bool> m_rendering = false;
 		mutable bool m_settingFromPlugin = false;
 		mutable std::mutex m_renderMutex;
 		std::vector<std::string> m_clipPlugNames;

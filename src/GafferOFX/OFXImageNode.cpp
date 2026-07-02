@@ -75,6 +75,81 @@
 #include <algorithm>
 #include <cctype>
 #include <vector>
+#include <thread>
+#include <mutex>
+#include <condition_variable>
+#include <functional>
+
+//////////////////////////////////////////////////////////////////////////
+// Dedicated render worker thread
+//
+// OFX plugins (e.g. Shadertoy) create OSMesa contexts during render.
+// By dispatching all renders to a single background thread, we:
+//  - Keep the main thread responsive (no freeze)
+//  - Reuse the OSMesa context across renders (shader compilation
+//    happens once instead of per-tile)
+//  - Avoid CPU saturation from concurrent OSMesa renders
+//////////////////////////////////////////////////////////////////////////
+
+class OFXRenderWorker
+{
+public:
+
+	static OFXRenderWorker &instance()
+	{
+		static OFXRenderWorker w;
+		return w;
+	}
+
+	template<typename F>
+	void execute( F &&func )
+	{
+		std::unique_lock<std::mutex> lock( m_mutex );
+		m_task = std::forward<F>( func );
+		m_ready = true;
+		m_cv.notify_one();
+		m_cv.wait( lock, [this]() { return !m_ready; } );
+	}
+
+	~OFXRenderWorker()
+	{
+		{
+			std::lock_guard<std::mutex> lock( m_mutex );
+			m_done = true;
+			m_ready = true;
+		}
+		m_cv.notify_one();
+		if( m_thread.joinable() )
+			m_thread.join();
+	}
+
+private:
+
+	OFXRenderWorker()
+	{
+		m_thread = std::thread( [this]() { workerLoop(); } );
+	}
+
+	void workerLoop()
+	{
+		std::unique_lock<std::mutex> lock( m_mutex );
+		while( !m_done )
+		{
+			m_cv.wait( lock, [this]() { return m_ready; } );
+			if( m_done ) break;
+			m_task();
+			m_ready = false;
+			m_cv.notify_one();
+		}
+	}
+
+	std::thread m_thread;
+	std::mutex m_mutex;
+	std::condition_variable m_cv;
+	std::function<void()> m_task;
+	bool m_ready = false;
+	bool m_done = false;
+};
 
 using namespace std;
 using namespace Imath;
@@ -1030,34 +1105,30 @@ IECore::ConstCompoundObjectPtr OFXImageNode::computeOfxRenderBuffer( const Gaffe
 			outputClip->getImage( frame, nullptr );
 		}
 
-		// Unbind Gaffer's GL context before calling the plugin's render.
-		// Shadertoy (and likely other plugins using OSMesa) checks
-		// OSMesaGetCurrentContext() at the start of render — if non-null
-		// (because Gaffer's GLX context uses Mesa internally on this system),
-		// it prints "Mesa context still attached" and may fail.
-		// We save/restore Gaffer's context so the viewport is unaffected.
-		Display *savedDisplay = glXGetCurrentDisplay();
-		GLXDrawable savedDrawable = glXGetCurrentDrawable();
-		GLXContext savedContext = glXGetCurrentContext();
-		if( savedContext )
-		{
-			glXMakeCurrent( savedDisplay, None, nullptr );
-		}
+		// Dispatch the render to our dedicated worker thread.
+		// This keeps renders off the main thread (no UI freeze) and
+		// makes a hardware GL context current so the plugin renders
+		// on the GPU instead of falling back to OSMesa software.
+		OFXRenderWorker::instance().execute( [this, frame, renderScale, &renderWindow]() {
 
-		// CPU rendering path
-		m_rendering = true;
-		m_instance->beginRenderAction( frame, frame, 1.0, false, renderScale, true, false );
-		m_instance->renderAction( frame, kOfxImageFieldNone, renderWindow, renderScale, true, false, false );
-		m_instance->endRenderAction( frame, frame, 1.0, false, renderScale, true, false );
-		m_rendering = false;
+			// Activate Gaffer's hardware GLX context so the plugin
+			// can use GPU-accelerated rendering via FBOs instead of
+			// creating its own OSMesa context.
+			GLContextManager &gl = GLContextManager::instance();
+			gl.makeCurrent();
 
-		// Detach any OSMesa context the plugin may have left current,
-		// then restore Gaffer's GLX context.
-		OSMesaMakeCurrent( nullptr, nullptr, 0, 0, 0 );
-		if( savedContext )
-		{
-			glXMakeCurrent( savedDisplay, savedDrawable, savedContext );
-		}
+			m_rendering = true;
+			m_instance->beginRenderAction( frame, frame, 1.0, false, renderScale, true, true );
+			m_instance->renderAction( frame, kOfxImageFieldNone, renderWindow, renderScale, true, true, false );
+			m_instance->endRenderAction( frame, frame, 1.0, false, renderScale, true, true );
+			m_rendering = false;
+
+			// Release our GL context; the plugin's OSMesa context
+			// (if any) is cleaned up by GLContextManager::release().
+			// Do NOT unbind OSMesa separately — we want the plugin
+			// to use our hardware GLX context on all future renders.
+			gl.release();
+		} );
 
 		// Clear frame cache after render
 		if( sourceClip )
