@@ -102,7 +102,6 @@ GLContextManager::GLContextManager()
 					0, 0, 1, 1, 0, 0, 0
 				);
 
-				fprintf( stderr, "GLContextManager: GLX context created\n" );
 				m_glxDisplay = (void*)x11dpy;
 				m_glxContext = (void*)ctx;
 				m_glxWindow = win;
@@ -121,14 +120,12 @@ GLContextManager::GLContextManager()
 	if( osCtx )
 	{
 		unsigned char *osBuffer = (unsigned char*)malloc( 4 );
-		fprintf( stderr, "GLContextManager: OSMesa context created\n" );
 		m_osmesaContext = (void*)osCtx;
 		m_osmesaBuffer = (void*)osBuffer;
 	}
 
 	if( !m_glxContext && !m_osmesaContext )
 	{
-		fprintf( stderr, "GLContextManager: no GL context available\n" );
 	}
 }
 
@@ -161,7 +158,6 @@ bool GLContextManager::initGLEW()
 	GLenum err = glewInit();
 	if( err != GLEW_OK )
 	{
-		fprintf( stderr, "GLContextManager: glewInit failed: %s\n", glewGetErrorString( err ) );
 		glewState = -1;
 		return false;
 	}
@@ -181,8 +177,6 @@ bool GLContextManager::initGLEW()
 		return true;
 	}
 
-	fprintf( stderr, "GLContextManager: GL rejected (renderer=%s, gl=%d.%d, fbo=%d)\n",
-		renderer ? renderer : "unknown", major, minor, (int)hasFBO );
 	glewState = -1;
 	return false;
 }
@@ -211,8 +205,7 @@ bool GLContextManager::makeCurrent()
 			if( initGLEW() )
 			{
 				m_usingOSMesa = false;
-				fprintf( stderr, "GLContextManager: using GLX\n" );
-				m_makeCurrentCount = 1;
+					m_makeCurrentCount = 1;
 				return true;
 			}
 		}
@@ -225,7 +218,6 @@ bool GLContextManager::makeCurrent()
 
 	if( !OSMesaMakeCurrent( (OSMesaContext)m_osmesaContext, m_osmesaBuffer, GL_UNSIGNED_BYTE, 1, 1 ) )
 	{
-		fprintf( stderr, "GLContextManager: OSMesaMakeCurrent failed\n" );
 		return false;
 	}
 
@@ -237,23 +229,18 @@ bool GLContextManager::makeCurrent()
 		GLenum err = glewInit();
 		if( err == GLEW_OK )
 		{
-			const char *renderer = (const char*)glGetString( GL_RENDERER );
 			const char *versionStr = (const char*)glGetString( GL_VERSION );
 			int major = 0, minor = 0;
 			if( versionStr ) sscanf( versionStr, "%d.%d", &major, &minor );
 			bool hasFBO = GLEW_ARB_framebuffer_object || GLEW_EXT_framebuffer_object;
-			fprintf( stderr, "GLContextManager: using OSMesa (renderer=%s, gl=%d.%d, fbo=%d)\n",
-				renderer ? renderer : "unknown", major, minor, (int)hasFBO );
-
-			if( hasFBO && ( major > 3 || ( major == 3 && minor >= 2 ) ) )
+				if( hasFBO && ( major > 3 || ( major == 3 && minor >= 2 ) ) )
 				osmesaGlewState = 1;
 			else
 				osmesaGlewState = 1; // accept anyway — best we have
 		}
 		else
 		{
-			fprintf( stderr, "GLContextManager: OSMesa glewInit failed: %s\n", glewGetErrorString( err ) );
-			osmesaGlewState = -1;
+				osmesaGlewState = -1;
 		}
 	}
 
@@ -276,7 +263,19 @@ void GLContextManager::release()
 		return;
 	}
 
-	// Restore the saved GLX context
+	// Unbind OUR context first, regardless of what comes next.
+	// This prevents "Mesa context still attached" when we later
+	// try to restore a saved GLX context via glXMakeCurrent.
+	if( m_usingOSMesa )
+	{
+		OSMesaMakeCurrent( nullptr, nullptr, GL_UNSIGNED_BYTE, 0, 0 );
+	}
+	else if( m_glxContext )
+	{
+		glXMakeCurrent( (Display*)m_glxDisplay, None, nullptr );
+	}
+
+	// Restore the saved context (if any)
 	if( m_savedContext )
 	{
 		glXMakeCurrent(
@@ -284,14 +283,6 @@ void GLContextManager::release()
 			(GLXPbuffer)(unsigned long)m_savedDrawable,
 			(GLXContext)m_savedContext
 		);
-	}
-	else
-	{
-		// No previous context — just release ours
-		if( !m_usingOSMesa && m_glxContext )
-		{
-			glXMakeCurrent( (Display*)m_glxDisplay, None, nullptr );
-		}
 	}
 	m_savedDisplay = nullptr;
 	m_savedDrawable = nullptr;

@@ -116,8 +116,6 @@ const std::string &EffectImageInstance::getDefaultOutputFielding() const
 
 OfxStatus EffectImageInstance::vmessage(const char* type, const char* id, const char* format, va_list args)
 {
-	printf("%s %s ",type,id);
-	vprintf(format,args);
 	return kOfxStatOK;
 }
 
@@ -279,11 +277,19 @@ void registerParameterMetadata( Gaffer::Plug *plug, const OFX::Host::Param::Desc
 			else if( stringMode == kOfxParamStringIsFilePath )
 			{
 				Gaffer::Metadata::registerValue( plug, "nodule:type", new IECore::StringData( "" ), false );
+				Gaffer::Metadata::registerValue( plug, "plugValueWidget:type", new IECore::StringData( "GafferUI.FileSystemPathPlugValueWidget" ), false );
 			}
 		}
 		catch( ... )
 		{
 		}
+	}
+
+	// Pushbutton params
+	if( type == kOfxParamTypePushButton )
+	{
+		Gaffer::Metadata::registerValue( plug, "plugValueWidget:type", new IECore::StringData( "GafferOFXUI.OFXImageNodeUI._PushButton" ), false );
+		Gaffer::Metadata::registerValue( plug, "nodule:type", new IECore::StringData( "" ), false );
 	}
 
 	// Numeric range limits
@@ -330,32 +336,89 @@ void registerParameterMetadata( Gaffer::Plug *plug, const OFX::Host::Param::Desc
 	}
 
 	// Section (page/group membership)
-	try
+	// Some plugins (e.g. Shadertoy) call page->addChild() without
+	// setting kOfxParamPropParent on the child, so we also check
+	// the page's kOfxParamPropPageChild list to find the parent.
+	std::string parentName;
+	try { parentName = props.getStringProperty( kOfxParamPropParent ); } catch(...) {}
+	if( parentName.empty() && setDescriptor )
 	{
-		std::string parentName = props.getStringProperty( kOfxParamPropParent );
-		if( !parentName.empty() )
+		const auto &paramMap = setDescriptor->getParams();
+		const std::string &pname = plug->getName().string();
+		for( const auto &[name, desc] : paramMap )
 		{
-			std::string sectionName = parentName;
-			if( setDescriptor )
+			try
 			{
-				const auto &paramMap = setDescriptor->getParams();
-				auto it = paramMap.find( parentName );
-				if( it != paramMap.end() )
+				if( desc->getProperties().getStringProperty( kOfxParamPropType ) == kOfxParamTypePage )
 				{
-					try
+					int nChildren = desc->getProperties().getDimension( kOfxParamPropPageChild );
+					for( int i = 0; i < nChildren; ++i )
 					{
-						std::string groupLabel = it->second->getProperties().getStringProperty( kOfxPropLabel );
-						if( !groupLabel.empty() )
-							sectionName = groupLabel;
+						if( desc->getProperties().getStringProperty( kOfxParamPropPageChild, i ) == pname )
+						{
+							parentName = name;
+							break;
+						}
 					}
-					catch( ... ) {}
 				}
 			}
-			Gaffer::Metadata::registerValue( plug, "layout:section", new IECore::StringData( sectionName ), false );
+			catch( ... ) {}
+			if( !parentName.empty() ) break;
 		}
 	}
-	catch( ... )
+	if( !parentName.empty() )
 	{
+		std::string sectionName = parentName;
+		if( setDescriptor )
+		{
+			const auto &paramMap = setDescriptor->getParams();
+			auto it = paramMap.find( parentName );
+			if( it != paramMap.end() )
+			{
+				try
+				{
+					std::string groupLabel = it->second->getProperties().getStringProperty( kOfxPropLabel );
+					if( !groupLabel.empty() )
+						sectionName = groupLabel;
+				}
+				catch( ... ) {}
+			}
+		}
+		Gaffer::Metadata::registerValue( plug, "layout:section", new IECore::StringData( sectionName ), false );
+	}
+
+	// Internal/descriptive param hiding: params inside an OFX Group/Page
+	// matching metadata patterns (defaults, ranges, types, labels, hints,
+	// names) are not user-editable — hide their nodules and widgets.
+	{
+		std::string parentName;
+		try { parentName = props.getStringProperty( kOfxParamPropParent ); } catch(...) {}
+		if( !parentName.empty() )
+		{
+			const std::string &pname = plug->getName().string();
+			bool isMetadata =
+				pname.compare( 0, 9, "paramType" ) == 0 ||
+				pname.compare( 0, 9, "paramName" ) == 0 ||
+				pname.compare( 0, 10, "paramLabel" ) == 0 ||
+				pname.compare( 0, 9, "paramHint" ) == 0 ||
+				pname.compare( 0, 12, "paramDefault" ) == 0 ||
+				pname.compare( 0, 8, "paramMin" ) == 0 ||
+				pname.compare( 0, 8, "paramMax" ) == 0 ||
+				pname.compare( 0, 9, "inputHint" ) == 0 ||
+				pname.compare( 0, 10, "inputLabel" ) == 0 ||
+				pname.compare( 0, 9, "inputName" ) == 0 ||
+				pname.compare( 0, 4, "wrap" ) == 0 ||
+				pname.compare( 0, 6, "mipmap" ) == 0 ||
+				pname == "bbox" ||
+				pname == "startDate" ||
+				pname == "NatronOfxParamStringSublabelName" ||
+				pname.compare( 0, 17, "NatronParamFormat" ) == 0;
+			if( isMetadata )
+			{
+				Gaffer::Metadata::registerValue( plug, "nodule:type", new IECore::StringData( "" ), false );
+				Gaffer::Metadata::registerValue( plug, "plugValueWidget:type", new IECore::StringData( "" ), false );
+			}
+		}
 	}
 }
 
@@ -417,7 +480,6 @@ OFX::Host::Param::Instance* EffectImageInstance::newParam(const std::string& nam
 	{
 		result = new StringInstance(this,name,descriptor);
 	}
-
 	if( result )
 	{
 		// Register this Instance + its Descriptor handle in the validation registry

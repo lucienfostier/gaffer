@@ -147,7 +147,6 @@ OfxStatus Host::vmessage(
 	// UI in a full ap, and post a dialogue for yes/no questions.
 	fputs(prefix, stdout);
 	vprintf(format, args);
-	printf("\n");
 
 	if(isQuestion)
 	{

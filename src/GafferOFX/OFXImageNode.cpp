@@ -38,6 +38,8 @@
 // Include GLEW before any Gaffer/OFX headers to avoid X11 macro conflicts.
 // GLEW includes GL/gl.h, which may pull in X11/Xlib.h.
 #include <GL/glew.h>
+// GLEW #undef's GLAPI at the end; OSMesa needs it for declarations.
+// We define them AFTER including all Gaffer headers (which also use GLAPI).
 #include "GafferOFX/GLContextManager.h"
 #endif
 
@@ -58,6 +60,16 @@
 
 #ifdef OFX_SUPPORTS_OPENGLRENDER
 #include "ofxGPURender.h"
+// GLEW #undef's GLAPI at the end; Gaffer only uses GLuint types (from GL/gl.h),
+// not the GLAPI macro. OSMesa/GLX need GLAPI for their function declarations.
+#ifndef GLAPI
+#define GLAPI extern
+#endif
+#ifndef GLAPIENTRY
+#define GLAPIENTRY
+#endif
+#include <GL/osmesa.h>
+#include <GL/glx.h>
 #endif
 
 #include <algorithm>
@@ -1018,13 +1030,19 @@ IECore::ConstCompoundObjectPtr OFXImageNode::computeOfxRenderBuffer( const Gaffe
 			outputClip->getImage( frame, nullptr );
 		}
 
-		// Make the OFX GL context current so plugins (e.g. Shadertoy) that
-		// need GL for their render don't grab/corrupt Gaffer's viewport context.
-		// makeCurrent() is reentrant, so nested calls from the plugin (e.g. via
-		// ClipInstance::loadTexture) are safe — only the outermost release()
-		// restores Gaffer's original context.
-		GLContextManager &glMgr = GLContextManager::instance();
-		glMgr.makeCurrent();
+		// Unbind Gaffer's GL context before calling the plugin's render.
+		// Shadertoy (and likely other plugins using OSMesa) checks
+		// OSMesaGetCurrentContext() at the start of render — if non-null
+		// (because Gaffer's GLX context uses Mesa internally on this system),
+		// it prints "Mesa context still attached" and may fail.
+		// We save/restore Gaffer's context so the viewport is unaffected.
+		Display *savedDisplay = glXGetCurrentDisplay();
+		GLXDrawable savedDrawable = glXGetCurrentDrawable();
+		GLXContext savedContext = glXGetCurrentContext();
+		if( savedContext )
+		{
+			glXMakeCurrent( savedDisplay, None, nullptr );
+		}
 
 		// CPU rendering path
 		m_rendering = true;
@@ -1033,7 +1051,13 @@ IECore::ConstCompoundObjectPtr OFXImageNode::computeOfxRenderBuffer( const Gaffe
 		m_instance->endRenderAction( frame, frame, 1.0, false, renderScale, true, false );
 		m_rendering = false;
 
-		glMgr.release();
+		// Detach any OSMesa context the plugin may have left current,
+		// then restore Gaffer's GLX context.
+		OSMesaMakeCurrent( nullptr, nullptr, 0, 0, 0 );
+		if( savedContext )
+		{
+			glXMakeCurrent( savedDisplay, savedDrawable, savedContext );
+		}
 
 		// Clear frame cache after render
 		if( sourceClip )

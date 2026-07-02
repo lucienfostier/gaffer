@@ -103,6 +103,22 @@ class _LoadButton( GafferUI.PlugValueWidget ) :
 					parentWindow = self.ancestor( GafferUI.Window )
 				) :
 					with Gaffer.UndoScope( self.scriptNode() ) :
-						print("button create instance plugin")
 						self.getPlug().node().createPluginInstance()
+
+
+class _PushButton( GafferUI.PlugValueWidget ) :
+
+	def __init__( self, plug, **kw ) :
+
+		label = Gaffer.Metadata.value( plug, "label" ) or plug.getName()
+		button = GafferUI.Button( label )
+		GafferUI.PlugValueWidget.__init__( self, button, plug, **kw )
+
+		button.clickedSignal().connect( Gaffer.WeakMethod( self.__clicked ) )
+
+	def __clicked( self, button ) :
+
+		with self.context() :
+			plug = self.getPlug()
+			plug.setValue( not plug.getValue() )
 
