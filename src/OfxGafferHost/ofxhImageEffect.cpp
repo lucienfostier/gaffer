@@ -326,6 +326,7 @@ namespace OFX {
 	{ kOfxImageEffectPropCudaStreamSupported, Property::eString, 1, false, "false" },
 	{ kOfxImageEffectPropMetalRenderSupported, Property::eString, 1, false, "false" },
 	{ kOfxImageEffectPropOpenCLRenderSupported, Property::eString, 1, false, "false" },
+	{ kOfxImageEffectPropOpenGLEnabled, Property::eInt, 1, false, "0" },
 #endif
         Property::propSpecEnd
       };
@@ -848,10 +849,13 @@ namespace OFX {
 #   ifdef OFX_SUPPORTS_OPENGLRENDER
       // attach/detach OpenGL context
       OfxStatus Instance::contextAttachedAction(){
+        // Pass valid-but-empty property sets — plugins like Shadertoy
+        // probe outArgs for OpenGL context data during this action.
+        Property::Set inArgs, outArgs;
 #       ifdef OFX_DEBUG_ACTIONS
           std::cout << "OFX: "<<(void*)this<<"->"<<kOfxActionOpenGLContextAttached<<"()"<<std::endl;
 #       endif
-        OfxStatus st = mainEntry(kOfxActionOpenGLContextAttached,this->getHandle(),0,0);
+        OfxStatus st = mainEntry(kOfxActionOpenGLContextAttached,this->getHandle(), &inArgs, &outArgs);
 #       ifdef OFX_DEBUG_ACTIONS
           std::cout << "OFX: "<<(void*)this<<"->"<<kOfxActionOpenGLContextAttached<<"()->"<<StatStr(st)<<std::endl;
 #       endif
@@ -859,10 +863,13 @@ namespace OFX {
       }
 
       OfxStatus Instance::contextDetachedAction(){
+        // Pass valid-but-empty property sets — plugins access inArgs
+        // to find context data to free on detach.
+        Property::Set inArgs, outArgs;
 #       ifdef OFX_DEBUG_ACTIONS
           std::cout << "OFX: "<<(void*)this<<"->"<<kOfxActionOpenGLContextDetached<<"()"<<std::endl;
 #       endif
-        OfxStatus st = mainEntry(kOfxActionOpenGLContextDetached,this->getHandle(),0,0);
+        OfxStatus st = mainEntry(kOfxActionOpenGLContextDetached,this->getHandle(), &inArgs, &outArgs);
 #       ifdef OFX_DEBUG_ACTIONS
           std::cout << "OFX: "<<(void*)this<<"->"<<kOfxActionOpenGLContextDetached<<"()->"<<StatStr(st)<<std::endl;
 #       endif
@@ -959,12 +966,12 @@ namespace OFX {
         inArgs.setIntProperty(kOfxImageEffectPropInteractiveRenderStatus,interactiveRender);
         inArgs.setIntProperty(kOfxImageEffectPropRenderQualityDraft,draftRender);
 
-        // Propagate OpenGL enabled state from instance properties to inArgs
-        bool glEnabled = _properties.getIntProperty(kOfxImageEffectPropOpenGLEnabled, 0) != 0;
-        if( glEnabled )
-        {
-          inArgs.setIntProperty( kOfxImageEffectPropOpenGLEnabled, 1 );
-        }
+	// Propagate OpenGL enabled state from instance properties to inArgs
+	bool glEnabled = _properties.getIntProperty(kOfxImageEffectPropOpenGLEnabled, 0) != 0;
+	if( glEnabled )
+	{
+	  inArgs.setIntProperty( kOfxImageEffectPropOpenGLEnabled, 1 );
+	}
 
 #       if defined(OFX_DEBUG_ACTIONS) || 1
           std::cerr << "RENDER: openGLEnabled=" << glEnabled << " time=" << time << " roi=(" << renderRoI.x1 << "," << renderRoI.y1 << "," << renderRoI.x2 << "," << renderRoI.y2 << ")" << std::endl;

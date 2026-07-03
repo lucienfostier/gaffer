@@ -88,6 +88,11 @@ namespace GafferOFX
 			// GL output texture ID for OpenGL rendering
 			unsigned int m_outputTexture = 0;
 
+			// Cached source input texture for GL rendering (avoids glGenTextures per render)
+			unsigned int m_inputTexture = 0;
+			int m_inputTexW = 0;
+			int m_inputTexH = 0;
+
 			// Frame cache for temporal clip access
 			std::map<OfxTime, std::unique_ptr<OfxRGBAColourF[]>> m_frameCache;
 			int m_frameCacheWidth = 0;

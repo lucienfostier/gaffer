@@ -34,6 +34,8 @@
 // Include GLEW before any Gaffer/OFX headers to avoid X11 macro conflicts.
 #include <GL/glew.h>
 
+#include <iostream>
+
 #include "GafferOFX/ClipInstance.h"
 #include "GafferOFX/Host.h"
 #include "GafferOFX/EffectImageInstance.h"
@@ -168,6 +170,16 @@ GafferOFX::ClipInstance::~ClipInstance()
 	if( m_outputImage )
 	{
 		m_outputImage->releaseReference();
+	}
+
+	if( m_inputTexture )
+	{
+		GLContextManager& mgr = GLContextManager::instance();
+		if( mgr.makeCurrent() )
+		{
+			GLuint tex = m_inputTexture;
+			glDeleteTextures( 1, &tex );
+		}
 	}
 }
 
@@ -341,33 +353,93 @@ OFX::Host::ImageEffect::Image* ClipInstance::getImage(OfxTime time, const OfxRec
 #ifdef OFX_SUPPORTS_OPENGLRENDER
 OFX::Host::ImageEffect::Texture* ClipInstance::loadTexture( OfxTime time, const char *format, const OfxRectD *optionalBounds )
 {
+	std::cerr << "loadTexture: clip=\"" << m_name << "\" connected=" << getConnected()
+	          << " buf=" << (void*)m_externalBuffer << " w=" << m_bufferWidth << " h=" << m_bufferHeight
+	          << " hasTex=" << m_inputTexture << " texW=" << m_inputTexW << " texH=" << m_inputTexH << std::endl;
+
+	// For the Output clip, return the host-managed FBO texture so the plugin
+	// renders directly into our render target. The plugin creates its own FBO
+	// and attaches this texture as its color attachment; after render we
+	// glReadPixels from our FBO (same texture) to get the result.
+	if( m_name == "Output" )
+	{
+		GLContextManager& mgr = GLContextManager::instance();
+		unsigned int tex = mgr.outputTexture();
+		if( !tex )
+		{
+			std::cerr << "loadTexture exit: Output no FBO tex" << std::endl;
+			return nullptr;
+		}
+
+		OfxRectI bounds;
+		bounds.x1 = 0; bounds.y1 = 0;
+		bounds.x2 = mgr.outputTexWidth();
+		bounds.y2 = mgr.outputTexHeight();
+
+		GafferTexture* ret = new GafferTexture(
+			*this,
+			1.0, 1.0,
+			tex, GL_TEXTURE_2D,
+			bounds, bounds,
+			bounds.x2 * 4 * (int)sizeof(float),
+			"none",
+			""
+		);
+		std::cerr << "loadTexture exit: Output ok tex=" << tex << std::endl;
+		return ret;
+	}
+
 	if( !m_externalBuffer || m_bufferWidth <= 0 || m_bufferHeight <= 0 )
+	{
+		std::cerr << "loadTexture exit: no buffer" << std::endl;
 		return nullptr;
+	}
 
 	GLContextManager& mgr = GLContextManager::instance();
 	if( !mgr.makeCurrent() )
+	{
+		std::cerr << "loadTexture exit: makeCurrent failed" << std::endl;
 		return nullptr;
+	}
+
+	// Reuse cached input texture if dimensions match, otherwise re-allocate
+	if( !m_inputTexture || m_inputTexW != m_bufferWidth || m_inputTexH != m_bufferHeight )
+	{
+		if( m_inputTexture )
+			glDeleteTextures( 1, &m_inputTexture );
+
+		glGenTextures( 1, &m_inputTexture );
+		glBindTexture( GL_TEXTURE_2D, m_inputTexture );
+		glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST );
+		glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST );
+		glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE );
+		glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE );
+
+		glTexImage2D( GL_TEXTURE_2D, 0, GL_RGBA32F, m_bufferWidth, m_bufferHeight, 0, GL_RGBA, GL_FLOAT, nullptr );
+
+		m_inputTexW = m_bufferWidth;
+		m_inputTexH = m_bufferHeight;
+
+		mgr.registerTexture( m_inputTexture );
+	}
+
+	// Upload current buffer data every render (buffer content changes each frame)
+	glBindTexture( GL_TEXTURE_2D, m_inputTexture );
+	glPixelStorei( GL_UNPACK_ALIGNMENT, 1 );
+	glTexSubImage2D( GL_TEXTURE_2D, 0, 0, 0, m_bufferWidth, m_bufferHeight, GL_RGBA, GL_FLOAT, m_externalBuffer );
 
 	OfxRectI bounds;
 	bounds.x1 = 0; bounds.y1 = 0;
 	bounds.x2 = m_bufferWidth; bounds.y2 = m_bufferHeight;
 
-	unsigned int texId;
-	glGenTextures( 1, &texId );
-	glBindTexture( GL_TEXTURE_2D, texId );
-	glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR );
-	glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR );
-	glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE );
-	glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE );
-
-	glTexImage2D( GL_TEXTURE_2D, 0, GL_RGBA32F, m_bufferWidth, m_bufferHeight, 0, GL_RGBA, GL_FLOAT, m_externalBuffer );
-
-	mgr.registerTexture( texId );
+	GLenum gle = glGetError();
+	std::cerr << "loadTexture exit: Source ok tex=" << m_inputTexture << " w=" << m_bufferWidth
+	          << " h=" << m_bufferHeight << " glErr=0x" << std::hex << gle << std::dec << std::endl;
 
 	return new GafferTexture(
 		*this,
 		1.0, 1.0,
-		texId, GL_TEXTURE_2D,
+		m_inputTexture, GL_TEXTURE_2D,
 		bounds, bounds,
 		m_bufferWidth * 4 * (int)sizeof(float),
 		"none",

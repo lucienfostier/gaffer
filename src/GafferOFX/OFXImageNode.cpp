@@ -40,6 +40,9 @@
 #include <GL/glew.h>
 // GLEW #undef's GLAPI at the end; OSMesa needs it for declarations.
 // We define them AFTER including all Gaffer headers (which also use GLAPI).
+
+#include <iostream>
+
 #include "GafferOFX/GLContextManager.h"
 #endif
 
@@ -1109,25 +1112,115 @@ IECore::ConstCompoundObjectPtr OFXImageNode::computeOfxRenderBuffer( const Gaffe
 		// This keeps renders off the main thread (no UI freeze) and
 		// makes a hardware GL context current so the plugin renders
 		// on the GPU instead of falling back to OSMesa software.
-		OFXRenderWorker::instance().execute( [this, frame, renderScale, &renderWindow]() {
+		//
+		// The worker thread owns the GL context permanently — contextAttachedAction
+		// is called once, makeCurrent/release is never cycled per-render, and
+		// contextDetachedAction happens only at teardown (OFXRenderWorker destructor).
+		OFXRenderWorker::instance().execute( [this, frame, renderScale, &renderWindow, outputClip, sourceClip]() {
 
-			// Activate Gaffer's hardware GLX context so the plugin
-			// can use GPU-accelerated rendering via FBOs instead of
-			// creating its own OSMesa context.
+			static bool s_contextInitialized = false;
+
+			// Activate our GL context (EGL > GLX > OSMesa).
+			// The idempotency guard (eglGetCurrentContext == m_eglContext) ensures
+			// this is a no-op on all but the first invocation.
 			GLContextManager &gl = GLContextManager::instance();
-			gl.makeCurrent();
+			if( !gl.makeCurrent() )
+			{
+				std::cerr << "GL makeCurrent failed, falling back to CPU path" << std::endl;
+				// If GL isn't available, skip the GL-specific path.
+				// The output will rely on the CPU de-interleave (which will pick up
+				// whatever the (incomplete) output image contains).
+				return;
+			}
+
+			if( !s_contextInitialized )
+			{
+				// One-time: notify the plugin that a GL context is attached.
+				// This triggers shader compilation, GL info printing, etc.
+				// Doing it once per process (not once per render) avoids nuking
+				// and recompiling shaders on every frame.
+				m_instance->getProps().setIntProperty( kOfxImageEffectPropOpenGLEnabled, 1 );
+				m_instance->contextAttachedAction();
+				s_contextInitialized = true;
+			}
+
+			// ---- Set up an FBO for GL rendering ----
+			//
+			// A surfaceless EGL context has no default framebuffer.
+			// We create an RGBA32F FBO matching the render window,
+			// bind it, and read back pixels after the render.
+
+			int w = renderWindow.x2 - renderWindow.x1;
+			int h = renderWindow.y2 - renderWindow.y1;
+
+			// Allocate FBO+texture, re-allocating only on size change.
+			// Stored in GLContextManager so ClipInstance::loadTexture("Output")
+			// can return this texture to the plugin.
+			unsigned int fbo = 0, tex = 0;
+			if( w != (int)gl.outputTexWidth() || h != (int)gl.outputTexHeight() )
+			{
+				glGenTextures( 1, &tex );
+				glBindTexture( GL_TEXTURE_2D, tex );
+				glTexImage2D( GL_TEXTURE_2D, 0, GL_RGBA32F, w, h, 0, GL_RGBA, GL_FLOAT, nullptr );
+				glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST );
+				glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST );
+				glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE );
+				glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE );
+
+				glGenFramebuffers( 1, &fbo );
+				glBindFramebuffer( GL_FRAMEBUFFER, fbo );
+				glFramebufferTexture2D( GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0 );
+
+				gl.setOutputFBO( fbo, tex, w, h );
+			}
+			else
+			{
+				fbo = gl.outputFBO();
+				tex = gl.outputTexture();
+				glBindFramebuffer( GL_FRAMEBUFFER, fbo );
+			}
+
+			GLenum fbStatus = glCheckFramebufferStatus( GL_FRAMEBUFFER );
+			bool fbOk = ( fbStatus == GL_FRAMEBUFFER_COMPLETE );
+			if( !fbOk )
+			{
+				std::cerr << "FBO incomplete: 0x" << std::hex << fbStatus << std::dec << std::endl;
+			}
+
+			glViewport( 0, 0, w, h );
+			glClearColor( 0.25f, 0.5f, 0.75f, 1.0f );
+			glClear( GL_COLOR_BUFFER_BIT );
 
 			m_rendering = true;
 			m_instance->beginRenderAction( frame, frame, 1.0, false, renderScale, true, true );
-			m_instance->renderAction( frame, kOfxImageFieldNone, renderWindow, renderScale, true, true, false );
+			OfxStatus st = m_instance->renderAction( frame, kOfxImageFieldNone, renderWindow, renderScale, true, true, false );
+			std::cerr << "renderAction status = " << st << std::endl;
 			m_instance->endRenderAction( frame, frame, 1.0, false, renderScale, true, true );
 			m_rendering = false;
 
-			// Release our GL context; the plugin's OSMesa context
-			// (if any) is cleaned up by GLContextManager::release().
-			// Do NOT unbind OSMesa separately — we want the plugin
-			// to use our hardware GLX context on all future renders.
-			gl.release();
+			// ---- Read back GL pixels into the output clip's buffer ----
+
+			if( fbOk && outputClip )
+			{
+				glBindFramebuffer( GL_FRAMEBUFFER, gl.outputFBO() );
+				glFinish();
+				glPixelStorei( GL_PACK_ALIGNMENT, 1 );
+
+				GafferOFX::Image* outputImage = outputClip->getOutputImage();
+				if( outputImage )
+				{
+					OfxRectI bounds = outputImage->getBounds();
+					OfxRGBAColourF* pixelData = outputImage->pixel( bounds.x1, bounds.y1 );
+					if( pixelData )
+					{
+						glReadPixels( 0, 0, w, h, GL_RGBA, GL_FLOAT, pixelData );
+						GLenum gle = glGetError();
+						std::cerr << "glGetError after readback = 0x" << std::hex << gle << std::dec
+						          << " px[0]=" << pixelData->r << "," << pixelData->g << "," << pixelData->b
+						          << std::endl;
+					}
+				}
+			}
 		} );
 
 		// Clear frame cache after render

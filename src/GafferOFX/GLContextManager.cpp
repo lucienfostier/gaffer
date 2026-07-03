@@ -35,7 +35,7 @@
 #include "GafferOFX/GLContextManager.h"
 
 #include "GL/glew.h"
-// GLEW #undef's GLAPI at the end; OSMesa needs it for declarations
+// GLEW #undef's GLAPI at the end; OSMesa/EGL need it for declarations
 #ifndef GLAPI
 #define GLAPI extern
 #endif
@@ -44,12 +44,16 @@
 #endif
 #include <GL/osmesa.h>
 
+#include <EGL/egl.h>
+#include <EGL/eglext.h>
+
 #include <X11/Xlib.h>
 #include <GL/glx.h>
 
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <iostream>
 
 using namespace GafferOFX;
 
@@ -61,60 +65,125 @@ GLContextManager& GLContextManager::instance()
 
 GLContextManager::GLContextManager()
 {
+	m_eglDisplay = nullptr;
+	m_eglContext = nullptr;
+	m_eglSurface = nullptr;
 	m_glxDisplay = nullptr;
 	m_glxContext = nullptr;
 	m_glxWindow = 0;
 	m_osmesaContext = nullptr;
 	m_osmesaBuffer = nullptr;
-	m_usingOSMesa = false;
+	m_usingHardware = false;
 	m_savedDisplay = nullptr;
 	m_savedDrawable = nullptr;
 	m_savedContext = nullptr;
+	m_savedEglContext = nullptr;
 	m_makeCurrentCount = 0;
 
-	// ---- GLX path ----
+	// ---- 1. EGL (preferred — GPU + surfaceless, no X11 dependency) ----
 
-	Display *x11dpy = XOpenDisplay( nullptr );
-	if( x11dpy )
+	EGLDisplay eglDpy = eglGetDisplay( EGL_DEFAULT_DISPLAY );
+	if( eglDpy == EGL_NO_DISPLAY )
 	{
-		int attribs[] = {
-			GLX_RGBA,
-			GLX_RED_SIZE, 8,
-			GLX_GREEN_SIZE, 8,
-			GLX_BLUE_SIZE, 8,
-			GLX_ALPHA_SIZE, 8,
-			GLX_DEPTH_SIZE, 24,
-			GLX_STENCIL_SIZE, 8,
-			GLX_DOUBLEBUFFER,
-			None
-		};
-
-		XVisualInfo *vi = glXChooseVisual( x11dpy, DefaultScreen( x11dpy ), attribs );
-		if( vi )
+		// Try platform-agnostic fallback
+		eglDpy = eglGetDisplay( nullptr );
+	}
+	if( eglDpy != EGL_NO_DISPLAY )
+	{
+		EGLint major, minor;
+		if( eglInitialize( eglDpy, &major, &minor ) )
 		{
-			GLXContext ctx = glXCreateContext( x11dpy, vi, 0, GL_TRUE );
-			XFree( vi );
-
-			if( ctx )
+			// Choose a config that supports OpenGL rendering
+			const EGLint configAttribs[] = {
+				EGL_SURFACE_TYPE, EGL_PBUFFER_BIT,
+				EGL_RENDERABLE_TYPE, EGL_OPENGL_BIT,
+				EGL_RED_SIZE, 8,
+				EGL_GREEN_SIZE, 8,
+				EGL_BLUE_SIZE, 8,
+				EGL_ALPHA_SIZE, 8,
+				EGL_DEPTH_SIZE, 24,
+				EGL_STENCIL_SIZE, 8,
+				EGL_NONE
+			};
+			EGLConfig eglConfig;
+			EGLint numConfigs;
+			if( eglChooseConfig( eglDpy, configAttribs, &eglConfig, 1, &numConfigs ) && numConfigs > 0 )
 			{
-				Window win = XCreateSimpleWindow(
-					x11dpy, RootWindow( x11dpy, DefaultScreen( x11dpy ) ),
-					0, 0, 1, 1, 0, 0, 0
-				);
+				// Try surfaceless context first (EGL_KHR_surfaceless_context)
+				eglBindAPI( EGL_OPENGL_API );
+				EGLContext eglCtx = eglCreateContext( eglDpy, eglConfig, EGL_NO_CONTEXT, nullptr );
+				if( eglCtx != EGL_NO_CONTEXT )
+				{
+					// Create a 1×1 pbuffer so FBO 0 is valid.
+					// Plugins that bind FBO 0 during render (e.g. Sapphire S_Blur)
+					// need a valid default framebuffer; EGL surfaceless has none.
+					const EGLint pbAttribs[] = {
+						EGL_WIDTH, 1,
+						EGL_HEIGHT, 1,
+						EGL_NONE
+					};
+					EGLSurface surf = eglCreatePbufferSurface( eglDpy, eglConfig, pbAttribs );
+					if( surf == EGL_NO_SURFACE )
+						surf = nullptr;
 
-				m_glxDisplay = (void*)x11dpy;
-				m_glxContext = (void*)ctx;
-				m_glxWindow = win;
+					m_eglDisplay = (void*)eglDpy;
+					m_eglContext = (void*)eglCtx;
+					m_eglSurface = (void*)surf;
+				}
 			}
-		}
-
-		if( !m_glxContext )
-		{
-			XCloseDisplay( x11dpy );
+			if( !m_eglContext )
+			{
+				eglTerminate( eglDpy );
+			}
 		}
 	}
 
-	// ---- OSMesa fallback (always create, but don't make current) ----
+	// ---- 2. GLX path (hardware GPU with X11) ----
+
+	if( !m_eglContext )
+	{
+		Display *x11dpy = XOpenDisplay( nullptr );
+		if( x11dpy )
+		{
+			int attribs[] = {
+				GLX_RGBA,
+				GLX_RED_SIZE, 8,
+				GLX_GREEN_SIZE, 8,
+				GLX_BLUE_SIZE, 8,
+				GLX_ALPHA_SIZE, 8,
+				GLX_DEPTH_SIZE, 24,
+				GLX_STENCIL_SIZE, 8,
+				GLX_DOUBLEBUFFER,
+				None
+			};
+
+			XVisualInfo *vi = glXChooseVisual( x11dpy, DefaultScreen( x11dpy ), attribs );
+			if( vi )
+			{
+				GLXContext ctx = glXCreateContext( x11dpy, vi, 0, GL_TRUE );
+				XFree( vi );
+
+				if( ctx )
+				{
+					Window win = XCreateSimpleWindow(
+						x11dpy, RootWindow( x11dpy, DefaultScreen( x11dpy ) ),
+						0, 0, 1, 1, 0, 0, 0
+					);
+
+					m_glxDisplay = (void*)x11dpy;
+					m_glxContext = (void*)ctx;
+					m_glxWindow = win;
+				}
+			}
+
+			if( !m_glxContext )
+			{
+				XCloseDisplay( x11dpy );
+			}
+		}
+	}
+
+	// ---- 3. OSMesa fallback (CPU software) ----
 
 	OSMesaContext osCtx = OSMesaCreateContextExt( OSMESA_RGBA, 24, 8, 0, nullptr );
 	if( osCtx )
@@ -124,7 +193,7 @@ GLContextManager::GLContextManager()
 		m_osmesaBuffer = (void*)osBuffer;
 	}
 
-	if( !m_glxContext && !m_osmesaContext )
+	if( !m_eglContext && !m_glxContext && !m_osmesaContext )
 	{
 	}
 }
@@ -146,19 +215,29 @@ GLContextManager::~GLContextManager()
 			XDestroyWindow( (Display*)m_glxDisplay, (Window)m_glxWindow );
 		XCloseDisplay( (Display*)m_glxDisplay );
 	}
+
+	if( m_eglContext )
+	{
+		if( m_eglSurface )
+			eglDestroySurface( (EGLDisplay)m_eglDisplay, (EGLSurface)m_eglSurface );
+		eglDestroyContext( (EGLDisplay)m_eglDisplay, (EGLContext)m_eglContext );
+		eglTerminate( (EGLDisplay)m_eglDisplay );
+	}
 }
 
-bool GLContextManager::initGLEW()
+bool GLContextManager::initGLEW( const char *backendName )
 {
-	static int glewState = 0;
-	if( glewState != 0 )
-		return glewState == 1;
-
 	glewExperimental = GL_TRUE;
 	GLenum err = glewInit();
+
+#ifdef GLEW_ERROR_NO_GLX_DISPLAY
+	if( err != GLEW_OK && err != GLEW_ERROR_NO_GLX_DISPLAY )
+#else
 	if( err != GLEW_OK )
+#endif
 	{
-		glewState = -1;
+		std::cerr << "initGLEW(" << backendName << "): glewInit failed: "
+		          << glewGetErrorString( err ) << std::endl;
 		return false;
 	}
 
@@ -168,21 +247,55 @@ bool GLContextManager::initGLEW()
 	if( versionStr ) sscanf( versionStr, "%d.%d", &major, &minor );
 
 	bool hasFBO = GLEW_ARB_framebuffer_object || GLEW_EXT_framebuffer_object;
-	bool isHardware = renderer && !strstr( renderer, "llvmpipe" ) && !strstr( renderer, "soft" );
-	bool hasGLVersion = major > 3 || ( major == 3 && minor >= 2 );
-
-	if( hasFBO && isHardware && hasGLVersion )
+	if( !hasFBO )
 	{
-		glewState = 1;
+		std::cerr << "initGLEW(" << backendName << "): no FBO support" << std::endl;
+		return false;
+	}
+
+	bool isHardware = renderer && !strstr( renderer, "llvmpipe" ) && !strstr( renderer, "soft" );
+
+	if( isHardware )
+	{
+		if( major < 3 || ( major == 3 && minor < 2 ) )
+		{
+			std::cerr << "initGLEW(" << backendName << "): hardware GL "
+			          << major << "." << minor << " < 3.2" << std::endl;
+			return false;
+		}
 		return true;
 	}
 
-	glewState = -1;
+	// Software rendering (llvmpipe) is accepted for EGL and GLX
+	// (not OSMesa, which is itself a software fallback).
+	if( strcmp( backendName, "EGL" ) == 0 || strcmp( backendName, "GLX" ) == 0 )
+	{
+		return true;
+	}
+
+	std::cerr << "initGLEW(" << backendName << "): software renderer not accepted for this backend" << std::endl;
 	return false;
 }
 
 bool GLContextManager::makeCurrent()
 {
+	// Idempotency guard: if our context is already current on this thread,
+	// there's nothing to do. This handles nested calls from ClipInstance::loadTexture
+	// (called from inside renderAction) without relying on m_makeCurrentCount alone,
+	// which could be 0 if the first makeCurrent went through a different backend.
+	if( m_eglContext && eglGetCurrentContext() == (EGLContext)m_eglContext )
+	{
+		return true;
+	}
+	if( m_glxContext && glXGetCurrentContext() == (GLXContext)m_glxContext )
+	{
+		return true;
+	}
+	if( m_osmesaContext && OSMesaGetCurrentContext() == (OSMesaContext)m_osmesaContext )
+	{
+		return true;
+	}
+
 	// Reentrant: if we're already in our context, just bump the counter
 	if( m_makeCurrentCount > 0 )
 	{
@@ -190,34 +303,58 @@ bool GLContextManager::makeCurrent()
 		return true;
 	}
 
-	// Save the current GLX context before we replace it
+	// Save the current GL context state before we replace it
 	m_savedDisplay = (void*)glXGetCurrentDisplay();
 	m_savedDrawable = (void*)(unsigned long)glXGetCurrentDrawable();
 	m_savedContext = (void*)glXGetCurrentContext();
+	m_savedEglContext = (void*)eglGetCurrentContext();
 
-	// ---- Try GLX first (preferred for hardware acceleration) ----
+	// ---- 1. EGL (preferred — GPU + surfaceless) ----
+
+	if( m_eglContext )
+	{
+		EGLDisplay dpy = (EGLDisplay)m_eglDisplay;
+		EGLContext ctx = (EGLContext)m_eglContext;
+		EGLSurface surf = m_eglSurface ? (EGLSurface)m_eglSurface : EGL_NO_SURFACE;
+
+		EGLBoolean ok = eglMakeCurrent( dpy, surf, surf, ctx );
+		if( ok && initGLEW( "EGL" ) )
+		{
+			std::cerr << "GL backend: EGL" << std::endl;
+			m_usingHardware = true;
+			m_makeCurrentCount = 1;
+			return true;
+		}
+	}
+
+	// ---- 2. GLX path (hardware GPU with X11) ----
 
 	if( m_glxContext )
 	{
 		Display *x11dpy = (Display*)m_glxDisplay;
 		if( glXMakeCurrent( x11dpy, (GLXDrawable)m_glxWindow, (GLXContext)m_glxContext ) )
 		{
-			if( initGLEW() )
+			if( initGLEW( "GLX" ) )
 			{
-				m_usingOSMesa = false;
-					m_makeCurrentCount = 1;
+				std::cerr << "GL backend: GLX" << std::endl;
+				m_usingHardware = true;
+				m_makeCurrentCount = 1;
 				return true;
 			}
 		}
 	}
 
-	// ---- Fall back to OSMesa ----
+	// ---- 3. OSMesa fallback (CPU software) ----
 
 	if( !m_osmesaContext )
+	{
+		std::cerr << "GL backend: no OSMesa available" << std::endl;
 		return false;
+	}
 
 	if( !OSMesaMakeCurrent( (OSMesaContext)m_osmesaContext, m_osmesaBuffer, GL_UNSIGNED_BYTE, 1, 1 ) )
 	{
+		std::cerr << "GL backend: OSMesaMakeCurrent failed" << std::endl;
 		return false;
 	}
 
@@ -227,26 +364,24 @@ bool GLContextManager::makeCurrent()
 	{
 		glewExperimental = GL_TRUE;
 		GLenum err = glewInit();
+#ifdef GLEW_ERROR_NO_GLX_DISPLAY
+		if( err == GLEW_OK || err == GLEW_ERROR_NO_GLX_DISPLAY )
+#else
 		if( err == GLEW_OK )
+#endif
 		{
-			const char *versionStr = (const char*)glGetString( GL_VERSION );
-			int major = 0, minor = 0;
-			if( versionStr ) sscanf( versionStr, "%d.%d", &major, &minor );
-			bool hasFBO = GLEW_ARB_framebuffer_object || GLEW_EXT_framebuffer_object;
-				if( hasFBO && ( major > 3 || ( major == 3 && minor >= 2 ) ) )
-				osmesaGlewState = 1;
-			else
-				osmesaGlewState = 1; // accept anyway — best we have
+			osmesaGlewState = 1;
 		}
 		else
 		{
-				osmesaGlewState = -1;
+			osmesaGlewState = -1;
 		}
 	}
 
 	if( osmesaGlewState == 1 )
 	{
-		m_usingOSMesa = true;
+		std::cerr << "GL backend: OSMesa" << std::endl;
+		m_usingHardware = false;
 		m_makeCurrentCount = 1;
 		return true;
 	}
@@ -256,23 +391,29 @@ bool GLContextManager::makeCurrent()
 
 void GLContextManager::release()
 {
-	m_makeCurrentCount--;
+	if( m_makeCurrentCount > 0 )
+		m_makeCurrentCount--;
 	if( m_makeCurrentCount > 0 )
 	{
-		// Nested call — outer frame still needs the context current
 		return;
 	}
 
-	// Unbind OUR context first, regardless of what comes next.
-	// This prevents "Mesa context still attached" when we later
-	// try to restore a saved GLX context via glXMakeCurrent.
-	if( m_usingOSMesa )
+	// Unbind OUR context first
+	if( m_usingHardware )
+	{
+		if( m_eglContext )
+		{
+			EGLSurface surf = m_eglSurface ? (EGLSurface)m_eglSurface : EGL_NO_SURFACE;
+			eglMakeCurrent( (EGLDisplay)m_eglDisplay, surf, surf, EGL_NO_CONTEXT );
+		}
+		else if( m_glxContext )
+		{
+			glXMakeCurrent( (Display*)m_glxDisplay, None, nullptr );
+		}
+	}
+	else if( m_osmesaContext )
 	{
 		OSMesaMakeCurrent( nullptr, nullptr, GL_UNSIGNED_BYTE, 0, 0 );
-	}
-	else if( m_glxContext )
-	{
-		glXMakeCurrent( (Display*)m_glxDisplay, None, nullptr );
 	}
 
 	// Restore the saved context (if any)
@@ -284,9 +425,14 @@ void GLContextManager::release()
 			(GLXContext)m_savedContext
 		);
 	}
+	else if( m_savedEglContext )
+	{
+		eglMakeCurrent( (EGLDisplay)m_savedDisplay, EGL_NO_SURFACE, EGL_NO_SURFACE, (EGLContext)m_savedEglContext );
+	}
 	m_savedDisplay = nullptr;
 	m_savedDrawable = nullptr;
 	m_savedContext = nullptr;
+	m_savedEglContext = nullptr;
 }
 
 void GLContextManager::registerTexture( unsigned int id )
@@ -302,4 +448,36 @@ void GLContextManager::cleanupTextures()
 		glDeleteTextures( (GLsizei)m_textures.size(), (const GLuint*)m_textures.data() );
 		m_textures.clear();
 	}
+
+	if( m_outputFBO || m_outputTex )
+	{
+		makeCurrent();
+		if( m_outputFBO )
+			glDeleteFramebuffers( 1, &m_outputFBO );
+		if( m_outputTex )
+			glDeleteTextures( 1, &m_outputTex );
+		m_outputFBO = 0;
+		m_outputTex = 0;
+		m_outputTexW = 0;
+		m_outputTexH = 0;
+	}
+}
+
+void GLContextManager::setOutputFBO( unsigned int fbo, unsigned int tex, int width, int height )
+{
+	// Clean up previous FBO/texture if different
+	if( m_outputFBO && m_outputFBO != fbo )
+	{
+		GLuint oldFbo = m_outputFBO;
+		GLuint oldTex = m_outputTex;
+		m_outputFBO = 0;
+		m_outputTex = 0;
+		makeCurrent();
+		glDeleteFramebuffers( 1, &oldFbo );
+		glDeleteTextures( 1, &oldTex );
+	}
+	m_outputFBO = fbo;
+	m_outputTex = tex;
+	m_outputTexW = width;
+	m_outputTexH = height;
 }
