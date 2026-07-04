@@ -54,6 +54,8 @@
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <vector>
+#include <algorithm>
 
 using namespace GafferOFX;
 
@@ -81,61 +83,110 @@ GLContextManager::GLContextManager()
 	m_makeCurrentCount = 0;
 
 	// ---- 1. EGL (preferred — GPU + surfaceless, no X11 dependency) ----
+	//
+	// Strategy: try each enumerated EGL device in order, keeping the first
+	// context that works.  Hardware devices (NVIDIA) are preferred over
+	// llvmpipe.  If no device works, fall back to the default display.
 
-	EGLDisplay eglDpy = eglGetDisplay( EGL_DEFAULT_DISPLAY );
-	if( eglDpy == EGL_NO_DISPLAY )
+	// Use EGL_EXT_device_enumeration + EGL_EXT_platform_device to discover
+	// real GPU devices (NVIDIA, AMD) that can serve OpenGL headlessly.
+	PFNEGLQUERYDEVICESEXTPROC eglQueryDevicesEXT =
+		(PFNEGLQUERYDEVICESEXTPROC)eglGetProcAddress( "eglQueryDevicesEXT" );
+	PFNEGLGETPLATFORMDISPLAYEXTPROC eglGetPlatformDisplayEXT =
+		(PFNEGLGETPLATFORMDISPLAYEXTPROC)eglGetProcAddress( "eglGetPlatformDisplayEXT" );
+
+	// Build a list of displays to try:  enumerated device displays + default.
+	// We store all that succeeded eglInitialize; later we pick the best one.
+	std::vector<EGLDisplay> candidateDisplays;
+
+	if( eglQueryDevicesEXT )
 	{
-		// Try platform-agnostic fallback
-		eglDpy = eglGetDisplay( nullptr );
-	}
-	if( eglDpy != EGL_NO_DISPLAY )
-	{
-		EGLint major, minor;
-		if( eglInitialize( eglDpy, &major, &minor ) )
+		EGLDeviceEXT devices[16];
+		EGLint numDevices = 0;
+		eglQueryDevicesEXT( 16, devices, &numDevices );
+
+		for( int i = 0; i < numDevices; ++i )
 		{
-			// Choose a config that supports OpenGL rendering
-			const EGLint configAttribs[] = {
-				EGL_SURFACE_TYPE, EGL_PBUFFER_BIT,
-				EGL_RENDERABLE_TYPE, EGL_OPENGL_BIT,
-				EGL_RED_SIZE, 8,
-				EGL_GREEN_SIZE, 8,
-				EGL_BLUE_SIZE, 8,
-				EGL_ALPHA_SIZE, 8,
-				EGL_DEPTH_SIZE, 24,
-				EGL_STENCIL_SIZE, 8,
-				EGL_NONE
-			};
-			EGLConfig eglConfig;
-			EGLint numConfigs;
-			if( eglChooseConfig( eglDpy, configAttribs, &eglConfig, 1, &numConfigs ) && numConfigs > 0 )
+			EGLDisplay dpy = EGL_NO_DISPLAY;
+			if( eglGetPlatformDisplayEXT )
 			{
-				// Try surfaceless context first (EGL_KHR_surfaceless_context)
-				eglBindAPI( EGL_OPENGL_API );
-				EGLContext eglCtx = eglCreateContext( eglDpy, eglConfig, EGL_NO_CONTEXT, nullptr );
-				if( eglCtx != EGL_NO_CONTEXT )
+				dpy = eglGetPlatformDisplayEXT( EGL_PLATFORM_DEVICE_EXT, devices[i], nullptr );
+			}
+			if( dpy != EGL_NO_DISPLAY )
+			{
+				EGLint major, minor;
+				if( eglInitialize( dpy, &major, &minor ) )
 				{
-					// Create a 1×1 pbuffer so FBO 0 is valid.
-					// Plugins that bind FBO 0 during render (e.g. Sapphire S_Blur)
-					// need a valid default framebuffer; EGL surfaceless has none.
-					const EGLint pbAttribs[] = {
-						EGL_WIDTH, 1,
-						EGL_HEIGHT, 1,
-						EGL_NONE
-					};
-					EGLSurface surf = eglCreatePbufferSurface( eglDpy, eglConfig, pbAttribs );
-					if( surf == EGL_NO_SURFACE )
-						surf = nullptr;
-
-					m_eglDisplay = (void*)eglDpy;
-					m_eglContext = (void*)eglCtx;
-					m_eglSurface = (void*)surf;
+					candidateDisplays.push_back( dpy );
 				}
 			}
-			if( !m_eglContext )
+		}
+	}
+
+	// Add the default display as a software fallback.
+	{
+		EGLDisplay dpy = eglGetDisplay( EGL_DEFAULT_DISPLAY );
+		if( dpy == EGL_NO_DISPLAY )
+			dpy = eglGetDisplay( nullptr );
+		if( dpy != EGL_NO_DISPLAY )
+		{
+			EGLint major, minor;
+			if( eglInitialize( dpy, &major, &minor ) )
 			{
-				eglTerminate( eglDpy );
+				candidateDisplays.push_back( dpy );
 			}
 		}
+	}
+
+	// Try each display.  Prefer hardware, accept llvmpipe as last resort.
+	// The last display in the list is the default (Mesa software fallback).
+	for( EGLDisplay dpy : candidateDisplays )
+	{
+		const EGLint configAttribs[] = {
+			EGL_SURFACE_TYPE, EGL_PBUFFER_BIT,
+			EGL_RENDERABLE_TYPE, EGL_OPENGL_BIT,
+			EGL_RED_SIZE, 8, EGL_GREEN_SIZE, 8,
+			EGL_BLUE_SIZE, 8, EGL_ALPHA_SIZE, 8,
+			EGL_DEPTH_SIZE, 24, EGL_STENCIL_SIZE, 8,
+			EGL_NONE
+		};
+		EGLConfig eglConfig;
+		EGLint numConfigs;
+		if( !eglChooseConfig( dpy, configAttribs, &eglConfig, 1, &numConfigs ) || numConfigs == 0 )
+			continue;
+
+		eglBindAPI( EGL_OPENGL_API );
+		EGLContext eglCtx = eglCreateContext( dpy, eglConfig, EGL_NO_CONTEXT, nullptr );
+		if( eglCtx == EGL_NO_CONTEXT )
+			continue;
+
+		const EGLint pbAttribs[] = { EGL_WIDTH, 1, EGL_HEIGHT, 1, EGL_NONE };
+		EGLSurface surf = eglCreatePbufferSurface( dpy, eglConfig, pbAttribs );
+		if( surf == EGL_NO_SURFACE )
+		{
+			eglDestroyContext( dpy, eglCtx );
+			continue;
+		}
+
+		// Test: make the context current and check GL_RENDERER.
+		// Skip llvmpipe if a hardware device is still available further in the list.
+		eglMakeCurrent( dpy, surf, surf, eglCtx );
+		const char *renderer = (const char*)glGetString( GL_RENDERER );
+		bool isHW = renderer && !strstr( renderer, "llvmpipe" ) && !strstr( renderer, "soft" );
+		eglMakeCurrent( dpy, surf, surf, EGL_NO_CONTEXT );
+
+		// If this is the last candidate or it's hardware, keep it.
+		if( isHW || &dpy == &candidateDisplays.back() )
+		{
+			m_eglDisplay = (void*)dpy;
+			m_eglContext = (void*)eglCtx;
+			m_eglSurface = (void*)surf;
+			break;
+		}
+
+		// Otherwise destroy and try the next one.
+		eglDestroySurface( dpy, surf );
+		eglDestroyContext( dpy, eglCtx );
 	}
 
 	// ---- 2. GLX path (hardware GPU with X11) ----

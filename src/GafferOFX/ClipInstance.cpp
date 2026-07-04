@@ -365,16 +365,19 @@ OFX::Host::ImageEffect::Texture* ClipInstance::loadTexture( OfxTime time, const 
 	{
 		GLContextManager& mgr = GLContextManager::instance();
 		unsigned int tex = mgr.outputTexture();
-		if( !tex )
+		int texW = mgr.outputTexWidth();
+		int texH = mgr.outputTexHeight();
+		if( !tex || texW <= 0 || texH <= 0 )
 		{
-			std::cerr << "loadTexture exit: Output no FBO tex" << std::endl;
+			std::cerr << "loadTexture exit: Output invalid — tex=" << tex
+			          << " w=" << texW << " h=" << texH << std::endl;
 			return nullptr;
 		}
 
 		OfxRectI bounds;
 		bounds.x1 = 0; bounds.y1 = 0;
-		bounds.x2 = mgr.outputTexWidth();
-		bounds.y2 = mgr.outputTexHeight();
+		bounds.x2 = texW;
+		bounds.y2 = texH;
 
 		GafferTexture* ret = new GafferTexture(
 			*this,
@@ -385,7 +388,7 @@ OFX::Host::ImageEffect::Texture* ClipInstance::loadTexture( OfxTime time, const 
 			"none",
 			""
 		);
-		std::cerr << "loadTexture exit: Output ok tex=" << tex << std::endl;
+		std::cerr << "loadTexture exit: Output ok tex=" << tex << " w=" << texW << " h=" << texH << std::endl;
 		return ret;
 	}
 

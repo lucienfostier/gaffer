@@ -184,6 +184,11 @@ void OFXImageNode::plugSet( Gaffer::Plug *plug )
 	if( plug == pluginIdPlug() )
 	{
 		destroyInteract();
+		if( m_glContextAttached )
+		{
+			m_instance->contextDetachedAction();
+			m_glContextAttached = false;
+		}
 		m_instance.reset();
 		createPluginInstance();
 	}
@@ -1118,8 +1123,6 @@ IECore::ConstCompoundObjectPtr OFXImageNode::computeOfxRenderBuffer( const Gaffe
 		// contextDetachedAction happens only at teardown (OFXRenderWorker destructor).
 		OFXRenderWorker::instance().execute( [this, frame, renderScale, &renderWindow, outputClip, sourceClip]() {
 
-			static bool s_contextInitialized = false;
-
 			// Activate our GL context (EGL > GLX > OSMesa).
 			// The idempotency guard (eglGetCurrentContext == m_eglContext) ensures
 			// this is a no-op on all but the first invocation.
@@ -1127,21 +1130,17 @@ IECore::ConstCompoundObjectPtr OFXImageNode::computeOfxRenderBuffer( const Gaffe
 			if( !gl.makeCurrent() )
 			{
 				std::cerr << "GL makeCurrent failed, falling back to CPU path" << std::endl;
-				// If GL isn't available, skip the GL-specific path.
-				// The output will rely on the CPU de-interleave (which will pick up
-				// whatever the (incomplete) output image contains).
 				return;
 			}
 
-			if( !s_contextInitialized )
+			// Per-instance: contextAttachedAction exactly once.
+			// A static set is unsafe because instance addresses can be reused
+			// after reset; we use a member flag reset in plugSet.
+			if( !m_glContextAttached )
 			{
-				// One-time: notify the plugin that a GL context is attached.
-				// This triggers shader compilation, GL info printing, etc.
-				// Doing it once per process (not once per render) avoids nuking
-				// and recompiling shaders on every frame.
+				m_glContextAttached = true;
 				m_instance->getProps().setIntProperty( kOfxImageEffectPropOpenGLEnabled, 1 );
 				m_instance->contextAttachedAction();
-				s_contextInitialized = true;
 			}
 
 			// ---- Set up an FBO for GL rendering ----
@@ -1193,10 +1192,38 @@ IECore::ConstCompoundObjectPtr OFXImageNode::computeOfxRenderBuffer( const Gaffe
 
 			m_rendering = true;
 			m_instance->beginRenderAction( frame, frame, 1.0, false, renderScale, true, true );
-			OfxStatus st = m_instance->renderAction( frame, kOfxImageFieldNone, renderWindow, renderScale, true, true, false );
-			std::cerr << "renderAction status = " << st << std::endl;
+			m_instance->renderAction( frame, kOfxImageFieldNone, renderWindow, renderScale, true, true, false );
 			m_instance->endRenderAction( frame, frame, 1.0, false, renderScale, true, true );
 			m_rendering = false;
+
+			// ---- Sentinel probe: did the plugin draw into our FBO? ----
+			//
+			// Some plugins (e.g. Sapphire S_Blur) declare GL support but never
+			// touch our FBO — they create their own internal OSMesa context.
+			// Their renderAction returns kOfxStatOK but the sentinel clear
+			// remains.  In that case the outputImage already has valid CPU
+			// data from clipGetImage; skip the readback.
+			//
+			// GL-capable plugins (e.g. Shadertoy) overwrite the sentinel as
+			// expected.
+
+			{
+				glBindFramebuffer( GL_FRAMEBUFFER, fbo );
+				float probe[4];
+				glReadPixels( 0, 0, 1, 1, GL_RGBA, GL_FLOAT, probe );
+				auto approxEq = []( float a, float b, float eps ) {
+					return ( a - b ) < eps && ( b - a ) < eps;
+				};
+				bool sentinelIntact = (
+					approxEq( probe[0], 0.25f, 0.001f ) &&
+					approxEq( probe[1], 0.50f, 0.001f ) &&
+					approxEq( probe[2], 0.75f, 0.001f )
+				);
+				if( sentinelIntact )
+				{
+					return;
+				}
+			}
 
 			// ---- Read back GL pixels into the output clip's buffer ----
 
@@ -1214,10 +1241,6 @@ IECore::ConstCompoundObjectPtr OFXImageNode::computeOfxRenderBuffer( const Gaffe
 					if( pixelData )
 					{
 						glReadPixels( 0, 0, w, h, GL_RGBA, GL_FLOAT, pixelData );
-						GLenum gle = glGetError();
-						std::cerr << "glGetError after readback = 0x" << std::hex << gle << std::dec
-						          << " px[0]=" << pixelData->r << "," << pixelData->g << "," << pixelData->b
-						          << std::endl;
 					}
 				}
 			}
