@@ -34,14 +34,8 @@
 
 #include "GafferOFX/GLContextManager.h"
 
-#include "GL/glew.h"
-// GLEW #undef's GLAPI at the end; OSMesa/EGL need it for declarations
-#ifndef GLAPI
-#define GLAPI extern
-#endif
-#ifndef GLAPIENTRY
-#define GLAPIENTRY
-#endif
+#include <GL/gl.h>
+#include <GL/glext.h>
 #include <GL/osmesa.h>
 
 #include <EGL/egl.h>
@@ -107,100 +101,178 @@ GLContextManager::GLContextManager()
 		};
 		const EGLint pbAttribs[] = { EGL_WIDTH, 1, EGL_HEIGHT, 1, EGL_NONE };
 
-		if( queryDevices && getPlatformDisplay )
-		{
-			const EGLint maxDevices = 16;
-			EGLDeviceEXT devices[maxDevices];
-			EGLint numDevices = 0;
-			if( queryDevices( maxDevices, devices, &numDevices ) && numDevices > 0 )
+			if( queryDevices && getPlatformDisplay )
 			{
-				std::cerr << "EGL: found " << numDevices << " device(s)" << std::endl;
-
-				// Two passes: pass 0 = hardware only, pass 1 = software only
-				for( int pass = 0; pass < 2 && !m_eglContext; ++pass )
+				const EGLint maxDevices = 16;
+				EGLDeviceEXT devices[maxDevices];
+				EGLint numDevices = 0;
+				if( queryDevices( maxDevices, devices, &numDevices ) && numDevices > 0 )
 				{
-					for( EGLint i = 0; i < numDevices && !m_eglContext; ++i )
+					std::cerr << "EGL: found " << numDevices << " device(s)" << std::endl;
+
+					// Two passes: pass 0 = hardware only, pass 1 = software only
+					for( int pass = 0; pass < 2 && !m_eglContext; ++pass )
 					{
-						// Filter by device type on each pass
-						if( queryDeviceString )
+						for( EGLint i = 0; i < numDevices && !m_eglContext; ++i )
 						{
-							const char *exts = queryDeviceString( devices[i], EGL_EXTENSIONS );
-							bool isSoftware = exts && strstr( exts, "EGL_MESA_device_software" );
-							if( ( pass == 0 && isSoftware ) || ( pass == 1 && !isSoftware ) )
+							// Log per-device info
+							if( queryDeviceString )
+							{
+								const char *drm = queryDeviceString( devices[i], EGL_DRM_DEVICE_FILE_EXT );
+								const char *exts = queryDeviceString( devices[i], EGL_EXTENSIONS );
+								bool isSoftware = exts && strstr( exts, "EGL_MESA_device_software" );
+								std::cerr << "EGL device " << i << ": drm="
+								          << ( drm ? drm : "(none)" )
+								          << ( isSoftware ? " [software]" : " [hardware]" )
+								          << std::endl;
+								if( ( pass == 0 && isSoftware ) || ( pass == 1 && !isSoftware ) )
+								{
+									std::cerr << "  -> skipped (wrong pass)" << std::endl;
+									continue;
+								}
+							}
+							else if( pass == 1 )
+							{
+								continue;   // can't identify software — skip pass 1
+							}
+
+							EGLDisplay dpy = getPlatformDisplay(
+								EGL_PLATFORM_DEVICE_EXT, devices[i], nullptr
+							);
+							if( dpy == EGL_NO_DISPLAY )
+							{
+								std::cerr << "  -> eglGetPlatformDisplayEXT failed" << std::endl;
 								continue;
-						}
-						else if( pass == 1 )
-						{
-							continue;   // can't identify software — skip pass 1
-						}
+							}
+							std::cerr << "  -> display obtained" << std::endl;
 
-						EGLDisplay dpy = getPlatformDisplay(
-							EGL_PLATFORM_DEVICE_EXT, devices[i], nullptr
-						);
-						if( dpy == EGL_NO_DISPLAY )
-							continue;
+							EGLint major, minor;
+							if( !eglInitialize( dpy, &major, &minor ) )
+							{
+								std::cerr << "  -> eglInitialize failed (err="
+								          << eglGetError() << ")" << std::endl;
+								eglTerminate( dpy );
+								continue;
+							}
+							std::cerr << "  -> initialized EGL " << major << "." << minor
+							          << " vendor=" << eglQueryString( dpy, EGL_VENDOR ) << std::endl;
 
-						EGLint major, minor;
-						if( !eglInitialize( dpy, &major, &minor ) )
-						{
-							eglTerminate( dpy );
-							continue;
-						}
+							EGLConfig config;
+							EGLint numConfigs;
+							if( !eglChooseConfig( dpy, configAttribs, &config, 1, &numConfigs ) ||
+							    numConfigs == 0 )
+							{
+								std::cerr << "  -> eglChooseConfig failed" << std::endl;
+								eglTerminate( dpy );
+								continue;
+							}
+							std::cerr << "  -> config chosen" << std::endl;
 
-						EGLConfig config;
-						EGLint numConfigs;
-						if( !eglChooseConfig( dpy, configAttribs, &config, 1, &numConfigs ) ||
-						    numConfigs == 0 )
-						{
-							eglTerminate( dpy );
-							continue;
-						}
+							eglBindAPI( EGL_OPENGL_API );
 
-						eglBindAPI( EGL_OPENGL_API );
-						EGLContext ctx = eglCreateContext( dpy, config, EGL_NO_CONTEXT, nullptr );
-						if( ctx == EGL_NO_CONTEXT )
-						{
-							eglTerminate( dpy );
-							continue;
-						}
+							// Request an OpenGL compatibility profile so legacy GL
+							// queries (glGetString(GL_EXTENSIONS), etc.) and fixed-
+							// function constructs work.  OFX plugins from the GL 2.1
+							// era depend on this.
+#ifndef EGL_CONTEXT_OPENGL_PROFILE_MASK
+#define EGL_CONTEXT_OPENGL_PROFILE_MASK 0x30FD
+#endif
+#ifndef EGL_CONTEXT_OPENGL_COMPATIBILITY_PROFILE_BIT
+#define EGL_CONTEXT_OPENGL_COMPATIBILITY_PROFILE_BIT 0x00000002
+#endif
+							const EGLint ctxAttribs[] = {
+								EGL_CONTEXT_OPENGL_PROFILE_MASK,
+								EGL_CONTEXT_OPENGL_COMPATIBILITY_PROFILE_BIT,
+								EGL_NONE
+							};
+							EGLContext ctx = eglCreateContext( dpy, config, EGL_NO_CONTEXT, ctxAttribs );
+							if( ctx == EGL_NO_CONTEXT )
+							{
+								std::cerr << "  -> eglCreateContext failed (err="
+								          << eglGetError() << ")" << std::endl;
+								eglTerminate( dpy );
+								continue;
+							}
+							std::cerr << "  -> context created" << std::endl;
 
-						EGLSurface surf = eglCreatePbufferSurface( dpy, config, pbAttribs );
-						if( surf == EGL_NO_SURFACE )
-						{
+							EGLSurface surf = eglCreatePbufferSurface( dpy, config, pbAttribs );
+							if( surf == EGL_NO_SURFACE )
+							{
+								std::cerr << "  -> eglCreatePbufferSurface failed (err="
+								          << eglGetError() << ")" << std::endl;
+								eglDestroyContext( dpy, ctx );
+								eglTerminate( dpy );
+								continue;
+							}
+							std::cerr << "  -> pbuffer surface created" << std::endl;
+
+							if( eglMakeCurrent( dpy, surf, surf, ctx ) )
+							{
+								const char *renderer = (const char*)glGetString( GL_RENDERER );
+								if( renderer && renderer[0] )
+								{
+									std::cerr
+										<< "EGL device " << i << " ("
+										<< ( pass == 0 ? "hardware pass" : "software pass" )
+										<< "): GL_RENDERER = " << renderer << std::endl;
+									m_eglDisplay = (void*)dpy;
+									m_eglContext = (void*)ctx;
+									m_eglSurface = (void*)surf;
+									m_rendererString = renderer;
+									m_backendName = "EGL";
+									m_usingHardware = !strstr( renderer, "llvmpipe" ) &&
+									                  !strstr( renderer, "soft" );
+									std::cerr << "  -> SELECTED device " << i
+									          << " (backend=EGL, hardware="
+									          << m_usingHardware << ")" << std::endl;
+									// NVIDIA EGL doesn't properly unbind with EGL_NO_CONTEXT
+									// (eglGetCurrentContext stays non-NULL), so we keep
+									// the context current and initialize GLEW here.
+									if( initGLEW( "EGL" ) )
+									{
+										// Leave context current on this thread (NVIDIA EGL doesn't
+										// properly unbind).  The idempotency guard in makeCurrent()
+										// checks eglGetCurrentContext() (thread-local), so the
+										// worker thread will correctly call eglMakeCurrent.
+									}
+									else
+									{
+										std::cerr << "  -> initGLEW failed, discarding device"
+										          << std::endl;
+										eglMakeCurrent( dpy, surf, surf, EGL_NO_CONTEXT );
+										eglDestroySurface( dpy, surf );
+										eglDestroyContext( dpy, ctx );
+										eglTerminate( dpy );
+										m_eglDisplay = nullptr;
+										m_eglContext = nullptr;
+										m_eglSurface = nullptr;
+									}
+									break;
+								}
+								std::cerr << "  -> glGetString(GL_RENDERER) returned NULL" << std::endl;
+								eglMakeCurrent( dpy, surf, surf, EGL_NO_CONTEXT );
+							}
+							else
+							{
+								std::cerr << "  -> eglMakeCurrent failed (err="
+								          << eglGetError() << ")" << std::endl;
+							}
+
+							eglDestroySurface( dpy, surf );
 							eglDestroyContext( dpy, ctx );
 							eglTerminate( dpy );
-							continue;
 						}
-
-						if( eglMakeCurrent( dpy, surf, surf, ctx ) )
-						{
-							const char *renderer = (const char*)glGetString( GL_RENDERER );
-							if( renderer && renderer[0] )
-							{
-								std::cerr
-									<< "EGL device " << i << " ("
-									<< ( pass == 0 ? "hardware pass" : "software pass" )
-									<< "): GL_RENDERER = " << renderer << std::endl;
-								m_eglDisplay = (void*)dpy;
-								m_eglContext = (void*)ctx;
-								m_eglSurface = (void*)surf;
-								m_rendererString = renderer;
-								m_backendName = "EGL";
-								m_usingHardware = !strstr( renderer, "llvmpipe" ) &&
-								                  !strstr( renderer, "soft" );
-								eglMakeCurrent( dpy, surf, surf, EGL_NO_CONTEXT );
-								break;
-							}
-							eglMakeCurrent( dpy, surf, surf, EGL_NO_CONTEXT );
-						}
-
-						eglDestroySurface( dpy, surf );
-						eglDestroyContext( dpy, ctx );
-						eglTerminate( dpy );
 					}
 				}
+				else
+				{
+					std::cerr << "EGL: queryDevices returned no devices" << std::endl;
+				}
 			}
-		}
+			else
+			{
+				std::cerr << "EGL: platform_device extension not available" << std::endl;
+			}
 
 		// Fallback: if device enumeration didn't produce a working context,
 		// try the default EGL display (may pick up Mesa's llvmpipe or
@@ -222,7 +294,12 @@ GLContextManager::GLContextManager()
 					    numConfigs > 0 )
 					{
 						eglBindAPI( EGL_OPENGL_API );
-						EGLContext eglCtx = eglCreateContext( eglDpy, eglConfig, EGL_NO_CONTEXT, nullptr );
+						const EGLint fallbackCtxAttribs[] = {
+							EGL_CONTEXT_OPENGL_PROFILE_MASK,
+							EGL_CONTEXT_OPENGL_COMPATIBILITY_PROFILE_BIT,
+							EGL_NONE
+						};
+						EGLContext eglCtx = eglCreateContext( eglDpy, eglConfig, EGL_NO_CONTEXT, fallbackCtxAttribs );
 						if( eglCtx != EGL_NO_CONTEXT )
 						{
 							EGLSurface surf = eglCreatePbufferSurface( eglDpy, eglConfig, pbAttribs );
@@ -346,55 +423,83 @@ GLContextManager::~GLContextManager()
 
 bool GLContextManager::initGLEW( const char *backendName )
 {
-	glewExperimental = GL_TRUE;
-	GLenum err = glewInit();
-
-#ifdef GLEW_ERROR_NO_GLX_DISPLAY
-	if( err != GLEW_OK && err != GLEW_ERROR_NO_GLX_DISPLAY )
-#else
-	if( err != GLEW_OK )
-#endif
-	{
-		std::cerr << "initGLEW(" << backendName << "): glewInit failed: "
-		          << glewGetErrorString( err ) << std::endl;
-		return false;
-	}
+	// We do NOT call glewInit() — on NVIDIA EGL it corrupts glGetString
+	// (returns NULL for all queries) and invalidates function pointers.
+	// Instead we verify GL state directly and load FBO functions manually.
 
 	const char *renderer = (const char*)glGetString( GL_RENDERER );
 	const char *versionStr = (const char*)glGetString( GL_VERSION );
-	int major = 0, minor = 0;
-	if( versionStr ) sscanf( versionStr, "%d.%d", &major, &minor );
+	const char *vendor = (const char*)glGetString( GL_VENDOR );
 
-	bool hasFBO = GLEW_ARB_framebuffer_object || GLEW_EXT_framebuffer_object;
-	if( !hasFBO )
+	if( !renderer )
 	{
-		std::cerr << "initGLEW(" << backendName << "): no FBO support" << std::endl;
+		std::cerr << "initGLEW(" << backendName << "): glGetString(GL_RENDERER) returned NULL"
+		          << std::endl;
 		return false;
 	}
 
-	bool isHardware = renderer && !strstr( renderer, "llvmpipe" ) && !strstr( renderer, "soft" );
+	std::cerr << "initGLEW(" << backendName << "): "
+	          << ( vendor ? vendor : "?" ) << " / " << renderer
+	          << " / " << ( versionStr ? versionStr : "?" ) << std::endl;
+
+	bool isHardware = !strstr( renderer, "llvmpipe" ) && !strstr( renderer, "soft" );
 
 	if( isHardware )
 	{
+		int major = 0, minor = 0;
+		if( versionStr ) sscanf( versionStr, "%d.%d", &major, &minor );
 		if( major < 3 || ( major == 3 && minor < 2 ) )
 		{
 			std::cerr << "initGLEW(" << backendName << "): hardware GL "
 			          << major << "." << minor << " < 3.2" << std::endl;
 			return false;
 		}
-		return true;
 	}
 
-	// Software rendering (llvmpipe) is accepted for EGL and GLX
-	// (not OSMesa, which is itself a software fallback).
-	if( strcmp( backendName, "EGL" ) == 0 || strcmp( backendName, "GLX" ) == 0 )
+	// Load FBO functions via eglGetProcAddress (not GLEW)
+	if( !glGenFramebuffersF )
 	{
-		return true;
+		glGenFramebuffersF = (unsigned int (*)( unsigned int, unsigned int* ))
+			eglGetProcAddress( "glGenFramebuffers" );
+	}
+	if( !glBindFramebufferF )
+	{
+		glBindFramebufferF = (void (*)( unsigned int, unsigned int ))
+			eglGetProcAddress( "glBindFramebuffer" );
+	}
+	if( !glFramebufferTexture2DF )
+	{
+		glFramebufferTexture2DF = (void (*)( unsigned int, unsigned int, unsigned int, unsigned int, int ))
+			eglGetProcAddress( "glFramebufferTexture2D" );
+	}
+	if( !glCheckFramebufferStatusF )
+	{
+		glCheckFramebufferStatusF = (unsigned int (*)( unsigned int ))
+			eglGetProcAddress( "glCheckFramebufferStatus" );
+	}
+	if( !glDeleteFramebuffersF )
+	{
+		glDeleteFramebuffersF = (void (*)( unsigned int, const unsigned int* ))
+			eglGetProcAddress( "glDeleteFramebuffers" );
 	}
 
-	std::cerr << "initGLEW(" << backendName << "): software renderer not accepted for this backend" << std::endl;
-	return false;
+	if( !glGenFramebuffersF || !glBindFramebufferF || !glFramebufferTexture2DF ||
+	    !glCheckFramebufferStatusF )
+	{
+		std::cerr << "initGLEW(" << backendName << "): FBO functions not available via eglGetProcAddress"
+		          << std::endl;
+		return false;
+	}
+
+	return true;
 }
+
+// Static GL function pointer definitions
+unsigned int (*GLContextManager::glGenFramebuffersF)( unsigned int, unsigned int* ) = nullptr;
+void (*GLContextManager::glBindFramebufferF)( unsigned int, unsigned int ) = nullptr;
+void (*GLContextManager::glFramebufferTexture2DF)( unsigned int, unsigned int, unsigned int, unsigned int, int ) = nullptr;
+unsigned int (*GLContextManager::glCheckFramebufferStatusF)( unsigned int ) = nullptr;
+void (*GLContextManager::glDeleteFramebuffersF)( unsigned int, const unsigned int* ) = nullptr;
 
 bool GLContextManager::makeCurrent()
 {
@@ -404,20 +509,24 @@ bool GLContextManager::makeCurrent()
 	// which could be 0 if the first makeCurrent went through a different backend.
 	if( m_eglContext && eglGetCurrentContext() == (EGLContext)m_eglContext )
 	{
+		std::cerr << "makeCurrent: idempotency (EGL already current)" << std::endl;
 		return true;
 	}
 	if( m_glxContext && glXGetCurrentContext() == (GLXContext)m_glxContext )
 	{
+		std::cerr << "makeCurrent: idempotency (GLX already current)" << std::endl;
 		return true;
 	}
 	if( m_osmesaContext && OSMesaGetCurrentContext() == (OSMesaContext)m_osmesaContext )
 	{
+		std::cerr << "makeCurrent: idempotency (OSMesa already current)" << std::endl;
 		return true;
 	}
 
 	// Reentrant: if we're already in our context, just bump the counter
 	if( m_makeCurrentCount > 0 )
 	{
+		std::cerr << "makeCurrent: reentrant (count=" << m_makeCurrentCount << ")" << std::endl;
 		m_makeCurrentCount++;
 		return true;
 	}
@@ -437,7 +546,16 @@ bool GLContextManager::makeCurrent()
 		EGLSurface surf = m_eglSurface ? (EGLSurface)m_eglSurface : EGL_NO_SURFACE;
 
 		EGLBoolean ok = eglMakeCurrent( dpy, surf, surf, ctx );
-		if( ok && initGLEW( "EGL" ) )
+		if( !ok )
+		{
+			std::cerr << "makeCurrent: EGL eglMakeCurrent failed (err="
+			          << eglGetError() << ")" << std::endl;
+		}
+		else if( !initGLEW( "EGL" ) )
+		{
+			std::cerr << "makeCurrent: EGL initGLEW failed" << std::endl;
+		}
+		else
 		{
 			std::cerr << "GL backend: EGL" << std::endl;
 			m_usingHardware = true;
@@ -466,18 +584,9 @@ bool GLContextManager::makeCurrent()
 	}
 
 	// ---- 3. OSMesa fallback (CPU software) ----
-	//
-	// OSMesa provides a software GL context but glewInit() on OSMesa
-	// returns GLEW_ERROR_NO_GLX_DISPLAY (no GLX display connection), and
-	// glXGetProcAddressARB fails to resolve extension function pointers.
-	// In particular, FBO function pointers (glGenFramebuffers, etc.)
-	// remain NULL and every GL call through them would jump to address 0.
-	//
-	// Since our GL rendering relies on FBOs, we cannot use OSMesa for GL
-	// rendering.  Return false so the caller falls back to the CPU render
-	// path, which works correctly on OSMesa (plugin renders via clipGetImage).
 
 	m_backendName = "OSMesa";
+	std::cerr << "makeCurrent: all backends failed, returning false" << std::endl;
 	return false;
 }
 
@@ -545,7 +654,7 @@ void GLContextManager::cleanupTextures()
 	{
 		makeCurrent();
 		if( m_outputFBO )
-			glDeleteFramebuffers( 1, &m_outputFBO );
+			glDeleteFramebuffersF( 1, &m_outputFBO );
 		if( m_outputTex )
 			glDeleteTextures( 1, &m_outputTex );
 		m_outputFBO = 0;
@@ -565,7 +674,7 @@ void GLContextManager::setOutputFBO( unsigned int fbo, unsigned int tex, int wid
 		m_outputFBO = 0;
 		m_outputTex = 0;
 		makeCurrent();
-		glDeleteFramebuffers( 1, &oldFbo );
+		glDeleteFramebuffersF( 1, &oldFbo );
 		glDeleteTextures( 1, &oldTex );
 	}
 	m_outputFBO = fbo;

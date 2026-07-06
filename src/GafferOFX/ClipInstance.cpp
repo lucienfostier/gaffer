@@ -31,8 +31,7 @@
 //  SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //
 //////////////////////////////////////////////////////////////////////////
-// Include GLEW before any Gaffer/OFX headers to avoid X11 macro conflicts.
-#include <GL/glew.h>
+#include <GL/gl.h>
 
 #include <iostream>
 

@@ -40,6 +40,13 @@ class GAFFEROFX_API GLContextManager
 		/// Returns the GL_RENDERER string of the active context.
 		const char* rendererString() const { return m_rendererString.c_str(); }
 
+		// Loaded GL function pointers (initialized by initGLEW)
+		static unsigned int (*glGenFramebuffersF)( unsigned int n, unsigned int *ids );
+		static void (*glBindFramebufferF)( unsigned int target, unsigned int fbo );
+		static void (*glFramebufferTexture2DF)( unsigned int target, unsigned int attachment, unsigned int textarget, unsigned int texture, int level );
+		static unsigned int (*glCheckFramebufferStatusF)( unsigned int target );
+		static void (*glDeleteFramebuffersF)( unsigned int n, const unsigned int *ids );
+
 		/// Set the current output FBO+texture for GL rendering.
 		/// The texture is the color attachment of the FBO; plugins that call
 		/// loadTexture("Output") receive this texture as their render target.
