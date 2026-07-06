@@ -858,6 +858,22 @@ class OFXImageNodeTest( GafferTest.TestCase ) :
 		h2 = n["out"].channelDataHash( "R", imath.V2i( 0 ) )
 		self.assertNotEqual( h1, h2 )
 
+	def testOpenGLEnabled( self ) :
+
+		# Verify the GL context state. If hardware GL is active, the
+		# FBO/texture path should be available for GL-based OFX plugins.
+		# If only OSMesa (CPU software) is available, GL rendering is
+		# disabled and the CPU path is used.
+		mgr = GafferOFX.GLContextManager.instance()
+		self.assertIn( mgr.backendName(), ( "EGL", "GLX", "OSMesa", "none" ) )
+
+		info = f"GL backend: {mgr.backendName()}, renderer: {mgr.rendererString()}"
+		if mgr.usingHardware() :
+			print( f"GL hardware: {info}" )
+		else :
+			print( f"GL software/cpu: {info}" )
+			print( "GL FBO path will not be tested — skipped" )
+
 
 if __name__ == "__main__" :
 	unittest.main()

@@ -77,6 +77,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <exception>
 #include <vector>
 #include <thread>
 #include <mutex>
@@ -1113,132 +1114,25 @@ IECore::ConstCompoundObjectPtr OFXImageNode::computeOfxRenderBuffer( const Gaffe
 			outputClip->getImage( frame, nullptr );
 		}
 
-		// Initialize GL context manager on the main thread before dispatching
-		// to the worker. This ensures X11/EGL/OSMesa setup runs on the main
-		// thread (XOpenDisplay is not thread-safe).
-		GLContextManager::instance();
-
 		// Dispatch the render to our dedicated worker thread.
-		// This keeps renders off the main thread (no UI freeze) and
-		// makes a hardware GL context current so the plugin renders
-		// on the GPU instead of falling back to OSMesa software.
+		// This keeps renders off the main thread (no UI freeze).
 		//
-		// The worker thread owns the GL context permanently — contextAttachedAction
-		// is called once, makeCurrent/release is never cycled per-render, and
-		// contextDetachedAction happens only at teardown (OFXRenderWorker destructor).
+		// We make the EGL/GLX/OSMesa context current on the worker thread
+		// (for future GL rendering support) but do NOT call
+		// contextAttachedAction — plugins that create their own GL context
+		// (e.g. Shadertoy with OSMesa) do so internally during renderAction,
+		// and CPU-only plugins render via clipGetImage into the pre-allocated
+		// CPU buffer.
 		OFXRenderWorker::instance().execute( [this, frame, renderScale, &renderWindow, outputClip, sourceClip]() {
 
-			int w = renderWindow.x2 - renderWindow.x1;
-			int h = renderWindow.y2 - renderWindow.y1;
-
-			// ---- GL context setup (EGL > GLX > OSMesa) ----
-			//
-			// If GL is available (EGL/GLX with working DRI), activate
-			// the context, set up an FBO for plugin rendering, and do a
-			// GL readback after the render.  If GL is not available
-			// (OSMesa without GLX, so GLEW can't resolve FBO function
-			// pointers), we still call renderAction — the plugin renders
-			// via clipGetImage into the pre-allocated CPU buffer.
-
-			GLContextManager &gl = GLContextManager::instance();
-			bool useGL = gl.makeCurrent();
-
-			if( useGL )
-			{
-				// Per-instance: contextAttachedAction exactly once.
-				if( !m_glContextAttached )
-				{
-					m_glContextAttached = true;
-					m_instance->getProps().setIntProperty( kOfxImageEffectPropOpenGLEnabled, 1 );
-					m_instance->contextAttachedAction();
-				}
-
-				// Set up an RGBA32F FBO matching the render window.
-				unsigned int fbo = 0, tex = 0;
-				if( w != (int)gl.outputTexWidth() || h != (int)gl.outputTexHeight() )
-				{
-					glGenTextures( 1, &tex );
-					glBindTexture( GL_TEXTURE_2D, tex );
-					glTexImage2D( GL_TEXTURE_2D, 0, GL_RGBA32F, w, h, 0, GL_RGBA, GL_FLOAT, nullptr );
-					glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST );
-					glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST );
-					glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE );
-					glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE );
-
-					glGenFramebuffers( 1, &fbo );
-					glBindFramebuffer( GL_FRAMEBUFFER, fbo );
-					glFramebufferTexture2D( GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0 );
-
-					gl.setOutputFBO( fbo, tex, w, h );
-				}
-				else
-				{
-					fbo = gl.outputFBO();
-					tex = gl.outputTexture();
-					glBindFramebuffer( GL_FRAMEBUFFER, fbo );
-				}
-
-				GLenum fbStatus = glCheckFramebufferStatus( GL_FRAMEBUFFER );
-				bool fbOk = ( fbStatus == GL_FRAMEBUFFER_COMPLETE );
-				if( !fbOk )
-				{
-					std::cerr << "FBO incomplete: 0x" << std::hex << fbStatus << std::dec << std::endl;
-				}
-
-				glViewport( 0, 0, w, h );
-				glClearColor( 0.25f, 0.5f, 0.75f, 1.0f );
-				glClear( GL_COLOR_BUFFER_BIT );
-			}
+			GLContextManager::instance().makeCurrent();
 
 			// ---- Plugin render ----
-			// Always called regardless of GL availability.
 			m_rendering = true;
 			m_instance->beginRenderAction( frame, frame, 1.0, false, renderScale, true, true );
 			m_instance->renderAction( frame, kOfxImageFieldNone, renderWindow, renderScale, true, true, false );
 			m_instance->endRenderAction( frame, frame, 1.0, false, renderScale, true, true );
 			m_rendering = false;
-
-			// ---- GL readback (only if GL context is active) ----
-			if( useGL )
-			{
-				// Sentinel probe: did the plugin draw into our FBO?
-				{
-					glBindFramebuffer( GL_FRAMEBUFFER, gl.outputFBO() );
-					float probe[4];
-					glReadPixels( 0, 0, 1, 1, GL_RGBA, GL_FLOAT, probe );
-					auto approxEq = []( float a, float b, float eps ) {
-						return ( a - b ) < eps && ( b - a ) < eps;
-					};
-					bool sentinelIntact = (
-						approxEq( probe[0], 0.25f, 0.001f ) &&
-						approxEq( probe[1], 0.50f, 0.001f ) &&
-						approxEq( probe[2], 0.75f, 0.001f )
-					);
-					if( sentinelIntact )
-					{
-						return;
-					}
-				}
-
-				// Read back GL pixels into the output clip's buffer
-				if( outputClip )
-				{
-					glBindFramebuffer( GL_FRAMEBUFFER, gl.outputFBO() );
-					glFinish();
-					glPixelStorei( GL_PACK_ALIGNMENT, 1 );
-
-					GafferOFX::Image* outputImage = outputClip->getOutputImage();
-					if( outputImage )
-					{
-						OfxRectI bounds = outputImage->getBounds();
-						OfxRGBAColourF* pixelData = outputImage->pixel( bounds.x1, bounds.y1 );
-						if( pixelData )
-						{
-							glReadPixels( 0, 0, w, h, GL_RGBA, GL_FLOAT, pixelData );
-						}
-					}
-				}
-			}
 		} );
 
 		// Clear frame cache after render

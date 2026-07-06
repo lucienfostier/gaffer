@@ -1,5 +1,8 @@
 #pragma once
 
+#include "GafferOFX/Export.h"
+
+#include <string>
 #include <vector>
 
 namespace GafferOFX
@@ -7,7 +10,7 @@ namespace GafferOFX
 
 /// Manages offscreen GL contexts for OpenGL-based OFX rendering.
 /// Priority: EGL (GPU + surfaceless) > GLX (GPU with X11) > OSMesa (CPU).
-class GLContextManager
+class GAFFEROFX_API GLContextManager
 {
 	public :
 
@@ -30,6 +33,12 @@ class GLContextManager
 		/// Returns true if the active context is a hardware-accelerated
 		/// (EGL or GLX) rather than OSMesa software fallback.
 		bool usingHardware() const { return m_usingHardware; }
+
+		/// Returns the active backend name ("EGL", "GLX", "OSMesa", or "none").
+		const char* backendName() const;
+
+		/// Returns the GL_RENDERER string of the active context.
+		const char* rendererString() const { return m_rendererString.c_str(); }
 
 		/// Set the current output FBO+texture for GL rendering.
 		/// The texture is the color attachment of the FBO; plugins that call
@@ -68,6 +77,8 @@ class GLContextManager
 
 		/// Which backend is currently active (set by makeCurrent)
 		bool m_usingHardware;
+		const char* m_backendName;
+		std::string m_rendererString;
 
 		/// Previous GL context state (saved before makeCurrent, restored by release)
 		void* m_savedDisplay;

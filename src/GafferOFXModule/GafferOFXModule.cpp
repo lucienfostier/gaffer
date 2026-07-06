@@ -38,6 +38,7 @@
 
 #include "GafferBindings/DependencyNodeBinding.h"
 
+#include "GafferOFX/GLContextManager.h"
 #include "GafferOFX/Host.h"
 #include "GafferOFX/OFXImageNode.h"
 #include "GafferOFX/OFXInteractInstance.h"
@@ -229,6 +230,14 @@ BOOST_PYTHON_MODULE( _GafferOFX )
 		.staticmethod("pluginIDs")
 		.def("pluginBundles", &pluginBundlesWrapper)
 		.staticmethod("pluginBundles")
+	;
+
+	class_<GLContextManager, boost::noncopyable>( "GLContextManager", no_init )
+		.def( "instance", &GLContextManager::instance, return_value_policy<reference_existing_object>() )
+		.staticmethod( "instance" )
+		.def( "usingHardware", &GLContextManager::usingHardware )
+		.def( "backendName", &GLContextManager::backendName )
+		.def( "rendererString", &GLContextManager::rendererString )
 	;
 
 	class_<GafferOFXInteractInstance, boost::noncopyable>( "OFXInteractInstance", no_init )

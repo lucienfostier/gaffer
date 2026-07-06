@@ -74,71 +74,183 @@ GLContextManager::GLContextManager()
 	m_osmesaContext = nullptr;
 	m_osmesaBuffer = nullptr;
 	m_usingHardware = false;
+	m_backendName = "none";
 	m_savedDisplay = nullptr;
 	m_savedDrawable = nullptr;
 	m_savedContext = nullptr;
 	m_savedEglContext = nullptr;
 	m_makeCurrentCount = 0;
 
-	// ---- 1. EGL (preferred — GPU + surfaceless, no X11 dependency) ----
+	// ---- 1. EGL with device enumeration ----
 	//
-	// Try the default display (eglGetDisplay with EGL_DEFAULT_DISPLAY).
-	// On systems with working DRI/DRM permissions this provides GPU-accelerated
-	// GL without an X11 display.  On permission-constrained systems (no
-	// render/video group membership) the Mesa software renderer (llvmpipe) is
-	// used instead; if even that fails we fall through to GLX/OSMesa.
+	// Enumerate all EGL devices via EGL_EXT_device_enumeration and try each
+	// one via EGL_EXT_platform_device.  Prefer hardware renderers (NVIDIA,
+	// AMD, Intel GPU) over software (llvmpipe).  Keep software only as a last
+	// resort when no hardware device initializes successfully.
 
 	{
-		EGLDisplay eglDpy = eglGetDisplay( EGL_DEFAULT_DISPLAY );
-		if( eglDpy == EGL_NO_DISPLAY )
-			eglDpy = eglGetDisplay( nullptr );
+		PFNEGLQUERYDEVICESEXTPROC queryDevices = (PFNEGLQUERYDEVICESEXTPROC)
+			eglGetProcAddress( "eglQueryDevicesEXT" );
+		PFNEGLGETPLATFORMDISPLAYEXTPROC getPlatformDisplay = (PFNEGLGETPLATFORMDISPLAYEXTPROC)
+			eglGetProcAddress( "eglGetPlatformDisplayEXT" );
+		PFNEGLQUERYDEVICESTRINGEXTPROC queryDeviceString = (PFNEGLQUERYDEVICESTRINGEXTPROC)
+			eglGetProcAddress( "eglQueryDeviceStringEXT" );
 
-		if( eglDpy != EGL_NO_DISPLAY )
+		// Shared config/pbuffer attribs used for all attempts
+		const EGLint configAttribs[] = {
+			EGL_SURFACE_TYPE, EGL_PBUFFER_BIT,
+			EGL_RENDERABLE_TYPE, EGL_OPENGL_BIT,
+			EGL_RED_SIZE, 8, EGL_GREEN_SIZE, 8,
+			EGL_BLUE_SIZE, 8, EGL_ALPHA_SIZE, 8,
+			EGL_DEPTH_SIZE, 24, EGL_STENCIL_SIZE, 8,
+			EGL_NONE
+		};
+		const EGLint pbAttribs[] = { EGL_WIDTH, 1, EGL_HEIGHT, 1, EGL_NONE };
+
+		if( queryDevices && getPlatformDisplay )
 		{
-			EGLint major, minor;
-			if( eglInitialize( eglDpy, &major, &minor ) )
+			const EGLint maxDevices = 16;
+			EGLDeviceEXT devices[maxDevices];
+			EGLint numDevices = 0;
+			if( queryDevices( maxDevices, devices, &numDevices ) && numDevices > 0 )
 			{
-				const EGLint configAttribs[] = {
-					EGL_SURFACE_TYPE, EGL_PBUFFER_BIT,
-					EGL_RENDERABLE_TYPE, EGL_OPENGL_BIT,
-					EGL_RED_SIZE, 8, EGL_GREEN_SIZE, 8,
-					EGL_BLUE_SIZE, 8, EGL_ALPHA_SIZE, 8,
-					EGL_DEPTH_SIZE, 24, EGL_STENCIL_SIZE, 8,
-					EGL_NONE
-				};
-				EGLConfig eglConfig;
-				EGLint numConfigs;
-				if( eglChooseConfig( eglDpy, configAttribs, &eglConfig, 1, &numConfigs ) && numConfigs > 0 )
+				std::cerr << "EGL: found " << numDevices << " device(s)" << std::endl;
+
+				// Two passes: pass 0 = hardware only, pass 1 = software only
+				for( int pass = 0; pass < 2 && !m_eglContext; ++pass )
 				{
-					eglBindAPI( EGL_OPENGL_API );
-					EGLContext eglCtx = eglCreateContext( eglDpy, eglConfig, EGL_NO_CONTEXT, nullptr );
-					if( eglCtx != EGL_NO_CONTEXT )
+					for( EGLint i = 0; i < numDevices && !m_eglContext; ++i )
 					{
-						const EGLint pbAttribs[] = { EGL_WIDTH, 1, EGL_HEIGHT, 1, EGL_NONE };
-						EGLSurface surf = eglCreatePbufferSurface( eglDpy, eglConfig, pbAttribs );
-						if( surf != EGL_NO_SURFACE )
+						// Filter by device type on each pass
+						if( queryDeviceString )
 						{
-							// Test: make the context current and check GL_RENDERER.
-							// Only keep this context if makeCurrent succeeded AND
-							// the GL implementation is usable (non-null renderer).
-							if( eglMakeCurrent( eglDpy, surf, surf, eglCtx ) )
+							const char *exts = queryDeviceString( devices[i], EGL_EXTENSIONS );
+							bool isSoftware = exts && strstr( exts, "EGL_MESA_device_software" );
+							if( ( pass == 0 && isSoftware ) || ( pass == 1 && !isSoftware ) )
+								continue;
+						}
+						else if( pass == 1 )
+						{
+							continue;   // can't identify software — skip pass 1
+						}
+
+						EGLDisplay dpy = getPlatformDisplay(
+							EGL_PLATFORM_DEVICE_EXT, devices[i], nullptr
+						);
+						if( dpy == EGL_NO_DISPLAY )
+							continue;
+
+						EGLint major, minor;
+						if( !eglInitialize( dpy, &major, &minor ) )
+						{
+							eglTerminate( dpy );
+							continue;
+						}
+
+						EGLConfig config;
+						EGLint numConfigs;
+						if( !eglChooseConfig( dpy, configAttribs, &config, 1, &numConfigs ) ||
+						    numConfigs == 0 )
+						{
+							eglTerminate( dpy );
+							continue;
+						}
+
+						eglBindAPI( EGL_OPENGL_API );
+						EGLContext ctx = eglCreateContext( dpy, config, EGL_NO_CONTEXT, nullptr );
+						if( ctx == EGL_NO_CONTEXT )
+						{
+							eglTerminate( dpy );
+							continue;
+						}
+
+						EGLSurface surf = eglCreatePbufferSurface( dpy, config, pbAttribs );
+						if( surf == EGL_NO_SURFACE )
+						{
+							eglDestroyContext( dpy, ctx );
+							eglTerminate( dpy );
+							continue;
+						}
+
+						if( eglMakeCurrent( dpy, surf, surf, ctx ) )
+						{
+							const char *renderer = (const char*)glGetString( GL_RENDERER );
+							if( renderer && renderer[0] )
 							{
-								const char *renderer = (const char*)glGetString( GL_RENDERER );
-								if( renderer )
+								std::cerr
+									<< "EGL device " << i << " ("
+									<< ( pass == 0 ? "hardware pass" : "software pass" )
+									<< "): GL_RENDERER = " << renderer << std::endl;
+								m_eglDisplay = (void*)dpy;
+								m_eglContext = (void*)ctx;
+								m_eglSurface = (void*)surf;
+								m_rendererString = renderer;
+								m_backendName = "EGL";
+								m_usingHardware = !strstr( renderer, "llvmpipe" ) &&
+								                  !strstr( renderer, "soft" );
+								eglMakeCurrent( dpy, surf, surf, EGL_NO_CONTEXT );
+								break;
+							}
+							eglMakeCurrent( dpy, surf, surf, EGL_NO_CONTEXT );
+						}
+
+						eglDestroySurface( dpy, surf );
+						eglDestroyContext( dpy, ctx );
+						eglTerminate( dpy );
+					}
+				}
+			}
+		}
+
+		// Fallback: if device enumeration didn't produce a working context,
+		// try the default EGL display (may pick up Mesa's llvmpipe or
+		// whatever is registered as the primary display).
+		if( !m_eglContext )
+		{
+			EGLDisplay eglDpy = eglGetDisplay( EGL_DEFAULT_DISPLAY );
+			if( eglDpy == EGL_NO_DISPLAY )
+				eglDpy = eglGetDisplay( nullptr );
+
+			if( eglDpy != EGL_NO_DISPLAY )
+			{
+				EGLint major, minor;
+				if( eglInitialize( eglDpy, &major, &minor ) )
+				{
+					EGLConfig eglConfig;
+					EGLint numConfigs;
+					if( eglChooseConfig( eglDpy, configAttribs, &eglConfig, 1, &numConfigs ) &&
+					    numConfigs > 0 )
+					{
+						eglBindAPI( EGL_OPENGL_API );
+						EGLContext eglCtx = eglCreateContext( eglDpy, eglConfig, EGL_NO_CONTEXT, nullptr );
+						if( eglCtx != EGL_NO_CONTEXT )
+						{
+							EGLSurface surf = eglCreatePbufferSurface( eglDpy, eglConfig, pbAttribs );
+							if( surf != EGL_NO_SURFACE )
+							{
+								if( eglMakeCurrent( eglDpy, surf, surf, eglCtx ) )
 								{
-									m_eglDisplay = (void*)eglDpy;
-									m_eglContext = (void*)eglCtx;
-									m_eglSurface = (void*)surf;
+									const char *renderer = (const char*)glGetString( GL_RENDERER );
+									if( renderer && renderer[0] )
+									{
+										std::cerr << "EGL fallback (default display): GL_RENDERER = "
+										          << renderer << std::endl;
+										m_eglDisplay = (void*)eglDpy;
+										m_eglContext = (void*)eglCtx;
+										m_eglSurface = (void*)surf;
+										m_rendererString = renderer;
+										m_backendName = "EGL";
+										m_usingHardware = !strstr( renderer, "llvmpipe" ) &&
+										                  !strstr( renderer, "soft" );
+									}
+									eglMakeCurrent( eglDpy, surf, surf, EGL_NO_CONTEXT );
 								}
-								eglMakeCurrent( eglDpy, surf, surf, EGL_NO_CONTEXT );
+								if( !m_eglContext )
+									eglDestroySurface( eglDpy, surf );
 							}
 							if( !m_eglContext )
-							{
-								eglDestroySurface( eglDpy, surf );
-							}
+								eglDestroyContext( eglDpy, eglCtx );
 						}
-						if( !m_eglContext )
-							eglDestroyContext( eglDpy, eglCtx );
 					}
 				}
 			}
@@ -329,6 +441,7 @@ bool GLContextManager::makeCurrent()
 		{
 			std::cerr << "GL backend: EGL" << std::endl;
 			m_usingHardware = true;
+			m_backendName = "EGL";
 			m_makeCurrentCount = 1;
 			return true;
 		}
@@ -345,6 +458,7 @@ bool GLContextManager::makeCurrent()
 			{
 				std::cerr << "GL backend: GLX" << std::endl;
 				m_usingHardware = true;
+				m_backendName = "GLX";
 				m_makeCurrentCount = 1;
 				return true;
 			}
@@ -363,6 +477,7 @@ bool GLContextManager::makeCurrent()
 	// rendering.  Return false so the caller falls back to the CPU render
 	// path, which works correctly on OSMesa (plugin renders via clipGetImage).
 
+	m_backendName = "OSMesa";
 	return false;
 }
 
@@ -457,4 +572,9 @@ void GLContextManager::setOutputFBO( unsigned int fbo, unsigned int tex, int wid
 	m_outputTex = tex;
 	m_outputTexW = width;
 	m_outputTexH = height;
+}
+
+const char* GLContextManager::backendName() const
+{
+	return m_backendName;
 }
