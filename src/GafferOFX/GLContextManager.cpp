@@ -54,8 +54,6 @@
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
-#include <vector>
-#include <algorithm>
 
 using namespace GafferOFX;
 
@@ -84,109 +82,67 @@ GLContextManager::GLContextManager()
 
 	// ---- 1. EGL (preferred — GPU + surfaceless, no X11 dependency) ----
 	//
-	// Strategy: try each enumerated EGL device in order, keeping the first
-	// context that works.  Hardware devices (NVIDIA) are preferred over
-	// llvmpipe.  If no device works, fall back to the default display.
+	// Try the default display (eglGetDisplay with EGL_DEFAULT_DISPLAY).
+	// On systems with working DRI/DRM permissions this provides GPU-accelerated
+	// GL without an X11 display.  On permission-constrained systems (no
+	// render/video group membership) the Mesa software renderer (llvmpipe) is
+	// used instead; if even that fails we fall through to GLX/OSMesa.
 
-	// Use EGL_EXT_device_enumeration + EGL_EXT_platform_device to discover
-	// real GPU devices (NVIDIA, AMD) that can serve OpenGL headlessly.
-	PFNEGLQUERYDEVICESEXTPROC eglQueryDevicesEXT =
-		(PFNEGLQUERYDEVICESEXTPROC)eglGetProcAddress( "eglQueryDevicesEXT" );
-	PFNEGLGETPLATFORMDISPLAYEXTPROC eglGetPlatformDisplayEXT =
-		(PFNEGLGETPLATFORMDISPLAYEXTPROC)eglGetProcAddress( "eglGetPlatformDisplayEXT" );
-
-	// Build a list of displays to try:  enumerated device displays + default.
-	// We store all that succeeded eglInitialize; later we pick the best one.
-	std::vector<EGLDisplay> candidateDisplays;
-
-	if( eglQueryDevicesEXT )
 	{
-		EGLDeviceEXT devices[16];
-		EGLint numDevices = 0;
-		eglQueryDevicesEXT( 16, devices, &numDevices );
+		EGLDisplay eglDpy = eglGetDisplay( EGL_DEFAULT_DISPLAY );
+		if( eglDpy == EGL_NO_DISPLAY )
+			eglDpy = eglGetDisplay( nullptr );
 
-		for( int i = 0; i < numDevices; ++i )
+		if( eglDpy != EGL_NO_DISPLAY )
 		{
-			EGLDisplay dpy = EGL_NO_DISPLAY;
-			if( eglGetPlatformDisplayEXT )
+			EGLint major, minor;
+			if( eglInitialize( eglDpy, &major, &minor ) )
 			{
-				dpy = eglGetPlatformDisplayEXT( EGL_PLATFORM_DEVICE_EXT, devices[i], nullptr );
-			}
-			if( dpy != EGL_NO_DISPLAY )
-			{
-				EGLint major, minor;
-				if( eglInitialize( dpy, &major, &minor ) )
+				const EGLint configAttribs[] = {
+					EGL_SURFACE_TYPE, EGL_PBUFFER_BIT,
+					EGL_RENDERABLE_TYPE, EGL_OPENGL_BIT,
+					EGL_RED_SIZE, 8, EGL_GREEN_SIZE, 8,
+					EGL_BLUE_SIZE, 8, EGL_ALPHA_SIZE, 8,
+					EGL_DEPTH_SIZE, 24, EGL_STENCIL_SIZE, 8,
+					EGL_NONE
+				};
+				EGLConfig eglConfig;
+				EGLint numConfigs;
+				if( eglChooseConfig( eglDpy, configAttribs, &eglConfig, 1, &numConfigs ) && numConfigs > 0 )
 				{
-					candidateDisplays.push_back( dpy );
+					eglBindAPI( EGL_OPENGL_API );
+					EGLContext eglCtx = eglCreateContext( eglDpy, eglConfig, EGL_NO_CONTEXT, nullptr );
+					if( eglCtx != EGL_NO_CONTEXT )
+					{
+						const EGLint pbAttribs[] = { EGL_WIDTH, 1, EGL_HEIGHT, 1, EGL_NONE };
+						EGLSurface surf = eglCreatePbufferSurface( eglDpy, eglConfig, pbAttribs );
+						if( surf != EGL_NO_SURFACE )
+						{
+							// Test: make the context current and check GL_RENDERER.
+							// Only keep this context if makeCurrent succeeded AND
+							// the GL implementation is usable (non-null renderer).
+							if( eglMakeCurrent( eglDpy, surf, surf, eglCtx ) )
+							{
+								const char *renderer = (const char*)glGetString( GL_RENDERER );
+								if( renderer )
+								{
+									m_eglDisplay = (void*)eglDpy;
+									m_eglContext = (void*)eglCtx;
+									m_eglSurface = (void*)surf;
+								}
+								eglMakeCurrent( eglDpy, surf, surf, EGL_NO_CONTEXT );
+							}
+							if( !m_eglContext )
+							{
+								eglDestroySurface( eglDpy, surf );
+							}
+						}
+						if( !m_eglContext )
+							eglDestroyContext( eglDpy, eglCtx );
+					}
 				}
 			}
 		}
-	}
-
-	// Add the default display as a software fallback.
-	{
-		EGLDisplay dpy = eglGetDisplay( EGL_DEFAULT_DISPLAY );
-		if( dpy == EGL_NO_DISPLAY )
-			dpy = eglGetDisplay( nullptr );
-		if( dpy != EGL_NO_DISPLAY )
-		{
-			EGLint major, minor;
-			if( eglInitialize( dpy, &major, &minor ) )
-			{
-				candidateDisplays.push_back( dpy );
-			}
-		}
-	}
-
-	// Try each display.  Prefer hardware, accept llvmpipe as last resort.
-	// The last display in the list is the default (Mesa software fallback).
-	for( EGLDisplay dpy : candidateDisplays )
-	{
-		const EGLint configAttribs[] = {
-			EGL_SURFACE_TYPE, EGL_PBUFFER_BIT,
-			EGL_RENDERABLE_TYPE, EGL_OPENGL_BIT,
-			EGL_RED_SIZE, 8, EGL_GREEN_SIZE, 8,
-			EGL_BLUE_SIZE, 8, EGL_ALPHA_SIZE, 8,
-			EGL_DEPTH_SIZE, 24, EGL_STENCIL_SIZE, 8,
-			EGL_NONE
-		};
-		EGLConfig eglConfig;
-		EGLint numConfigs;
-		if( !eglChooseConfig( dpy, configAttribs, &eglConfig, 1, &numConfigs ) || numConfigs == 0 )
-			continue;
-
-		eglBindAPI( EGL_OPENGL_API );
-		EGLContext eglCtx = eglCreateContext( dpy, eglConfig, EGL_NO_CONTEXT, nullptr );
-		if( eglCtx == EGL_NO_CONTEXT )
-			continue;
-
-		const EGLint pbAttribs[] = { EGL_WIDTH, 1, EGL_HEIGHT, 1, EGL_NONE };
-		EGLSurface surf = eglCreatePbufferSurface( dpy, eglConfig, pbAttribs );
-		if( surf == EGL_NO_SURFACE )
-		{
-			eglDestroyContext( dpy, eglCtx );
-			continue;
-		}
-
-		// Test: make the context current and check GL_RENDERER.
-		// Skip llvmpipe if a hardware device is still available further in the list.
-		eglMakeCurrent( dpy, surf, surf, eglCtx );
-		const char *renderer = (const char*)glGetString( GL_RENDERER );
-		bool isHW = renderer && !strstr( renderer, "llvmpipe" ) && !strstr( renderer, "soft" );
-		eglMakeCurrent( dpy, surf, surf, EGL_NO_CONTEXT );
-
-		// If this is the last candidate or it's hardware, keep it.
-		if( isHW || &dpy == &candidateDisplays.back() )
-		{
-			m_eglDisplay = (void*)dpy;
-			m_eglContext = (void*)eglCtx;
-			m_eglSurface = (void*)surf;
-			break;
-		}
-
-		// Otherwise destroy and try the next one.
-		eglDestroySurface( dpy, surf );
-		eglDestroyContext( dpy, eglCtx );
 	}
 
 	// ---- 2. GLX path (hardware GPU with X11) ----
@@ -396,46 +352,16 @@ bool GLContextManager::makeCurrent()
 	}
 
 	// ---- 3. OSMesa fallback (CPU software) ----
-
-	if( !m_osmesaContext )
-	{
-		std::cerr << "GL backend: no OSMesa available" << std::endl;
-		return false;
-	}
-
-	if( !OSMesaMakeCurrent( (OSMesaContext)m_osmesaContext, m_osmesaBuffer, GL_UNSIGNED_BYTE, 1, 1 ) )
-	{
-		std::cerr << "GL backend: OSMesaMakeCurrent failed" << std::endl;
-		return false;
-	}
-
-	// Always accept OSMesa — it's our last resort, no renderer validation
-	static int osmesaGlewState = 0;
-	if( osmesaGlewState == 0 )
-	{
-		glewExperimental = GL_TRUE;
-		GLenum err = glewInit();
-#ifdef GLEW_ERROR_NO_GLX_DISPLAY
-		if( err == GLEW_OK || err == GLEW_ERROR_NO_GLX_DISPLAY )
-#else
-		if( err == GLEW_OK )
-#endif
-		{
-			osmesaGlewState = 1;
-		}
-		else
-		{
-			osmesaGlewState = -1;
-		}
-	}
-
-	if( osmesaGlewState == 1 )
-	{
-		std::cerr << "GL backend: OSMesa" << std::endl;
-		m_usingHardware = false;
-		m_makeCurrentCount = 1;
-		return true;
-	}
+	//
+	// OSMesa provides a software GL context but glewInit() on OSMesa
+	// returns GLEW_ERROR_NO_GLX_DISPLAY (no GLX display connection), and
+	// glXGetProcAddressARB fails to resolve extension function pointers.
+	// In particular, FBO function pointers (glGenFramebuffers, etc.)
+	// remain NULL and every GL call through them would jump to address 0.
+	//
+	// Since our GL rendering relies on FBOs, we cannot use OSMesa for GL
+	// rendering.  Return false so the caller falls back to the CPU render
+	// path, which works correctly on OSMesa (plugin renders via clipGetImage).
 
 	return false;
 }
