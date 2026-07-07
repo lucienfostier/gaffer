@@ -27,7 +27,7 @@ void Binary::load()
     return;
 
 #if defined (UNIX)
-  _dlHandle = dlopen(_binaryPath.c_str(), RTLD_LAZY|RTLD_LOCAL|RTLD_DEEPBIND);
+  _dlHandle = dlopen(_binaryPath.c_str(), RTLD_LAZY|RTLD_LOCAL);
 #else
   _dlHandle = LoadLibrary(_binaryPath.c_str());
 #endif

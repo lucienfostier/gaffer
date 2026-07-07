@@ -36,8 +36,8 @@
 
 #include <GL/gl.h>
 #include <GL/glext.h>
-#include <GL/osmesa.h>
 
+#include <dlfcn.h>
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
 
@@ -65,9 +65,8 @@ GLContextManager::GLContextManager()
 	m_glxDisplay = nullptr;
 	m_glxContext = nullptr;
 	m_glxWindow = 0;
-	m_osmesaContext = nullptr;
-	m_osmesaBuffer = nullptr;
 	m_usingHardware = false;
+	m_pluginDispatchOK = false;
 	m_backendName = "none";
 
 	// ---- 1. EGL with device enumeration ----
@@ -203,45 +202,64 @@ GLContextManager::GLContextManager()
 
 							if( eglMakeCurrent( dpy, surf, surf, ctx ) )
 							{
-								const char *renderer = (const char*)glGetString( GL_RENDERER );
-								if( renderer && renderer[0] )
+							auto getStringFn = (const GLubyte* (*)(GLenum))eglGetProcAddress( "glGetString" );
+							const char *renderer = getStringFn ? (const char*)getStringFn( GL_RENDERER ) : nullptr;
+							if( renderer && renderer[0] )
+							{
+								std::cerr
+									<< "EGL device " << i << " ("
+									<< ( pass == 0 ? "hardware pass" : "software pass" )
+									<< "): GL_RENDERER = " << renderer << std::endl;
+								m_eglDisplay = (void*)dpy;
+								m_eglContext = (void*)ctx;
+								m_eglSurface = (void*)surf;
+								m_rendererString = renderer;
+								m_backendName = "EGL";
+								m_usingHardware = !strstr( renderer, "llvmpipe" ) &&
+								                  !strstr( renderer, "soft" );
+
+								// Dual-probe: check what plugins will see via
+								// global scope (same lookup a dlopen'd module uses).
+								typedef const GLubyte* (*GetStringFn)( GLenum );
+								GetStringFn globalGetString = (GetStringFn)::dlsym( RTLD_DEFAULT, "glGetString" );
+								const char *pluginRenderer = globalGetString ? (const char*)globalGetString( GL_RENDERER ) : nullptr;
+								m_pluginDispatchOK = ( pluginRenderer && pluginRenderer[0] );
+								if( !m_pluginDispatchOK )
 								{
-									std::cerr
-										<< "EGL device " << i << " ("
-										<< ( pass == 0 ? "hardware pass" : "software pass" )
-										<< "): GL_RENDERER = " << renderer << std::endl;
-									m_eglDisplay = (void*)dpy;
-									m_eglContext = (void*)ctx;
-									m_eglSurface = (void*)surf;
-									m_rendererString = renderer;
-									m_backendName = "EGL";
-									m_usingHardware = !strstr( renderer, "llvmpipe" ) &&
-									                  !strstr( renderer, "soft" );
-									std::cerr << "  -> SELECTED device " << i
-									          << " (backend=EGL, hardware="
-									          << m_usingHardware << ")" << std::endl;
-									if( initGLEW( "EGL" ) )
-									{
-										// Probe succeeded.  Unbind properly per
-										// EGL §3.7.3: both surfaces must be
-										// EGL_NO_SURFACE when ctx is EGL_NO_CONTEXT.
-										eglMakeCurrent( dpy, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT );
-									}
-									else
-									{
-										std::cerr << "  -> initGLEW failed, discarding device"
-										          << std::endl;
-										eglMakeCurrent( dpy, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT );
-										eglDestroySurface( dpy, surf );
-										eglDestroyContext( dpy, ctx );
-										eglTerminate( dpy );
-										m_eglDisplay = nullptr;
-										m_eglContext = nullptr;
-										m_eglSurface = nullptr;
-									}
-									break;
+									std::cerr << "  -> WARNING: glGetString from global scope returns NULL —"
+									          << " a GLX vendor library (libGLX_mesa.so.0) is first in scope"
+									          << " and its gl* exports capture bindings for late-loaded modules."
+									          << " Fix: LD_PRELOAD libGL.so.1 so GLVND stub wins scope."
+									          << std::endl;
 								}
-								std::cerr << "  -> glGetString(GL_RENDERER) returned NULL" << std::endl;
+
+								std::cerr << "  -> SELECTED device " << i
+								          << " (backend=EGL, hardware="
+								          << m_usingHardware << ")" << std::endl;
+								if( initGLEW( "EGL" ) )
+								{
+									// Probe succeeded.  Unbind properly per
+									// EGL §3.7.3: both surfaces must be
+									// EGL_NO_SURFACE when ctx is EGL_NO_CONTEXT.
+									eglMakeCurrent( dpy, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT );
+								}
+								else
+								{
+									std::cerr << "  -> initGLEW failed, discarding device"
+									          << std::endl;
+									eglMakeCurrent( dpy, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT );
+									eglDestroySurface( dpy, surf );
+									eglDestroyContext( dpy, ctx );
+									eglTerminate( dpy );
+									m_eglDisplay = nullptr;
+									m_eglContext = nullptr;
+									m_eglSurface = nullptr;
+								}
+								break;
+							}
+							std::cerr << "  -> eglMakeCurrent succeeded but renderer probe NULL"
+							          << " (GL dispatch mismatch via GLVND; use eglGetProcAddress"
+							          << " for glGetString)" << std::endl;
 								eglMakeCurrent( dpy, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT );
 							}
 							else
@@ -299,7 +317,8 @@ GLContextManager::GLContextManager()
 							{
 								if( eglMakeCurrent( eglDpy, surf, surf, eglCtx ) )
 								{
-									const char *renderer = (const char*)glGetString( GL_RENDERER );
+									auto getStringFn = (const GLubyte* (*)(GLenum))eglGetProcAddress( "glGetString" );
+									const char *renderer = getStringFn ? (const char*)getStringFn( GL_RENDERER ) : nullptr;
 									if( renderer && renderer[0] )
 									{
 										std::cerr << "EGL fallback (default display): GL_RENDERER = "
@@ -371,17 +390,7 @@ GLContextManager::GLContextManager()
 		}
 	}
 
-	// ---- 3. OSMesa fallback (CPU software) ----
-
-	OSMesaContext osCtx = OSMesaCreateContextExt( OSMESA_RGBA, 24, 8, 0, nullptr );
-	if( osCtx )
-	{
-		unsigned char *osBuffer = (unsigned char*)malloc( 4 );
-		m_osmesaContext = (void*)osCtx;
-		m_osmesaBuffer = (void*)osBuffer;
-	}
-
-	if( !m_eglContext && !m_glxContext && !m_osmesaContext )
+	if( !m_eglContext && !m_glxContext )
 	{
 	}
 }
@@ -406,12 +415,6 @@ GLContextManager::~GLContextManager()
 		cleanupTextures();
 	}
 
-	if( m_osmesaContext )
-	{
-		OSMesaDestroyContext( (OSMesaContext)m_osmesaContext );
-		free( m_osmesaBuffer );
-	}
-
 	if( m_glxContext )
 	{
 		glXDestroyContext( (Display*)m_glxDisplay, (GLXContext)m_glxContext );
@@ -431,18 +434,25 @@ GLContextManager::~GLContextManager()
 
 bool GLContextManager::initGLEW( const char *backendName )
 {
-	// We do NOT call glewInit() — on NVIDIA EGL it corrupts glGetString
-	// (returns NULL for all queries) and invalidates function pointers.
-	// Instead we verify GL state directly and load FBO functions manually.
+	// We do NOT call glewInit().  Under RDP (or any X server without NVIDIA
+	// GLX driver), Qt's GLX init loads libGLX_mesa.so.0 before our code runs.
+	// That library's gl* exports capture global-scope symbol bindings for all
+	// subsequently-loaded modules.  GLEW resolves through those captured
+	// bindings, and Mesa's stub sees no current context under our EGL setup.
+	// Loading via eglGetProcAddress routes directly through NVIDIA's EGL
+	// driver, bypassing the global-scope GLX capture entirely.
 
-	const char *renderer = (const char*)glGetString( GL_RENDERER );
-	const char *versionStr = (const char*)glGetString( GL_VERSION );
-	const char *vendor = (const char*)glGetString( GL_VENDOR );
+	auto getStringFn = (const GLubyte* (*)(GLenum))eglGetProcAddress( "glGetString" );
+	const char *renderer = getStringFn ? (const char*)getStringFn( GL_RENDERER ) : nullptr;
+	const char *versionStr = getStringFn ? (const char*)getStringFn( GL_VERSION ) : nullptr;
+	const char *vendor = getStringFn ? (const char*)getStringFn( GL_VENDOR ) : nullptr;
 
 	if( !renderer )
 	{
 		std::cerr << "initGLEW(" << backendName << "): glGetString(GL_RENDERER) returned NULL"
-		          << std::endl;
+		          << " (dispatch mismatch via GLVND; eglGetProcAddress returned "
+		          << ( getStringFn ? "valid ptr but NULL result" : "NULL for glGetString" )
+		          << ")" << std::endl;
 		return false;
 	}
 
@@ -532,9 +542,7 @@ bool GLContextManager::makeCurrent()
 			if( err == 0x3002 )  // EGL_BAD_ACCESS
 			{
 				std::cerr << " — context owned by thread "
-				          << ( m_ownerThread != std::thread::id()
-				               ? std::to_string( *(uint64_t*)&m_ownerThread )
-				               : "(none)" )
+				          << m_ownerThread
 				          << "; GL work dispatched to wrong thread?" << std::endl;
 				return false;  // Dispatch bug — do NOT fall back to GLX/OSMesa
 			}
@@ -545,7 +553,23 @@ bool GLContextManager::makeCurrent()
 		{
 			m_ownerThread = std::this_thread::get_id();
 			m_backendName = "EGL";
-			std::cerr << "GL backend: EGL" << std::endl;
+
+			// Dual-probe: check what plugins see via global scope
+			typedef const GLubyte* (*GetStringFn)( GLenum );
+			GetStringFn globalGetString = (GetStringFn)::dlsym( RTLD_DEFAULT, "glGetString" );
+			const char *pluginRenderer = globalGetString ? (const char*)globalGetString( GL_RENDERER ) : nullptr;
+			m_pluginDispatchOK = ( pluginRenderer && pluginRenderer[0] );
+			if( !m_pluginDispatchOK )
+			{
+				std::cerr << "GL backend: EGL (plugin dispatch FAILS — "
+				          << "global-scope glGetString returns NULL; "
+				          << "GLX vendor lib captured GL bindings before GLVND stub."
+				          << " openGLEnabled=0 for instances)" << std::endl;
+			}
+			else
+			{
+				std::cerr << "GL backend: EGL" << std::endl;
+			}
 			return true;
 		}
 		else
@@ -571,10 +595,7 @@ bool GLContextManager::makeCurrent()
 		}
 	}
 
-	// ---- 3. OSMesa fallback (CPU software) ----
-
-	m_backendName = "OSMesa";
-	std::cerr << "makeCurrent: all backends failed, returning false" << std::endl;
+	m_backendName = "none";
 	return false;
 }
 

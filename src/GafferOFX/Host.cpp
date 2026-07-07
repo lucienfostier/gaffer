@@ -38,6 +38,7 @@
 
 #include <cstring>
 
+#include <dlfcn.h>
 #include <fstream>
 #include <map>
 
@@ -45,6 +46,17 @@ using namespace GafferOFX;
 
 Host::Host()
 {
+	// Pre-promote GLVND libraries into the global scope so that any
+	// subsequently-loaded OFX plugin resolves glGetString etc. through
+	// GLVND's dispatch layer.  Without this, a plugin dlopen'd with
+	// RTLD_DEEPBIND (or RTLD_LOCAL with no global GL definition) binds
+	// its own GL provider (e.g. OSMesa's glapi) instead, which can't
+	// dispatch for a host-created EGL context and returns NULL.
+	//
+	// RTLD_NODELETE prevents later dlclose from removing the symbols.
+	::dlopen( "libOpenGL.so.0", RTLD_NOW | RTLD_GLOBAL | RTLD_NODELETE );
+	::dlopen( "libGL.so.1",     RTLD_NOW | RTLD_GLOBAL | RTLD_NODELETE );
+	::dlopen( "libEGL.so.1",    RTLD_NOW | RTLD_GLOBAL | RTLD_NODELETE );
 	_properties.setIntProperty(kOfxPropAPIVersion, 1, 0);
 	_properties.setIntProperty(kOfxPropAPIVersion, 4, 1);
 	_properties.setStringProperty(kOfxPropName, "GafferOFXHost");

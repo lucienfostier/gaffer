@@ -1132,7 +1132,13 @@ IECore::ConstCompoundObjectPtr OFXImageNode::computeOfxRenderBuffer( const Gaffe
 
 			if( useGL )
 			{
-				if( pluginSupportsGL )
+				bool pluginDispatchOK = gl.pluginDispatchOK();
+				if( pluginSupportsGL && !pluginDispatchOK )
+				{
+					// Plugin wants GL but host dispatch is broken (e.g.
+					// non-GLVND libGL in process).  Fall back to CPU path.
+				}
+				if( pluginSupportsGL && pluginDispatchOK )
 				{
 					// Per-instance: contextAttachedAction exactly once.
 					if( !m_glContextAttached )

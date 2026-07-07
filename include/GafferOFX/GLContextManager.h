@@ -41,6 +41,11 @@ class GAFFEROFX_API GLContextManager
 		/// Returns the GL_RENDERER string of the active context.
 		const char* rendererString() const { return m_rendererString.c_str(); }
 
+		/// Returns true if plain glGetString (what plugins link against)
+		/// works with our context. False means a non-GLVND libGL is in
+		/// the process; plugins will crash on GL calls — gate openGLEnabled.
+		bool pluginDispatchOK() const { return m_pluginDispatchOK; }
+
 		// Loaded GL function pointers (initialized by initGLEW)
 		static unsigned int (*glGenFramebuffersF)( unsigned int n, unsigned int *ids );
 		static void (*glBindFramebufferF)( unsigned int target, unsigned int fbo );
@@ -79,14 +84,15 @@ class GAFFEROFX_API GLContextManager
 		void* m_glxContext;
 		unsigned long m_glxWindow;
 
-		// OSMesa members (CPU fallback)
-		void* m_osmesaContext;
-		void* m_osmesaBuffer;
-
 		/// Which backend is currently active (set by makeCurrent)
 		bool m_usingHardware;
 		const char* m_backendName;
 		std::string m_rendererString;
+
+		/// True if plain glGetString resolves correctly through our context.
+		/// False means a non-GLVND libGL is in the process; plugins will
+		/// see NULL from their own glGetString and crash.
+		bool m_pluginDispatchOK;
 
 		/// Thread that first bound the context (set by makeCurrent).
 		/// EGL_BAD_ACCESS when binding from another thread is a dispatch bug.
