@@ -69,11 +69,6 @@ GLContextManager::GLContextManager()
 	m_osmesaBuffer = nullptr;
 	m_usingHardware = false;
 	m_backendName = "none";
-	m_savedDisplay = nullptr;
-	m_savedDrawable = nullptr;
-	m_savedContext = nullptr;
-	m_savedEglContext = nullptr;
-	m_makeCurrentCount = 0;
 
 	// ---- 1. EGL with device enumeration ----
 	//
@@ -225,21 +220,18 @@ GLContextManager::GLContextManager()
 									std::cerr << "  -> SELECTED device " << i
 									          << " (backend=EGL, hardware="
 									          << m_usingHardware << ")" << std::endl;
-									// NVIDIA EGL doesn't properly unbind with EGL_NO_CONTEXT
-									// (eglGetCurrentContext stays non-NULL), so we keep
-									// the context current and initialize GLEW here.
 									if( initGLEW( "EGL" ) )
 									{
-										// Leave context current on this thread (NVIDIA EGL doesn't
-										// properly unbind).  The idempotency guard in makeCurrent()
-										// checks eglGetCurrentContext() (thread-local), so the
-										// worker thread will correctly call eglMakeCurrent.
+										// Probe succeeded.  Unbind properly per
+										// EGL §3.7.3: both surfaces must be
+										// EGL_NO_SURFACE when ctx is EGL_NO_CONTEXT.
+										eglMakeCurrent( dpy, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT );
 									}
 									else
 									{
 										std::cerr << "  -> initGLEW failed, discarding device"
 										          << std::endl;
-										eglMakeCurrent( dpy, surf, surf, EGL_NO_CONTEXT );
+										eglMakeCurrent( dpy, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT );
 										eglDestroySurface( dpy, surf );
 										eglDestroyContext( dpy, ctx );
 										eglTerminate( dpy );
@@ -250,7 +242,7 @@ GLContextManager::GLContextManager()
 									break;
 								}
 								std::cerr << "  -> glGetString(GL_RENDERER) returned NULL" << std::endl;
-								eglMakeCurrent( dpy, surf, surf, EGL_NO_CONTEXT );
+								eglMakeCurrent( dpy, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT );
 							}
 							else
 							{
@@ -320,7 +312,7 @@ GLContextManager::GLContextManager()
 										m_usingHardware = !strstr( renderer, "llvmpipe" ) &&
 										                  !strstr( renderer, "soft" );
 									}
-									eglMakeCurrent( eglDpy, surf, surf, EGL_NO_CONTEXT );
+									eglMakeCurrent( eglDpy, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT );
 								}
 								if( !m_eglContext )
 									eglDestroySurface( eglDpy, surf );
@@ -396,7 +388,23 @@ GLContextManager::GLContextManager()
 
 GLContextManager::~GLContextManager()
 {
-	cleanupTextures();
+	// Skip GL cleanup if not on the owning thread — the context isn't
+	// current here, so glDeleteTextures / glDeleteFramebuffers would be
+	// silent no-ops (leaked GPU memory).  At process exit the driver
+	// reclaims everything anyway; at module unload the worker has already
+	// been joined.
+	if( m_ownerThread != std::thread::id() &&
+	    m_ownerThread != std::this_thread::get_id() )
+	{
+		// Let the worker's textures leak — driver cleanup at exit.
+		m_textures.clear();
+		m_outputFBO = 0;
+		m_outputTex = 0;
+	}
+	else
+	{
+		cleanupTextures();
+	}
 
 	if( m_osmesaContext )
 	{
@@ -484,7 +492,7 @@ bool GLContextManager::initGLEW( const char *backendName )
 	}
 
 	if( !glGenFramebuffersF || !glBindFramebufferF || !glFramebufferTexture2DF ||
-	    !glCheckFramebufferStatusF )
+	    !glCheckFramebufferStatusF || !glDeleteFramebuffersF )
 	{
 		std::cerr << "initGLEW(" << backendName << "): FBO functions not available via eglGetProcAddress"
 		          << std::endl;
@@ -503,39 +511,9 @@ void (*GLContextManager::glDeleteFramebuffersF)( unsigned int, const unsigned in
 
 bool GLContextManager::makeCurrent()
 {
-	// Idempotency guard: if our context is already current on this thread,
-	// there's nothing to do. This handles nested calls from ClipInstance::loadTexture
-	// (called from inside renderAction) without relying on m_makeCurrentCount alone,
-	// which could be 0 if the first makeCurrent went through a different backend.
-	if( m_eglContext && eglGetCurrentContext() == (EGLContext)m_eglContext )
-	{
-		std::cerr << "makeCurrent: idempotency (EGL already current)" << std::endl;
-		return true;
-	}
-	if( m_glxContext && glXGetCurrentContext() == (GLXContext)m_glxContext )
-	{
-		std::cerr << "makeCurrent: idempotency (GLX already current)" << std::endl;
-		return true;
-	}
-	if( m_osmesaContext && OSMesaGetCurrentContext() == (OSMesaContext)m_osmesaContext )
-	{
-		std::cerr << "makeCurrent: idempotency (OSMesa already current)" << std::endl;
-		return true;
-	}
-
-	// Reentrant: if we're already in our context, just bump the counter
-	if( m_makeCurrentCount > 0 )
-	{
-		std::cerr << "makeCurrent: reentrant (count=" << m_makeCurrentCount << ")" << std::endl;
-		m_makeCurrentCount++;
-		return true;
-	}
-
-	// Save the current GL context state before we replace it
-	m_savedDisplay = (void*)glXGetCurrentDisplay();
-	m_savedDrawable = (void*)(unsigned long)glXGetCurrentDrawable();
-	m_savedContext = (void*)glXGetCurrentContext();
-	m_savedEglContext = (void*)eglGetCurrentContext();
+	// Always call eglMakeCurrent.  The constructor unbinds before returning,
+	// so no thread owns the context at rest.  Rebinding the same context on
+	// the same thread is a valid no-op per EGL spec (no error).
 
 	// ---- 1. EGL (preferred — GPU + surfaceless) ----
 
@@ -548,20 +526,31 @@ bool GLContextManager::makeCurrent()
 		EGLBoolean ok = eglMakeCurrent( dpy, surf, surf, ctx );
 		if( !ok )
 		{
-			std::cerr << "makeCurrent: EGL eglMakeCurrent failed (err="
-			          << eglGetError() << ")" << std::endl;
+			EGLint err = eglGetError();
+			std::cerr << "makeCurrent: eglMakeCurrent failed (err=0x" << std::hex << err
+			          << std::dec << ")";
+			if( err == 0x3002 )  // EGL_BAD_ACCESS
+			{
+				std::cerr << " — context owned by thread "
+				          << ( m_ownerThread != std::thread::id()
+				               ? std::to_string( *(uint64_t*)&m_ownerThread )
+				               : "(none)" )
+				          << "; GL work dispatched to wrong thread?" << std::endl;
+				return false;  // Dispatch bug — do NOT fall back to GLX/OSMesa
+			}
+			std::cerr << std::endl;
+			// Fall through to GLX below
 		}
-		else if( !initGLEW( "EGL" ) )
+		else if( initGLEW( "EGL" ) )
 		{
-			std::cerr << "makeCurrent: EGL initGLEW failed" << std::endl;
+			m_ownerThread = std::this_thread::get_id();
+			m_backendName = "EGL";
+			std::cerr << "GL backend: EGL" << std::endl;
+			return true;
 		}
 		else
 		{
-			std::cerr << "GL backend: EGL" << std::endl;
-			m_usingHardware = true;
-			m_backendName = "EGL";
-			m_makeCurrentCount = 1;
-			return true;
+			std::cerr << "makeCurrent: EGL initGLEW failed" << std::endl;
 		}
 	}
 
@@ -574,10 +563,9 @@ bool GLContextManager::makeCurrent()
 		{
 			if( initGLEW( "GLX" ) )
 			{
-				std::cerr << "GL backend: GLX" << std::endl;
-				m_usingHardware = true;
+				m_ownerThread = std::this_thread::get_id();
 				m_backendName = "GLX";
-				m_makeCurrentCount = 1;
+				std::cerr << "GL backend: GLX" << std::endl;
 				return true;
 			}
 		}
@@ -592,48 +580,8 @@ bool GLContextManager::makeCurrent()
 
 void GLContextManager::release()
 {
-	if( m_makeCurrentCount > 0 )
-		m_makeCurrentCount--;
-	if( m_makeCurrentCount > 0 )
-	{
-		return;
-	}
-
-	// Unbind OUR context first
-	if( m_usingHardware )
-	{
-		if( m_eglContext )
-		{
-			EGLSurface surf = m_eglSurface ? (EGLSurface)m_eglSurface : EGL_NO_SURFACE;
-			eglMakeCurrent( (EGLDisplay)m_eglDisplay, surf, surf, EGL_NO_CONTEXT );
-		}
-		else if( m_glxContext )
-		{
-			glXMakeCurrent( (Display*)m_glxDisplay, None, nullptr );
-		}
-	}
-	else if( m_osmesaContext )
-	{
-		OSMesaMakeCurrent( nullptr, nullptr, GL_UNSIGNED_BYTE, 0, 0 );
-	}
-
-	// Restore the saved context (if any)
-	if( m_savedContext )
-	{
-		glXMakeCurrent(
-			(Display*)m_savedDisplay,
-			(GLXPbuffer)(unsigned long)m_savedDrawable,
-			(GLXContext)m_savedContext
-		);
-	}
-	else if( m_savedEglContext )
-	{
-		eglMakeCurrent( (EGLDisplay)m_savedDisplay, EGL_NO_SURFACE, EGL_NO_SURFACE, (EGLContext)m_savedEglContext );
-	}
-	m_savedDisplay = nullptr;
-	m_savedDrawable = nullptr;
-	m_savedContext = nullptr;
-	m_savedEglContext = nullptr;
+	// Worker-owned context: we never unbind.  The context stays bound
+	// on the worker thread persistently.
 }
 
 void GLContextManager::registerTexture( unsigned int id )
@@ -653,7 +601,7 @@ void GLContextManager::cleanupTextures()
 	if( m_outputFBO || m_outputTex )
 	{
 		makeCurrent();
-		if( m_outputFBO )
+		if( m_outputFBO && glDeleteFramebuffersF )
 			glDeleteFramebuffersF( 1, &m_outputFBO );
 		if( m_outputTex )
 			glDeleteTextures( 1, &m_outputTex );
@@ -674,7 +622,8 @@ void GLContextManager::setOutputFBO( unsigned int fbo, unsigned int tex, int wid
 		m_outputFBO = 0;
 		m_outputTex = 0;
 		makeCurrent();
-		glDeleteFramebuffersF( 1, &oldFbo );
+		if( glDeleteFramebuffersF )
+			glDeleteFramebuffersF( 1, &oldFbo );
 		glDeleteTextures( 1, &oldTex );
 	}
 	m_outputFBO = fbo;

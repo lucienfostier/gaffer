@@ -3,6 +3,7 @@
 #include "GafferOFX/Export.h"
 
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace GafferOFX
@@ -87,16 +88,9 @@ class GAFFEROFX_API GLContextManager
 		const char* m_backendName;
 		std::string m_rendererString;
 
-		/// Previous GL context state (saved before makeCurrent, restored by release)
-		void* m_savedDisplay;
-		void* m_savedDrawable;
-		void* m_savedContext;
-		void* m_savedEglContext;
-
-		/// Reentrancy counter; makeCurrent/release are reference-counted so that
-		/// calls from the OFX plugin (e.g. ClipInstance::loadTexture) don't
-		/// overwrite the outer saved state.
-		int m_makeCurrentCount;
+		/// Thread that first bound the context (set by makeCurrent).
+		/// EGL_BAD_ACCESS when binding from another thread is a dispatch bug.
+		std::thread::id m_ownerThread;
 
 		std::vector<unsigned int> m_textures;
 
