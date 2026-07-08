@@ -860,19 +860,112 @@ class OFXImageNodeTest( GafferTest.TestCase ) :
 
 	def testOpenGLEnabled( self ) :
 
-		# Verify the GL context state. If hardware GL is active, the
-		# FBO/texture path should be available for GL-based OFX plugins.
-		# If only OSMesa (CPU software) is available, GL rendering is
-		# disabled and the CPU path is used.
 		mgr = GafferOFX.GLContextManager.instance()
-		self.assertIn( mgr.backendName(), ( "EGL", "GLX", "OSMesa", "none" ) )
-
 		info = f"GL backend: {mgr.backendName()}, renderer: {mgr.rendererString()}"
-		if mgr.usingHardware() :
-			print( f"GL hardware: {info}" )
-		else :
-			print( f"GL software/cpu: {info}" )
-			print( "GL FBO path will not be tested — skipped" )
+		print( f"GL hardware: {info}" )
+
+		# At minimum the backend should be initialized.
+		self.assertIn( mgr.backendName(), ( "EGL", "GLX" ) )
+		self.assertNotEqual( mgr.rendererString(), "" )
+
+		# S_Blur plugin should render with GL path when hardware is available.
+		# This verifies the dual-probe gate allows openGLEnabled=1.
+		s = Gaffer.ScriptNode()
+		cb = GafferImage.Checkerboard()
+		s.addChild( cb )
+		cb["format"].setValue( GafferImage.Format( 64, 64 ) )
+
+		n = GafferOFX.OFXImageNode()
+		s.addChild( n )
+		n["in"].setInput( cb["out"] )
+		n["pluginId"].setValue( "com.genarts.sapphire.BlurSharpen.S_Blur" )
+		self.assertTrue( n.createPluginInstance() )
+
+		dw = n["out"]["dataWindow"].getValue()
+		self.assertGreater( dw.size().x, 0 )
+		self.assertGreater( dw.size().y, 0 )
+
+		for ch in [ "R", "G", "B", "A" ] :
+			tile = n["out"].channelData( ch, imath.V2i( 0 ) )
+			nonZero = sum( 1 for v in tile if abs( v ) > 1e-6 )
+			self.assertGreater( nonZero, 0 )
+
+	# -----------------------------------------------------------------------
+	# GL plugin chain tests
+	# -----------------------------------------------------------------------
+
+	def testMultiInstanceGLChain( self ) :
+
+		# Chain two GL-capable plugins: S_Blur → Shadertoy
+		s = Gaffer.ScriptNode()
+
+		cb = GafferImage.Checkerboard()
+		s.addChild( cb )
+		cb["format"].setValue( GafferImage.Format( 64, 64 ) )
+
+		sblur = GafferOFX.OFXImageNode()
+		s.addChild( sblur )
+		sblur["in"].setInput( cb["out"] )
+		sblur["pluginId"].setValue( "com.genarts.sapphire.BlurSharpen.S_Blur" )
+		self.assertTrue( sblur.createPluginInstance() )
+
+		shadertoy = GafferOFX.OFXImageNode()
+		s.addChild( shadertoy )
+		shadertoy["in"].setInput( sblur["out"] )
+		shadertoy["pluginId"].setValue( "net.sf.openfx.Shadertoy" )
+		self.assertTrue( shadertoy.createPluginInstance() )
+
+		dw = shadertoy["out"]["dataWindow"].getValue()
+		self.assertGreater( dw.size().x, 0 )
+		self.assertGreater( dw.size().y, 0 )
+
+		tileSize = shadertoy["out"].tileSize()
+		for ch in [ "R", "G", "B", "A" ] :
+			tile = shadertoy["out"].channelData( ch, imath.V2i( 0 ) )
+			self.assertEqual( len( tile ), tileSize * tileSize )
+			nonZero = sum( 1 for v in tile if abs( v ) > 1e-6 )
+			self.assertGreater( nonZero, 0 )
+
+	def testCPUtoGLChain( self ) :
+
+		# Chain a CPU plugin through a GL plugin: BasicGain → Shadertoy
+		s = Gaffer.ScriptNode()
+
+		const = GafferImage.Constant()
+		s.addChild( const )
+		const["format"].setValue( GafferImage.Format( 64, 64 ) )
+		const["color"].setValue( imath.Color4f( 0.1, 0.3, 0.5, 1.0 ) )
+
+		gain = GafferOFX.OFXImageNode()
+		s.addChild( gain )
+		gain["in"].setInput( const["out"] )
+		gain["pluginId"].setValue( "uk.co.thefoundry.BasicGainPlugin" )
+		self.assertTrue( gain.createPluginInstance() )
+		gain["parameters"]["scale"].setValue( 2.0 )
+
+		shadertoy = GafferOFX.OFXImageNode()
+		s.addChild( shadertoy )
+		shadertoy["in"].setInput( gain["out"] )
+		shadertoy["pluginId"].setValue( "net.sf.openfx.Shadertoy" )
+		self.assertTrue( shadertoy.createPluginInstance() )
+
+		dw = shadertoy["out"]["dataWindow"].getValue()
+		self.assertGreater( dw.size().x, 0 )
+		self.assertGreater( dw.size().y, 0 )
+
+		# CPU output should be correct (0.1*2 = 0.2 for R)
+		gainDw = gain["out"]["dataWindow"].getValue()
+		self.assertAlmostEqual(
+			GafferImage.Sampler( gain["out"], "R", gainDw ).sample( 0, 0 ), 0.2, places = 5
+		)
+
+		# Shadertoy should produce non-zero tiles from the CPU plugin's output
+		tileSize = shadertoy["out"].tileSize()
+		for ch in [ "R", "G", "B", "A" ] :
+			tile = shadertoy["out"].channelData( ch, imath.V2i( 0 ) )
+			self.assertEqual( len( tile ), tileSize * tileSize )
+			nonZero = sum( 1 for v in tile if abs( v ) > 1e-6 )
+			self.assertGreater( nonZero, 0 )
 
 
 if __name__ == "__main__" :

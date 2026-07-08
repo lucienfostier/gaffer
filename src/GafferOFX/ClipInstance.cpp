@@ -352,10 +352,6 @@ OFX::Host::ImageEffect::Image* ClipInstance::getImage(OfxTime time, const OfxRec
 #ifdef OFX_SUPPORTS_OPENGLRENDER
 OFX::Host::ImageEffect::Texture* ClipInstance::loadTexture( OfxTime time, const char *format, const OfxRectD *optionalBounds )
 {
-	std::cerr << "loadTexture: clip=\"" << m_name << "\" connected=" << getConnected()
-	          << " buf=" << (void*)m_externalBuffer << " w=" << m_bufferWidth << " h=" << m_bufferHeight
-	          << " hasTex=" << m_inputTexture << " texW=" << m_inputTexW << " texH=" << m_inputTexH << std::endl;
-
 	// For the Output clip, return the host-managed FBO texture so the plugin
 	// renders directly into our render target. The plugin creates its own FBO
 	// and attaches this texture as its color attachment; after render we
@@ -368,8 +364,6 @@ OFX::Host::ImageEffect::Texture* ClipInstance::loadTexture( OfxTime time, const 
 		int texH = mgr.outputTexHeight();
 		if( !tex || texW <= 0 || texH <= 0 )
 		{
-			std::cerr << "loadTexture exit: Output invalid — tex=" << tex
-			          << " w=" << texW << " h=" << texH << std::endl;
 			return nullptr;
 		}
 
@@ -387,20 +381,17 @@ OFX::Host::ImageEffect::Texture* ClipInstance::loadTexture( OfxTime time, const 
 			"none",
 			""
 		);
-		std::cerr << "loadTexture exit: Output ok tex=" << tex << " w=" << texW << " h=" << texH << std::endl;
 		return ret;
 	}
 
 	if( !m_externalBuffer || m_bufferWidth <= 0 || m_bufferHeight <= 0 )
 	{
-		std::cerr << "loadTexture exit: no buffer" << std::endl;
 		return nullptr;
 	}
 
 	GLContextManager& mgr = GLContextManager::instance();
 	if( !mgr.makeCurrent() )
 	{
-		std::cerr << "loadTexture exit: makeCurrent failed" << std::endl;
 		return nullptr;
 	}
 
@@ -433,10 +424,6 @@ OFX::Host::ImageEffect::Texture* ClipInstance::loadTexture( OfxTime time, const 
 	OfxRectI bounds;
 	bounds.x1 = 0; bounds.y1 = 0;
 	bounds.x2 = m_bufferWidth; bounds.y2 = m_bufferHeight;
-
-	GLenum gle = glGetError();
-	std::cerr << "loadTexture exit: Source ok tex=" << m_inputTexture << " w=" << m_bufferWidth
-	          << " h=" << m_bufferHeight << " glErr=0x" << std::hex << gle << std::dec << std::endl;
 
 	return new GafferTexture(
 		*this,

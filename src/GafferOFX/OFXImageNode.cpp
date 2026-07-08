@@ -1176,7 +1176,6 @@ IECore::ConstCompoundObjectPtr OFXImageNode::computeOfxRenderBuffer( const Gaffe
 					GLenum fbStatus = GLContextManager::glCheckFramebufferStatusF( GL_FRAMEBUFFER );
 					if( fbStatus != GL_FRAMEBUFFER_COMPLETE )
 					{
-						std::cerr << "FBO incomplete: 0x" << std::hex << fbStatus << std::dec << std::endl;
 					}
 
 					glViewport( 0, 0, w, h );

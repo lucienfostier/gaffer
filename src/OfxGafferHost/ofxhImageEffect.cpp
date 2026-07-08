@@ -918,7 +918,7 @@ namespace OFX {
           inArgs.setIntProperty( kOfxImageEffectPropOpenGLEnabled, 1 );
         }
 
-#       if defined(OFX_DEBUG_ACTIONS) || 1
+#       ifdef OFX_DEBUG_ACTIONS
           std::cerr << "RENDER: beginSequence openGLEnabled=" << glEnabled << " frameRange=(" << startFrame << "," << endFrame << ")" << std::endl;
 #       endif
 
@@ -973,7 +973,7 @@ namespace OFX {
 	  inArgs.setIntProperty( kOfxImageEffectPropOpenGLEnabled, 1 );
 	}
 
-#       if defined(OFX_DEBUG_ACTIONS) || 1
+#       ifdef OFX_DEBUG_ACTIONS
           std::cerr << "RENDER: openGLEnabled=" << glEnabled << " time=" << time << " roi=(" << renderRoI.x1 << "," << renderRoI.y1 << "," << renderRoI.x2 << "," << renderRoI.y2 << ")" << std::endl;
 #       endif
 
@@ -1026,7 +1026,7 @@ namespace OFX {
         {
           inArgs.setIntProperty( kOfxImageEffectPropOpenGLEnabled, 1 );
         }
-#       if defined(OFX_DEBUG_ACTIONS) || 1
+#       ifdef OFX_DEBUG_ACTIONS
           std::cerr << "RENDER: endSequence openGLEnabled=" << glEnabled << " frameRange=(" << startFrame << "," << endFrame << ")" << std::endl;
 #       endif
 #       ifdef OFX_DEBUG_ACTIONS
