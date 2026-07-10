@@ -104,6 +104,7 @@ class GAFFEROFX_API OFXImageNode : public GafferImage::ImageProcessor
 		IECore::ConstFloatVectorDataPtr computeChannelData( const std::string &channelName, const Imath::V2i &tileOrigin, const Gaffer::Context *context, const GafferImage::ImagePlug *parent ) const override;
 
 		IECore::ConstCompoundObjectPtr computeOfxRenderBuffer( const Gaffer::Context *context ) const;
+		IECore::ConstFloatVectorDataPtr computeTiledChannelData( const std::string &channelName, const Imath::V2i &tileOrigin, const Gaffer::Context *context ) const;
 
 	public :
 
@@ -127,6 +128,7 @@ class GAFFEROFX_API OFXImageNode : public GafferImage::ImageProcessor
 		mutable bool m_glContextAttached = false;
 		mutable std::atomic<bool> m_rendering = false;
 		mutable bool m_settingFromPlugin = false;
+		mutable bool m_tiledRenderSupported = false;
 		mutable std::mutex m_renderMutex;
 		std::vector<std::string> m_clipPlugNames;
 		std::unique_ptr<GafferOFXInteractInstance> m_interactInstance;

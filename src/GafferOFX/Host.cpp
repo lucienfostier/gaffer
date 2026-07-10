@@ -37,10 +37,12 @@
 #include "ofxGPURender.h"
 
 #include <cstring>
+#include <cstdlib>
 
 #include <dlfcn.h>
 #include <fstream>
 #include <map>
+#include <sys/stat.h>
 
 using namespace GafferOFX;
 
@@ -238,18 +240,28 @@ void Host::findOFXPlugins()
 	m_pluginCache = OFX::Host::ImageEffect::PluginCache(Host::instance());
 	m_pluginCache.registerInCache(*OFX::Host::PluginCache::getPluginCache());
 
-	// try to read an old cache
-	std::ifstream ifs("GafferOFXPluginCache.xml");
-	OFX::Host::PluginCache::getPluginCache()->readCache(ifs);
-	OFX::Host::PluginCache::getPluginCache()->scanPluginFiles();
-	ifs.close();
-	
-	/// flush out the current cache
-	std::ofstream of("GafferOFXPluginCache.xml");
-	OFX::Host::PluginCache::getPluginCache()->writePluginCache(of);
-	of.close();
+	// Use ~/.cache/gaffer/ for the plugin cache (avoids polluting cwd)
+	std::string cachePath;
+	const char *home = getenv("HOME");
+	if( home )
+	{
+		cachePath = std::string( home ) + "/.cache/gaffer";
+		mkdir( cachePath.c_str(), 0755 );
+		cachePath += "/GafferOFXPluginCache.xml";
 
-	m_pluginCache.dumpToStdOut();
+		std::ifstream ifs( cachePath );
+		OFX::Host::PluginCache::getPluginCache()->readCache( ifs );
+		ifs.close();
+	}
+
+	OFX::Host::PluginCache::getPluginCache()->scanPluginFiles();
+
+	if( !cachePath.empty() )
+	{
+		std::ofstream of( cachePath );
+		OFX::Host::PluginCache::getPluginCache()->writePluginCache( of );
+		of.close();
+	}
 
 }
 

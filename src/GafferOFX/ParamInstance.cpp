@@ -367,7 +367,13 @@ OfxStatus RGBAInstance::set( OfxTime time, double r, double g, double b, double 
 GafferOFX::RGBInstance::RGBInstance( GafferOFX::EffectImageInstance* effect, const std::string& name, OFX::Host::Param::Descriptor& descriptor ) : OFX::Host::Param::RGBInstance( descriptor, effect ), m_effect( effect ), m_descriptor( descriptor )
 {
 	auto* plugParent = const_cast<GafferOFX::OFXImageNode*>(static_cast<const GafferOFX::OFXImageNode*>(m_effect->node()))->parametersPlug();
-	setupTypedPlug<Color3fPlug>( name, plugParent, Plug::In, Imath::Color3f() );
+	Imath::Color3f defaultValue( 0.0f );
+	try { 
+		defaultValue.x = descriptor.getProperties().getDoubleProperty( kOfxParamPropDefault, 0 );
+		defaultValue.y = descriptor.getProperties().getDoubleProperty( kOfxParamPropDefault, 1 );
+		defaultValue.z = descriptor.getProperties().getDoubleProperty( kOfxParamPropDefault, 2 );
+	} catch( ... ) {}
+	setupTypedPlug<Color3fPlug>( name, plugParent, Plug::In, defaultValue );
 }
 
 OfxStatus RGBInstance::get( double& r, double& g, double& b )
@@ -414,7 +420,12 @@ OfxStatus RGBInstance::set( OfxTime time, double r, double g, double b )
 GafferOFX::Double2DInstance::Double2DInstance( GafferOFX::EffectImageInstance* effect, const std::string& name, OFX::Host::Param::Descriptor& descriptor ) : OFX::Host::Param::Double2DInstance( descriptor, effect ), m_effect( effect ), m_descriptor( descriptor )
 {
 	auto* plugParent = const_cast<GafferOFX::OFXImageNode*>(static_cast<const GafferOFX::OFXImageNode*>(m_effect->node()))->parametersPlug();
-	setupTypedPlug<V2fPlug>( name, plugParent, Plug::In, Imath::V2f() );
+	Imath::V2f defaultValue( 0.0f );
+	try { 
+		defaultValue.x = descriptor.getProperties().getDoubleProperty( kOfxParamPropDefault, 0 );
+		defaultValue.y = descriptor.getProperties().getDoubleProperty( kOfxParamPropDefault, 1 );
+	} catch( ... ) {}
+	setupTypedPlug<V2fPlug>( name, plugParent, Plug::In, defaultValue );
 }
 
 OfxStatus Double2DInstance::get( double& x, double& y )
@@ -463,7 +474,12 @@ OfxStatus Double2DInstance::set( OfxTime time, double x, double y )
 GafferOFX::Integer2DInstance::Integer2DInstance( GafferOFX::EffectImageInstance* effect, const std::string& name, OFX::Host::Param::Descriptor& descriptor ) : OFX::Host::Param::Integer2DInstance( descriptor, effect ), m_effect( effect ), m_descriptor( descriptor )
 {
 	auto* plugParent = const_cast<GafferOFX::OFXImageNode*>(static_cast<const GafferOFX::OFXImageNode*>(m_effect->node()))->parametersPlug();
-	setupTypedPlug<V2iPlug>( name, plugParent, Plug::In, Imath::V2i() );
+	Imath::V2i defaultValue( 0 );
+	try { 
+		defaultValue.x = descriptor.getProperties().getIntProperty( kOfxParamPropDefault, 0 );
+		defaultValue.y = descriptor.getProperties().getIntProperty( kOfxParamPropDefault, 1 );
+	} catch( ... ) {}
+	setupTypedPlug<V2iPlug>( name, plugParent, Plug::In, defaultValue );
 }
 
 OfxStatus Integer2DInstance::get( int& x, int& y )
@@ -510,7 +526,13 @@ OfxStatus Integer2DInstance::set( OfxTime time, int x, int y )
 GafferOFX::Double3DInstance::Double3DInstance( GafferOFX::EffectImageInstance* effect, const std::string& name, OFX::Host::Param::Descriptor& descriptor ) : OFX::Host::Param::Double3DInstance( descriptor, effect ), m_effect( effect ), m_descriptor( descriptor )
 {
 	auto* plugParent = const_cast<GafferOFX::OFXImageNode*>(static_cast<const GafferOFX::OFXImageNode*>(m_effect->node()))->parametersPlug();
-	setupTypedPlug<V3fPlug>( name, plugParent, Plug::In, Imath::V3f() );
+	Imath::V3f defaultValue( 0.0f );
+	try { 
+		defaultValue.x = descriptor.getProperties().getDoubleProperty( kOfxParamPropDefault, 0 );
+		defaultValue.y = descriptor.getProperties().getDoubleProperty( kOfxParamPropDefault, 1 );
+		defaultValue.z = descriptor.getProperties().getDoubleProperty( kOfxParamPropDefault, 2 );
+	} catch( ... ) {}
+	setupTypedPlug<V3fPlug>( name, plugParent, Plug::In, defaultValue );
 }
 
 OfxStatus Double3DInstance::get( double& x, double& y, double& z )
@@ -557,7 +579,13 @@ OfxStatus Double3DInstance::set( OfxTime time, double x, double y, double z )
 GafferOFX::Integer3DInstance::Integer3DInstance( GafferOFX::EffectImageInstance* effect, const std::string& name, OFX::Host::Param::Descriptor& descriptor ) : OFX::Host::Param::Integer3DInstance( descriptor, effect ), m_effect( effect ), m_descriptor( descriptor )
 {
 	auto* plugParent = const_cast<GafferOFX::OFXImageNode*>(static_cast<const GafferOFX::OFXImageNode*>(m_effect->node()))->parametersPlug();
-	setupTypedPlug<V3iPlug>( name, plugParent, Plug::In, Imath::V3i() );
+	Imath::V3i defaultValue( 0 );
+	try { 
+		defaultValue.x = descriptor.getProperties().getIntProperty( kOfxParamPropDefault, 0 );
+		defaultValue.y = descriptor.getProperties().getIntProperty( kOfxParamPropDefault, 1 );
+		defaultValue.z = descriptor.getProperties().getIntProperty( kOfxParamPropDefault, 2 );
+	} catch( ... ) {}
+	setupTypedPlug<V3iPlug>( name, plugParent, Plug::In, defaultValue );
 }
 
 OfxStatus Integer3DInstance::get( int& x, int& y, int& z )
