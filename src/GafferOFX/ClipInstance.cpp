@@ -311,7 +311,24 @@ OFX::Host::ImageEffect::Image* ClipInstance::getImage(OfxTime time, const OfxRec
 			m_outputImage->releaseReference();
 			m_outputImage = nullptr;
 		}
-		m_outputImage = new Image( *this, time, 0, useBounds );
+
+		// If the render window is set (from setRenderWindow), use it for
+		// the image bounds instead of the clip's getRegionOfDefinition.
+		// This ensures the Output image bounds match the Source image
+		// bounds — plugins with SupportsTiles=0 (e.g. CImgPlasma) compare
+		// image bounds and assert srcBounds == dstBounds.
+		const OfxRectI *finalBounds = useBounds;
+		OfxRectI renderWindowBounds;
+		if( !optionalBounds && m_renderWindowSet )
+		{
+			renderWindowBounds.x1 = (int)m_renderWindow.x1;
+			renderWindowBounds.y1 = (int)m_renderWindow.y1;
+			renderWindowBounds.x2 = (int)m_renderWindow.x2;
+			renderWindowBounds.y2 = (int)m_renderWindow.y2;
+			finalBounds = &renderWindowBounds;
+		}
+
+		m_outputImage = new Image( *this, time, 0, finalBounds );
 		// One reference to keep m_outputImage alive after
 		// the SDK's clipReleaseImage drops its reference.
 		m_outputImage->addReference();
