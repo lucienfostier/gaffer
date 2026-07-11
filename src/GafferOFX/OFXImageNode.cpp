@@ -1071,7 +1071,7 @@ IECore::ConstFloatVectorDataPtr OFXImageNode::computeTiledChannelData( const std
 	OFXRenderWorker::instance().execute( [this, frame, renderScale, &renderWindowI, outputClip, sourceClip,
 	                                      sourceBuffer, sourceWidth, sourceHeight, &sourceRegion,
 	                                      extraClipBuffers, extraClipWidths, extraClipHeights,
-	                                      extraClipRegions, extraClips]() {
+	                                      extraClipRegions, extraClips, &dataWindow]() {
 
 		GLContextManager &gl = GLContextManager::instance();
 		gl.makeCurrent();
@@ -1099,12 +1099,25 @@ IECore::ConstFloatVectorDataPtr OFXImageNode::computeTiledChannelData( const std
 			}
 		}
 
+		{
+			// Set project format from data window so getProjectSize() returns
+			// the correct size matching the metadata, not the global default.
+			double pw = dataWindow.size().x;
+			double ph = dataWindow.size().y;
+			m_instance->setProjectFormat( pw, ph );
+		}
+
 		m_instance->getClipPreferences();
 		if( outputClip )
 		{
 			OfxRectD outRod = { (double)renderWindowI.x1, (double)renderWindowI.y1,
 			                    (double)renderWindowI.x2, (double)renderWindowI.y2 };
 			outputClip->setRenderWindow( outRod );
+			// Set output data window so getRegionOfDefinition() returns the
+			// correct output size for image allocation (matching metadata).
+			OfxRectD fullBounds = { (double)dataWindow.min.x, (double)dataWindow.min.y,
+			                        (double)dataWindow.max.x, (double)dataWindow.max.y };
+			outputClip->setOutputDataWindow( fullBounds );
 			outputClip->getImage( frame, nullptr );
 		}
 

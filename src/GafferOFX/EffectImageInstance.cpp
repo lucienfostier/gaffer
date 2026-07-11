@@ -131,6 +131,13 @@ OfxStatus EffectImageInstance::clearPersistentMessage()
 
 void EffectImageInstance::getProjectSize(double& xSize, double& ySize) const
 {
+	if( m_projectWidth > 0 && m_projectHeight > 0 )
+	{
+		xSize = m_projectWidth;
+		ySize = m_projectHeight;
+		return;
+	}
+
 	if( auto ctx = Gaffer::Context::current() )
 	{
 		auto gafferFormat = GafferImage::FormatPlug::getDefaultFormat( ctx );

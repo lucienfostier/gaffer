@@ -254,9 +254,9 @@ bool ClipInstance::getContinuousSamples() const
 
 OfxRectD ClipInstance::getRegionOfDefinition(OfxTime time) const
 {
-	if( m_renderWindowSet )
+	if( m_outputDataWindowSet )
 	{
-		return m_renderWindow;
+		return m_outputDataWindow;
 	}
 
 	double projectWidth = kPalSizeXPixels;
@@ -339,8 +339,20 @@ OFX::Host::ImageEffect::Image* ClipInstance::getImage(OfxTime time, const OfxRec
 
 		if ( m_externalBuffer && m_bufferWidth > 0 && m_bufferHeight > 0 )
 		{
-			Image *image = new Image( *this, time, 0, useBounds );
-			image->setExternalData( m_externalBuffer, m_bufferWidth, m_bufferHeight, imageBounds );
+			OfxRectI bufBounds;
+			if( m_renderWindowSet )
+			{
+				bufBounds.x1 = (int)m_renderWindow.x1;
+				bufBounds.y1 = (int)m_renderWindow.y1;
+				bufBounds.x2 = (int)m_renderWindow.x2;
+				bufBounds.y2 = (int)m_renderWindow.y2;
+			}
+			else
+			{
+				bufBounds = imageBounds;
+			}
+			Image *image = new Image( *this, time, 0, &bufBounds );
+			image->setExternalData( m_externalBuffer, m_bufferWidth, m_bufferHeight, bufBounds );
 			return image;
 		}
 

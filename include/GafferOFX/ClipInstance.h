@@ -93,6 +93,11 @@ namespace GafferOFX
 			int m_inputTexW = 0;
 			int m_inputTexH = 0;
 
+			// Output data window override (set by tiled path so the Output clip
+			// allocates an image matching the OFX node's output format)
+			bool m_outputDataWindowSet = false;
+			OfxRectD m_outputDataWindow;
+
 			// Frame cache for temporal clip access
 			std::map<OfxTime, std::unique_ptr<OfxRGBAColourF[]>> m_frameCache;
 			int m_frameCacheWidth = 0;
@@ -140,6 +145,12 @@ namespace GafferOFX
 			{
 				m_renderWindow = rw;
 				m_renderWindowSet = true;
+			}
+
+			void setOutputDataWindow( const OfxRectD &dw )
+			{
+				m_outputDataWindow = dw;
+				m_outputDataWindowSet = true;
 			}
 
 			///    - kOfxBitDepthFloat

@@ -113,9 +113,19 @@ class GAFFEROFX_API EffectImageInstance : public OFX::Host::ImageEffect::Instanc
 		void clearInteractedParams();
 		const std::unordered_set<std::string> &interactedParams() const;
 
+		public:
+
+			void setProjectFormat( double width, double height )
+			{
+				m_projectWidth = width;
+				m_projectHeight = height;
+			}
+
 		private:
 
 		const Gaffer::Node* m_node;
+		double m_projectWidth = 0;
+		double m_projectHeight = 0;
 		std::unordered_set<std::string> m_interactedParams;
 		
 };
