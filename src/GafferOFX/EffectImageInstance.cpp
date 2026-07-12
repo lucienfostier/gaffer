@@ -27,7 +27,7 @@
 //  PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
 //  PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
 //  LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
-//  NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+//  NONINFRINGEMENT) OR OTHERWISE ARISING IN ANY WAY OUT OF THE USE OF THIS
 //  SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //
 //////////////////////////////////////////////////////////////////////////
@@ -40,6 +40,8 @@
 #include "Gaffer/Metadata.h"
 #include "Gaffer/Plug.h"
 
+#include "GafferImage/ImagePlug.h"
+#include "GafferImage/Sampler.h"
 #include "GafferImage/FormatPlug.h"
 
 #include "IECore/SimpleTypedData.h"
@@ -48,7 +50,7 @@
 #include "HostSupport/ofxhPluginCache.h"
 #include "HostSupport/ofxhImageEffectAPI.h"
 
-
+#include "tbb/task_arena.h"
 
 #include <iostream>
 
@@ -74,9 +76,79 @@ std::string sanitizeName( const std::string &name )
 	return result;
 }
 
+// Read RGBA channels from an ImagePlug into a flat interleaved OfxRGBAColourF
+// buffer covering the given data window.  If the input lacks an Alpha channel,
+// alpha=1.0 is injected.
+void readPlugToRGBA( const GafferImage::ImagePlug *plug, OfxRGBAColourF *buffer, const Imath::Box2i &dataWindow, int width )
+{
+	GafferImage::Sampler rSampler( plug, "R", dataWindow );
+	GafferImage::Sampler gSampler( plug, "G", dataWindow );
+	GafferImage::Sampler bSampler( plug, "B", dataWindow );
+
+	IECore::ConstStringVectorDataPtr channelNamesData = plug->channelNamesPlug()->getValue();
+	bool hasAlpha = false;
+	for( const auto &ch : channelNamesData->readable() )
+	{
+		if( ch == "A" )
+		{
+			hasAlpha = true;
+			break;
+		}
+	}
+
+	std::unique_ptr<GafferImage::Sampler> aSampler;
+	if( hasAlpha )
+	{
+		aSampler = std::make_unique<GafferImage::Sampler>( plug, "A", dataWindow );
+	}
+
+	for( int y = dataWindow.min.y; y < dataWindow.max.y; ++y )
+	{
+		for( int x = dataWindow.min.x; x < dataWindow.max.x; ++x )
+		{
+			int idx = ( y - dataWindow.min.y ) * width + ( x - dataWindow.min.x );
+			buffer[idx].r = rSampler.sample( x, y );
+			buffer[idx].g = gSampler.sample( x, y );
+			buffer[idx].b = bSampler.sample( x, y );
+			buffer[idx].a = aSampler ? aSampler->sample( x, y ) : 1.0f;
+		}
+	}
 }
 
+} // anonymous namespace
+
 using namespace GafferOFX;
+
+// Thread-local stack of active render invocations (stored as pointers so the
+// original invocation object owns its outputImage — no double-free from copies).
+// A stack (vs single slot) correctly handles nested/stolen renders when
+// TBB steals a render task while the thread is blocked inside a Gaffer pull.
+thread_local std::vector<RenderInvocation*> g_renderStack;
+
+RenderInvocationGuard::RenderInvocationGuard( RenderInvocation &inv )
+{
+	g_renderStack.push_back( &inv );
+}
+
+RenderInvocationGuard::~RenderInvocationGuard()
+{
+	if( m_active )
+	{
+		g_renderStack.pop_back();
+	}
+}
+
+const RenderInvocation &RenderInvocationGuard::invocation() const
+{
+	return *g_renderStack.back();
+}
+
+RenderInvocation *EffectImageInstance::currentInvocation()
+{
+	if( g_renderStack.empty() )
+		return nullptr;
+	return g_renderStack.back();
+}
 
 // Instance registration functions from libOfxGafferHost.so
 // Used to track valid Param::Instance* pointers for safe handle validation
@@ -343,9 +415,6 @@ void registerParameterMetadata( Gaffer::Plug *plug, const OFX::Host::Param::Desc
 	}
 
 	// Section (page/group membership)
-	// Some plugins (e.g. Shadertoy) call page->addChild() without
-	// setting kOfxParamPropParent on the child, so we also check
-	// the page's kOfxParamPropPageChild list to find the parent.
 	std::string parentName;
 	try { parentName = props.getStringProperty( kOfxParamPropParent ); } catch(...) {}
 	if( parentName.empty() && setDescriptor )
@@ -394,9 +463,7 @@ void registerParameterMetadata( Gaffer::Plug *plug, const OFX::Host::Param::Desc
 		Gaffer::Metadata::registerValue( plug, "layout:section", new IECore::StringData( sectionName ), false );
 	}
 
-	// Internal/descriptive param hiding: params inside an OFX Group/Page
-	// matching metadata patterns (defaults, ranges, types, labels, hints,
-	// names) are not user-editable — hide their nodules and widgets.
+	// Internal/descriptive param hiding
 	{
 		std::string parentName;
 		try { parentName = props.getStringProperty( kOfxParamPropParent ); } catch(...) {}
@@ -489,7 +556,6 @@ OFX::Host::Param::Instance* EffectImageInstance::newParam(const std::string& nam
 	}
 	if( result )
 	{
-		// Register this Instance + its Descriptor handle in the validation registry
 		OFX::Host::Param::registerInstance(result, &descriptor);
 
 		auto *plug = const_cast<OFXImageNode*>( static_cast<const OFXImageNode*>( node() ) )->parametersPlug()->getChild<Gaffer::Plug>( sanitizeName( name ) );
@@ -586,12 +652,8 @@ static inline bool isMode1Call( const char* action, const void* handle )
 	if( !action )
 		return true;
 	const char* p = action;
-	// Fast check: an OFX action always starts with "OfxAction" or "OfxImageEffectAction"
-	// For a valid string, the first 3 bytes are readable. If they're not 'O','f','x',
-	// this cannot be a valid OFX action string → Mode 1.
 	if( p[0] != 'O' || p[1] != 'f' || p[2] != 'x' )
 		return true;
-	// Could be Mode 2 - let the caller verify further.
 	return false;
 }
 
@@ -599,4 +661,90 @@ OfxStatus EffectImageInstance::mainEntry(const char *action, const void *handle,
 {
 	typedef OFX::Host::ImageEffect::Instance BaseInstance;
 	return BaseInstance::mainEntry( action, handle, inArgs, outArgs );
+}
+
+OFX::Host::ImageEffect::Image *EffectImageInstance::fetchInputImage(
+	const ClipInstance &clip, OfxTime time, const OfxRectI &region
+) const
+{
+	const GafferImage::ImagePlug *plug = nullptr;
+	const std::string &clipName = clip.getName();
+
+	if( clipName == "Source" )
+	{
+		plug = static_cast<const OFXImageNode*>( m_node )->inPlug();
+	}
+	else if( clipName != "Output" )
+	{
+		const std::string &plugName = clip.plugName();
+		if( !plugName.empty() )
+		{
+			plug = m_node->getChild<GafferImage::ImagePlug>( plugName );
+		}
+	}
+
+	if( !plug || !plug->getInput() )
+		return nullptr;
+
+	int width = region.x2 - region.x1;
+	int height = region.y2 - region.y1;
+	if( width <= 0 || height <= 0 )
+		return nullptr;
+
+	// Create output Image — allocates its own buffer
+	OfxRectI bufBounds = { region.x1, region.y1, region.x2, region.y2 };
+	Image *image = new Image( const_cast<ClipInstance&>( clip ), time, 0, &bufBounds );
+
+	// Fill the image's pixel data by pulling from Gaffer under isolate
+	// (prevents TBB task stealing during the pull).
+	OfxRGBAColourF *pixelData = image->pixel( region.x1, region.y1 );
+
+	auto *inv = currentInvocation();
+	const Gaffer::Context *baseCtx = inv ? inv->context.get() : Gaffer::Context::current();
+
+	if( baseCtx && pixelData )
+	{
+		if( time == baseCtx->getFrame() )
+		{
+			Gaffer::Context::Scope scope( baseCtx );
+			try
+			{
+				tbb::this_task_arena::isolate( [&]() {
+					Imath::Box2i imgRegion(
+						Imath::V2i( region.x1, region.y1 ),
+						Imath::V2i( region.x2, region.y2 )
+					);
+					readPlugToRGBA( plug, pixelData, imgRegion, width );
+				} );
+			}
+			catch( const std::exception & )
+			{
+				image->releaseReference();
+				return nullptr;
+			}
+		}
+		else
+		{
+			// Temporal access: override frame (EditableScope alone copies and scopes)
+			Gaffer::Context::EditableScope edit( baseCtx );
+			edit.setFrame( time );
+			try
+			{
+				tbb::this_task_arena::isolate( [&]() {
+					Imath::Box2i imgRegion(
+						Imath::V2i( region.x1, region.y1 ),
+						Imath::V2i( region.x2, region.y2 )
+					);
+					readPlugToRGBA( plug, pixelData, imgRegion, width );
+				} );
+			}
+			catch( const std::exception & )
+			{
+				image->releaseReference();
+				return nullptr;
+			}
+		}
+	}
+
+	return image;
 }

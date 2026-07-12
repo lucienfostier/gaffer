@@ -27,7 +27,7 @@
 //  PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
 //  PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
 //  LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
-//  NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+//  NONINFRINGEMENT) OR OTHERWISE ARISING IN ANY WAY OUT OF THE USE OF THIS
 //  SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //
 //////////////////////////////////////////////////////////////////////////
@@ -47,13 +47,11 @@
 #include <map>
 #include <mutex>
 
-//#define OFXHOSTDEMOCLIPLENGTH 1.0
-
 namespace GafferOFX
 {
 	class ClipInstance;
 
-	class Image : public OFX::Host::ImageEffect::Image 
+	class Image : public OFX::Host::ImageEffect::Image
 	{
 		using OfxRGBAColourFPtr = std::unique_ptr<OfxRGBAColourF[]>;
 
@@ -66,8 +64,6 @@ namespace GafferOFX
 			explicit Image( ClipInstance &clip, OfxTime t, int view = 0, const OfxRectI *bounds = nullptr );
 			OfxRGBAColourF* pixel( int x, int y ) const;
 			~Image();
-
-			void setExternalData( const void* externalData, int width, int height, const OfxRectI &bounds );
 	};
 
 	class ClipInstance : public OFX::Host::ImageEffect::ClipInstance
@@ -76,14 +72,7 @@ namespace GafferOFX
 
 			GafferOFX::EffectImageInstance*	m_effect;
 			std::string	m_name;
-			Image*	m_outputImage;
-			OfxRGBAColourF* m_externalBuffer;
-			int m_bufferWidth;
-			int m_bufferHeight;
-			OfxRectD m_renderWindow;
-			bool m_isConnected;
-			bool m_renderWindowSet;
-			std::mutex m_outputImageMutex;
+			std::string m_plugName;
 
 			// GL output texture ID for OpenGL rendering
 			unsigned int m_outputTexture = 0;
@@ -93,17 +82,6 @@ namespace GafferOFX
 			int m_inputTexW = 0;
 			int m_inputTexH = 0;
 
-			// Output data window override (set by tiled path so the Output clip
-			// allocates an image matching the OFX node's output format)
-			bool m_outputDataWindowSet = false;
-			OfxRectD m_outputDataWindow;
-
-			// Frame cache for temporal clip access
-			std::map<OfxTime, std::unique_ptr<OfxRGBAColourF[]>> m_frameCache;
-			int m_frameCacheWidth = 0;
-			int m_frameCacheHeight = 0;
-			Imath::Box2i 		m_frameCacheDataWindow = Imath::Box2i();
-
 		public :
 
 			ClipInstance(
@@ -112,46 +90,10 @@ namespace GafferOFX
 			);
 
 			 ~ClipInstance();
-			Image* getOutputImage() { return m_outputImage; }
+			Image* getOutputImage();
 
-			void setExternalBuffer( OfxRGBAColourF* buffer, int width, int height )
-			{
-				m_externalBuffer = buffer;
-				m_bufferWidth = width;
-				m_bufferHeight = height;
-			}
-
-			void setFrameCache( std::map<OfxTime, std::unique_ptr<OfxRGBAColourF[]>> &&cache, int width, int height, const Imath::Box2i &dw )
-			{
-				m_frameCache = std::move( cache );
-				m_frameCacheWidth = width;
-				m_frameCacheHeight = height;
-				m_frameCacheDataWindow = dw;
-			}
-
-			void clearFrameCache()
-			{
-				m_frameCache.clear();
-				m_frameCacheWidth = 0;
-				m_frameCacheHeight = 0;
-			}
-
-			void setConnected( bool connected )
-			{
-				m_isConnected = connected;
-			}
-
-			void setRenderWindow( const OfxRectD &rw )
-			{
-				m_renderWindow = rw;
-				m_renderWindowSet = true;
-			}
-
-			void setOutputDataWindow( const OfxRectD &dw )
-			{
-				m_outputDataWindow = dw;
-				m_outputDataWindowSet = true;
-			}
+			void setPlugName( const std::string &name ) { m_plugName = name; }
+			const std::string &plugName() const { return m_plugName; }
 
 			///    - kOfxBitDepthFloat
 			const std::string &getUnmappedBitDepth() const override;
@@ -203,11 +145,11 @@ namespace GafferOFX
 			// Continuous Samples -
 			//
 			//  0 if the images can only be sampled at discreet times (eg: the clip is a sequence of frames),
-			//  1 if the images can only be sampled continuously (eg: the clip is infact an animating roto spline and can be rendered anywhen). 
+			//  1 if the images can only be sampled continuously (eg: the clip is infact an animating roto spline and can be rendered anywhen).
 			 bool getContinuousSamples() const override;
 
 			/// override this to fill in the image at the given time.
-			/// The bounds of the image on the image plane should be 
+			/// The bounds of the image on the image plane should be
 			/// 'appropriate', typically the value returned in getRegionsOfInterest
 			/// on the effect instance. Outside a render call, the optionalBounds should
 			/// be 'appropriate' for the.
@@ -219,7 +161,6 @@ namespace GafferOFX
 
 #ifdef OFX_SUPPORTS_OPENGLRENDER
 			/// load a texture from the given clip, for OpenGL-based rendering.
-			/// We don't support this, so we return null.
 			 OFX::Host::ImageEffect::Texture* loadTexture(OfxTime time, const char *format, const OfxRectD *optionalBounds) override;
 #endif
 

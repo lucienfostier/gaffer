@@ -53,7 +53,7 @@ class HostTest( GafferTest.TestCase ) :
 	def testPluginIDsContainExpected( self ) :
 
 		ids = GafferOFX.Host.pluginIDs()
-		self.assertIn( "uk.co.thefoundry.OfxInvertExample", ids )
+		self.assertIn( "net.sf.openfx.Invert", ids )
 		self.assertIn( "uk.co.thefoundry.BasicGainPlugin", ids )
 
 if __name__ == "__main__" :

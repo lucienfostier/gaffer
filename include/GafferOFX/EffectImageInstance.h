@@ -27,7 +27,7 @@
 //  PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
 //  PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
 //  LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
-//  NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+//  NONINFRINGEMENT) OR OTHERWISE ARISING IN ANY WAY OUT OF THE USE OF THIS
 //  SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //
 //////////////////////////////////////////////////////////////////////////
@@ -40,11 +40,46 @@
 
 #include "Gaffer/ScriptNode.h"
 #include "Gaffer/Node.h"
+#include "Gaffer/Context.h"
 
 #include <unordered_set>
+#include <vector>
 
 namespace GafferOFX
 {
+
+class ClipInstance;
+
+// Per-render-call record pushed on a thread_local stack before the plugin's
+// render action and popped after.  getImage() on clips consults the active
+// invocation to determine the render window, clip RoIs, and output image.
+struct GAFFEROFX_API RenderInvocation
+{
+	OfxTime time;
+	OfxRectI renderWindow;
+	OfxPointD renderScale;
+	Gaffer::ConstContextPtr context;
+	std::map<std::string, OfxRectD> clipRoIs;
+	OFX::Host::ImageEffect::Image *outputImage = nullptr;
+
+	~RenderInvocation()
+	{
+		if( outputImage )
+			outputImage->releaseReference();
+	}
+};
+
+// RAII guard that pushes a RenderInvocation on the thread_local stack and
+// pops it on destruction.
+class GAFFEROFX_API RenderInvocationGuard
+{
+	public:
+		RenderInvocationGuard( RenderInvocation &inv );
+		~RenderInvocationGuard();
+		const RenderInvocation &invocation() const;
+	private:
+		bool m_active = true;
+};
 
 class GAFFEROFX_API EffectImageInstance : public OFX::Host::ImageEffect::Instance
 {
@@ -113,6 +148,15 @@ class GAFFEROFX_API EffectImageInstance : public OFX::Host::ImageEffect::Instanc
 		void clearInteractedParams();
 		const std::unordered_set<std::string> &interactedParams() const;
 
+		/// Pull an RGBA interleaved image from Gaffer for the given clip.
+		/// Returns a new Image owning its buffer (caller must releaseReference).
+		OFX::Host::ImageEffect::Image *fetchInputImage(
+			const ClipInstance &clip, OfxTime time, const OfxRectI &region
+		) const;
+
+		/// Access the active render invocation on this thread (nullptr if none).
+		static RenderInvocation *currentInvocation();
+
 		public:
 
 			void setProjectFormat( double width, double height )
@@ -131,4 +175,3 @@ class GAFFEROFX_API EffectImageInstance : public OFX::Host::ImageEffect::Instanc
 };
 
 } // GafferOFX
-

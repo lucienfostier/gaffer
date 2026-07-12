@@ -53,14 +53,14 @@ class OFXImageNodeTest( GafferTest.TestCase ) :
 		scriptNode.addChild( node )
 
 		self.assertFalse( node.createPluginInstance() )
-		node["pluginId"].setValue( "uk.co.thefoundry.OfxInvertExample" )
+		node["pluginId"].setValue( "net.sf.openfx.Invert" )
 		self.assertTrue( node.createPluginInstance() )
 
 	def testEffectInstanceProjectSize( self ) :
 
 		scriptNode = Gaffer.ScriptNode()
 		node = GafferOFX.OFXImageNode()
-		node["pluginId"].setValue( "uk.co.thefoundry.OfxInvertExample" )
+		node["pluginId"].setValue( "net.sf.openfx.Invert" )
 		scriptNode.addChild( node )
 		node.createPluginInstance()
 
@@ -110,7 +110,7 @@ class OFXImageNodeTest( GafferTest.TestCase ) :
 		invert = GafferOFX.OFXImageNode()
 		scriptNode.addChild( invert )
 		invert["in"].setInput( c["out"] )
-		invert["pluginId"].setValue( "uk.co.thefoundry.OfxInvertExample" )
+		invert["pluginId"].setValue( "net.sf.openfx.Invert" )
 		invert.createPluginInstance()
 
 		blur = GafferOFX.OFXImageNode()
@@ -443,7 +443,7 @@ class OFXImageNodeTest( GafferTest.TestCase ) :
 		n = GafferOFX.OFXImageNode()
 		s.addChild( n )
 		n["in"].setInput( cb["out"] )
-		n["pluginId"].setValue( "uk.co.thefoundry.OfxInvertExample" )
+		n["pluginId"].setValue( "net.sf.openfx.Invert" )
 		self.assertTrue( n.createPluginInstance() )
 
 		self.assertEqual( cb["out"]["format"].getValue(), n["out"]["format"].getValue() )
@@ -513,7 +513,7 @@ class OFXImageNodeTest( GafferTest.TestCase ) :
 
 		# Plugins without extra clips should not have a mask plug
 		n2 = GafferOFX.OFXImageNode()
-		n2["pluginId"].setValue( "uk.co.thefoundry.OfxInvertExample" )
+		n2["pluginId"].setValue( "uk.co.thefoundry.BasicGainPlugin" )
 		self.assertTrue( n2.createPluginInstance() )
 		self.assertFalse( "mask" in n2 )
 

@@ -78,6 +78,7 @@ Host::Host()
 	_properties.setStringProperty(kOfxImageEffectPropSupportedContexts, kOfxImageEffectContextFilter, 1);
 	_properties.setStringProperty(kOfxImageEffectPropSupportedContexts, kOfxImageEffectContextGeneral, 2 );
 	_properties.setStringProperty(kOfxImageEffectPropSupportedContexts, kOfxImageEffectContextTransition, 3 );
+	_properties.setStringProperty(kOfxImageEffectPropSupportedPixelDepths, kOfxBitDepthFloat, 0);
 	_properties.setIntProperty(kOfxImageEffectPropSupportsMultipleClipDepths, 0);
 	_properties.setIntProperty(kOfxImageEffectPropSupportsMultipleClipPARs, 0);
 	_properties.setIntProperty(kOfxImageEffectPropSetableFrameRate, 0);
@@ -235,7 +236,7 @@ std::map<std::string, std::string> Host::pluginBundles()
 
 void Host::findOFXPlugins()
 {
-	OFX::Host::PluginCache::getPluginCache()->setCacheVersion("GafferOFXCache");
+	OFX::Host::PluginCache::getPluginCache()->setCacheVersion("GafferOFXCacheV2");
 
 	m_pluginCache = OFX::Host::ImageEffect::PluginCache(Host::instance());
 	m_pluginCache.registerInCache(*OFX::Host::PluginCache::getPluginCache());

@@ -93,6 +93,14 @@ public:
 	template<typename F>
 	void execute( F &&func )
 	{
+		// Re-entrancy guard: if the worker thread itself calls execute()
+		// (e.g. via a Gaffer pull inside renderAction), run inline to
+		// avoid self-deadlock on m_mutex.
+		if( std::this_thread::get_id() == m_thread.get_id() )
+		{
+			func();
+			return;
+		}
 		std::unique_lock<std::mutex> lock( m_mutex );
 		m_task = std::forward<F>( func );
 		m_ready = true;
@@ -209,8 +217,6 @@ bool OFXImageNode::createPluginInstance()
 	if( m_instance )
 		return true;
 
-	m_clipPreferencesFetched = false;
-
 	Host& host = Host::instance();
 	std::string pluginId = pluginIdPlug()->getValue();
 	auto plugin = host.m_pluginCache.getPluginById(pluginId);
@@ -256,6 +262,34 @@ bool OFXImageNode::createPluginInstance()
 
 		m_instance->createInstanceAction();
 
+		// Verify this plugin supports float pixel depth.  GafferOFX renders
+		// everything in 32-bit float and does not perform byte conversion.
+		// Query the plugin DESCRIPTOR's property set (not the instance's) —
+		// the instance props don't reliably chain for string-property lookups.
+		{
+			bool supportsFloat = false;
+			const auto &dp = m_instance->getPlugin()->getDescriptor().getProps();
+			try
+			{
+				int n = dp.getDimension( kOfxImageEffectPropSupportedPixelDepths );
+				for( int i = 0; i < n && !supportsFloat; ++i )
+					supportsFloat = dp.getStringProperty( kOfxImageEffectPropSupportedPixelDepths, i ) == kOfxBitDepthFloat;
+			}
+			catch( const std::exception & ) {}
+			if( !supportsFloat )
+			{
+				std::cerr << "GafferOFX: rejecting plugin \"" << m_instance->getPlugin()->getIdentifier()
+				          << "\" — does not advertise kOfxBitDepthFloat in kOfxImageEffectPropSupportedPixelDepths"
+				          << std::endl;
+				m_instance.reset();
+				return false;
+			}
+		}
+
+		// Give plugins a chance to set up frame-dependent state once at
+		// instantiation, not during hashing (which must be side-effect-free).
+		m_instance->getClipPreferences();
+
 		// Detect whether this plugin supports tiled rendering.
 		// GL plugins always use full-frame (FBO/readback overhead).
 		// CPU plugins with SupportsTiles=1 can render per-tile.
@@ -283,19 +317,7 @@ bool OFXImageNode::createPluginInstance()
 			}
 		}
 
-		// Mark all clips as connected if the "in" plug has a connection
-		const bool hasInput = inPlug()->getInput() != nullptr;
-		for( int i = 0; i < m_instance->getNClips(); ++i )
-		{
-			if( auto *clip = dynamic_cast<GafferOFX::ClipInstance*>( m_instance->getNthClip( i ) ) )
-			{
-				// Only mark non-output clips based on actual input connection
-				if( clip->getName() != "Output" )
-				{
-					clip->setConnected( hasInput );
-				}
-			}
-		}
+		// Dynamic getConnected() looks up plug input at call time
 
 		// Create Gaffer plug for each non-Output, non-Source clip
 		createClipPlugs();
@@ -354,8 +376,8 @@ void OFXImageNode::createClipPlugs()
 		}
 		m_clipPlugNames.push_back( plugName );
 
-		// Reflect whether the plug already has a connection
-		clip->setConnected( plug->getInput() != nullptr );
+		// Store the plug name on the clip for dynamic getConnected() lookup
+		clip->setPlugName( plugName );
 	}
 }
 
@@ -826,51 +848,8 @@ IECore::ConstFloatVectorDataPtr OFXImageNode::computeChannelData( const std::str
 }
 
 // -----------------------------------------------------------------------
-// readPlugToRGBA — reads RGBA channels from an ImagePlug into a flat
-// interleaved OfxRGBAColourF buffer covering the given data window.
-// If the input lacks an Alpha channel, alpha=1.0 is injected.
+// readPlugToRGBA moved to EffectImageInstance.cpp
 // -----------------------------------------------------------------------
-
-namespace
-{
-
-void readPlugToRGBA( const GafferImage::ImagePlug *plug, OfxRGBAColourF *buffer, const Box2i &dataWindow, int width )
-{
-	GafferImage::Sampler rSampler( plug, "R", dataWindow );
-	GafferImage::Sampler gSampler( plug, "G", dataWindow );
-	GafferImage::Sampler bSampler( plug, "B", dataWindow );
-
-	ConstStringVectorDataPtr channelNamesData = plug->channelNamesPlug()->getValue();
-	bool hasAlpha = false;
-	for( const auto &ch : channelNamesData->readable() )
-	{
-		if( ch == "A" )
-		{
-			hasAlpha = true;
-			break;
-		}
-	}
-
-	std::unique_ptr<GafferImage::Sampler> aSampler;
-	if( hasAlpha )
-	{
-		aSampler = std::make_unique<GafferImage::Sampler>( plug, "A", dataWindow );
-	}
-
-	for( int y = dataWindow.min.y; y < dataWindow.max.y; ++y )
-	{
-		for( int x = dataWindow.min.x; x < dataWindow.max.x; ++x )
-		{
-			int idx = ( y - dataWindow.min.y ) * width + ( x - dataWindow.min.x );
-			buffer[idx].r = rSampler.sample( x, y );
-			buffer[idx].g = gSampler.sample( x, y );
-			buffer[idx].b = bSampler.sample( x, y );
-			buffer[idx].a = aSampler ? aSampler->sample( x, y ) : 1.0f;
-		}
-	}
-}
-
-} // namespace
 
 IECore::ConstFloatVectorDataPtr OFXImageNode::computeTiledChannelData( const std::string &channelName, const Imath::V2i &tileOrigin, const Gaffer::Context *context ) const
 {
@@ -879,13 +858,6 @@ IECore::ConstFloatVectorDataPtr OFXImageNode::computeTiledChannelData( const std
 	OfxTime frame = context->getFrame();
 	OfxPointD renderScale = { 1.0, 1.0 };
 
-	GafferOFX::ClipInstance *sourceClip = dynamic_cast<GafferOFX::ClipInstance*>( m_instance->getClip( "Source" ) );
-	GafferOFX::ClipInstance *outputClip = dynamic_cast<GafferOFX::ClipInstance*>( m_instance->getClip( "Output" ) );
-	const bool hasInput = inPlug()->getInput() != nullptr;
-
-	if( sourceClip ) sourceClip->setConnected( hasInput );
-
-	// Tile render window — intersect tile with the actual data window
 	int ts = ImagePlug::tileSize();
 	Box2i dataWindow = inPlug()->dataWindowPlug()->getValue();
 	Box2i tileBound( tileOrigin, tileOrigin + V2i( ts, ts ) );
@@ -906,95 +878,31 @@ IECore::ConstFloatVectorDataPtr OFXImageNode::computeTiledChannelData( const std
 	std::map<OFX::Host::ImageEffect::ClipInstance *, OfxRectD> rois;
 	m_instance->getRegionOfInterestAction( frame, renderScale, renderWindowD, rois );
 
-	// ---- Read source input within RoI ----
-	OfxRGBAColourF *sourceBuffer = nullptr;
-	int sourceWidth = 0, sourceHeight = 0;
-	Box2i sourceRegion;
-	std::unique_ptr<OfxRGBAColourF[]> sourceBufStorage;
-
-	if( hasInput && sourceClip )
+	// Convert RoIs to name-based map for the invocation
+	std::map<std::string, OfxRectD> clipRoIs;
+	for( auto &[clipPtr, roi] : rois )
 	{
-		auto srcIt = rois.find( sourceClip );
-		if( srcIt != rois.end() )
-		{
-			sourceRegion = Box2i(
-				V2i( (int)srcIt->second.x1, (int)srcIt->second.y1 ),
-				V2i( (int)srcIt->second.x2, (int)srcIt->second.y2 )
-			);
-		}
-		else
-		{
-			sourceRegion = tileBound;
-		}
+		if( clipPtr )
+			clipRoIs[clipPtr->getName()] = roi;
+	}
 
-		if( sourceRegion.size().x > 0 && sourceRegion.size().y > 0 )
+	// Set up output clip pixel depth
+	{
+		auto *outputClip = dynamic_cast<GafferOFX::ClipInstance*>( m_instance->getClip( "Output" ) );
+		if( outputClip )
 		{
-			sourceWidth = sourceRegion.size().x;
-			sourceHeight = sourceRegion.size().y;
-			sourceBufStorage = std::make_unique<OfxRGBAColourF[]>( sourceWidth * sourceHeight );
-			readPlugToRGBA( inPlug(), sourceBufStorage.get(), sourceRegion, sourceWidth );
-			sourceBuffer = sourceBufStorage.get();
+			outputClip->getProps().setStringProperty( kOfxImageEffectPropPixelDepth, kOfxBitDepthFloat );
+			outputClip->getProps().setStringProperty( kOfxImageEffectPropComponents, kOfxImageComponentRGBA );
+		}
+		auto *sourceClip = dynamic_cast<GafferOFX::ClipInstance*>( m_instance->getClip( "Source" ) );
+		if( sourceClip )
+		{
+			sourceClip->getProps().setStringProperty( kOfxImageEffectPropPixelDepth, kOfxBitDepthFloat );
+			sourceClip->getProps().setStringProperty( kOfxImageEffectPropComponents, kOfxImageComponentRGBA );
 		}
 	}
 
-	// ---- Temporal clip access: pre-fetch frames needed by the plugin (e.g. FrameBlend) ----
-		if( hasInput && sourceClip && sourceBuffer && m_instance->temporalAccess() )
-	{
-		OFX::Host::ImageEffect::RangeMap rangeMap;
-		if( m_instance->getFrameNeededAction( frame, rangeMap ) == kOfxStatOK )
-		{
-			auto srcIt = rangeMap.find( sourceClip );
-			if( srcIt != rangeMap.end() && !srcIt->second.empty() )
-			{
-				std::map<OfxTime, std::unique_ptr<OfxRGBAColourF[]>> cache;
-
-				for( const auto &range : srcIt->second )
-				{
-					for( OfxTime t = range.min; t <= range.max; t += 1.0 )
-					{
-						if( cache.find( t ) != cache.end() )
-							continue;
-
-						// Current frame is already in sourceBuffer, don't re-fetch
-						if( t == frame )
-							continue;
-
-						auto buf = std::make_unique<OfxRGBAColourF[]>( sourceWidth * sourceHeight );
-						for( int i = 0; i < sourceWidth * sourceHeight; ++i )
-						{
-							buf[i].r = 0.0f;
-							buf[i].g = 0.0f;
-							buf[i].b = 0.0f;
-							buf[i].a = 1.0f;
-						}
-
-						Gaffer::ContextPtr tContext = new Gaffer::Context( *context );
-						tContext->setFrame( t );
-						Gaffer::Context::Scope tScope( tContext.get() );
-
-						readPlugToRGBA( inPlug(), buf.get(), sourceRegion, sourceWidth );
-						cache[t] = std::move( buf );
-					}
-				}
-
-				if( !cache.empty() )
-				{
-					sourceClip->setFrameCache( std::move( cache ), sourceWidth, sourceHeight, sourceRegion );
-				}
-			}
-		}
-	}
-
-	// ---- Read extra clip inputs within their RoIs ----
-	struct ClipBuf
-	{
-		GafferOFX::ClipInstance *clip = nullptr;
-		std::unique_ptr<OfxRGBAColourF[]> buffer;
-		int width = 0, height = 0;
-		Box2i region;
-	};
-	std::vector<ClipBuf> extraBufs;
-
+	// Build half-open clip properties set for extra clips
 	for( const auto &plugName : m_clipPlugNames )
 	{
 		std::string ofxClipName = plugName;
@@ -1002,143 +910,62 @@ IECore::ConstFloatVectorDataPtr OFXImageNode::computeTiledChannelData( const std
 			ofxClipName[0] = toupper( ofxClipName[0] );
 
 		auto *clip = dynamic_cast<GafferOFX::ClipInstance*>( m_instance->getClip( ofxClipName ) );
-		if( !clip ) continue;
-
-		auto *plug = getChild<GafferImage::ImagePlug>( plugName );
-		if( !plug || !plug->getInput() )
+		if( clip )
 		{
-			clip->setConnected( false );
-			continue;
+			clip->getProps().setStringProperty( kOfxImageEffectPropPixelDepth, kOfxBitDepthFloat );
+			clip->getProps().setStringProperty( kOfxImageEffectPropComponents, kOfxImageComponentRGBA );
 		}
-		clip->setConnected( true );
-
-		// Get RoI for this clip
-		auto roiIt = rois.find( clip );
-		Box2i clipRegion;
-		if( roiIt != rois.end() )
-		{
-			clipRegion = Box2i(
-				V2i( (int)roiIt->second.x1, (int)roiIt->second.y1 ),
-				V2i( (int)roiIt->second.x2, (int)roiIt->second.y2 )
-			);
-		}
-		else
-		{
-			Box2i clipDw = plug->dataWindowPlug()->getValue();
-			if( clipDw.size().x <= 0 || clipDw.size().y <= 0 ) continue;
-			clipRegion = clipDw;
-		}
-
-		if( clipRegion.size().x <= 0 || clipRegion.size().y <= 0 ) continue;
-
-		ClipBuf cb;
-		cb.clip = clip;
-		cb.width = clipRegion.size().x;
-		cb.height = clipRegion.size().y;
-		cb.buffer = std::make_unique<OfxRGBAColourF[]>( cb.width * cb.height );
-		cb.region = clipRegion;
-		readPlugToRGBA( plug, cb.buffer.get(), clipRegion, cb.width );
-		extraBufs.push_back( std::move( cb ) );
 	}
 
-	// ---- Set up output clip properties ----
-	if( outputClip )
-	{
-		outputClip->getProps().setStringProperty( kOfxImageEffectPropPixelDepth, kOfxBitDepthFloat );
-		outputClip->getProps().setStringProperty( kOfxImageEffectPropComponents, kOfxImageComponentRGBA );
-	}
-	if( sourceClip )
-	{
-		sourceClip->getProps().setStringProperty( kOfxImageEffectPropPixelDepth, kOfxBitDepthFloat );
-		sourceClip->getProps().setStringProperty( kOfxImageEffectPropComponents, kOfxImageComponentRGBA );
-	}
-
-	// ---- Prepare extra clip data for renderTile lambda ----
-	std::vector<OfxRGBAColourF *> extraClipBuffers;
-	std::vector<int> extraClipWidths, extraClipHeights;
-	std::vector<Box2i> extraClipRegions;
-	std::vector<GafferOFX::ClipInstance *> extraClips;
-	for( auto &eb : extraBufs )
-	{
-		extraClipBuffers.push_back( eb.buffer.get() );
-		extraClipWidths.push_back( eb.width );
-		extraClipHeights.push_back( eb.height );
-		extraClipRegions.push_back( eb.region );
-		extraClips.push_back( eb.clip );
-	}
-
-	// ---- Dispatch per-tile render to worker thread ----
-	OFXRenderWorker::instance().execute( [this, frame, renderScale, &renderWindowI, outputClip, sourceClip,
-	                                      sourceBuffer, sourceWidth, sourceHeight, &sourceRegion,
-	                                      extraClipBuffers, extraClipWidths, extraClipHeights,
-	                                      extraClipRegions, extraClips, &dataWindow]() {
-
-		GLContextManager &gl = GLContextManager::instance();
-		gl.makeCurrent();
-
-		m_rendering = true;
-
-		// Set up source buffer
-		if( sourceClip && sourceBuffer )
-		{
-			sourceClip->setExternalBuffer( sourceBuffer, sourceWidth, sourceHeight );
-			OfxRectD srcRod = { (double)sourceRegion.min.x, (double)sourceRegion.min.y,
-			                    (double)sourceRegion.max.x, (double)sourceRegion.max.y };
-			sourceClip->setRenderWindow( srcRod );
-		}
-
-		// Set up extra clip buffers
-		for( size_t i = 0; i < extraClipBuffers.size(); ++i )
-		{
-			if( extraClipBuffers[i] && extraClips[i] )
-			{
-				extraClips[i]->setExternalBuffer( extraClipBuffers[i], extraClipWidths[i], extraClipHeights[i] );
-				OfxRectD rod = { (double)extraClipRegions[i].min.x, (double)extraClipRegions[i].min.y,
-				                 (double)extraClipRegions[i].max.x, (double)extraClipRegions[i].max.y };
-				extraClips[i]->setRenderWindow( rod );
-			}
-		}
-
-		{
-			// Set project format from data window so getProjectSize() returns
-			// the correct size matching the metadata, not the global default.
-			double pw = dataWindow.size().x;
-			double ph = dataWindow.size().y;
-			m_instance->setProjectFormat( pw, ph );
-		}
-
-		m_instance->getClipPreferences();
-		if( outputClip )
-		{
-			OfxRectD outRod = { (double)renderWindowI.x1, (double)renderWindowI.y1,
-			                    (double)renderWindowI.x2, (double)renderWindowI.y2 };
-			outputClip->setRenderWindow( outRod );
-			// Set output data window so getRegionOfDefinition() returns the
-			// correct output size for image allocation (matching metadata).
-			OfxRectD fullBounds = { (double)dataWindow.min.x, (double)dataWindow.min.y,
-			                        (double)dataWindow.max.x, (double)dataWindow.max.y };
-			outputClip->setOutputDataWindow( fullBounds );
-			outputClip->getImage( frame, nullptr );
-		}
-
-		m_instance->beginRenderAction( frame, frame, 1.0, false, renderScale, true, true );
-		m_instance->renderAction( frame, kOfxImageFieldNone, renderWindowI, renderScale, true, true, false );
-		m_instance->endRenderAction( frame, frame, 1.0, false, renderScale, true, true );
-
-		m_rendering = false;
-	} );
-
-	// ---- Read output for this tile ----
 	FloatVectorDataPtr tileData = new FloatVectorData();
 	vector<float> &tile = tileData->writable();
 	tile.resize( ImagePlug::tilePixels(), 0.0f );
 
-	if( outputClip )
+	// Render inline on the compute thread — CPU renders are serialized by
+	// m_renderMutex and re-entrant via the TLS invocation stack.  GL
+	// plugins never reach this path (gated by m_tiledRenderSupported).
 	{
-		GafferOFX::Image *outputImage = outputClip->getOutputImage();
-		if( outputImage )
+		m_rendering = true;
+
+		Gaffer::ConstContextPtr ctxCopy = new Gaffer::Context( *Gaffer::Context::current() );
+		OfxRectI rwI = renderWindowI;
+		OFX::Host::ImageEffect::ClipInstance *outputClip = dynamic_cast<GafferOFX::ClipInstance*>(
+			m_instance->getClip( "Output" )
+		);
+
+		double pw = dataWindow.size().x;
+		double ph = dataWindow.size().y;
+		m_instance->setProjectFormat( pw, ph );
+
+		RenderInvocation inv;
+		inv.time = frame;
+		inv.renderWindow = rwI;
+		inv.renderScale.x = renderScale.x;
+		inv.renderScale.y = renderScale.y;
+		inv.context = ctxCopy;
+		inv.clipRoIs = clipRoIs;
+
+		OFX::Host::ImageEffect::Image *sharedOutput = nullptr;
+
 		{
-			// Map channel name to component index in OfxRGBAColourF
+			RenderInvocationGuard guard( inv );
+
+			m_instance->beginRenderAction( frame, frame, 1.0, false, renderScale, true, true );
+			m_instance->renderAction( frame, kOfxImageFieldNone, renderWindowI, renderScale, true, true, false );
+			m_instance->endRenderAction( frame, frame, 1.0, false, renderScale, true, true );
+
+			// Read output tile while invocation is still active
+			if( outputClip )
+			{
+				sharedOutput = inv.outputImage;
+				if( sharedOutput )
+					sharedOutput->addReference();
+			}
+		}
+
+		// De-interleave output into tileData
+		if( sharedOutput )
+		{
 			int comp = -1;
 			if( channelName == "R" ) comp = 0;
 			else if( channelName == "G" ) comp = 1;
@@ -1147,15 +974,15 @@ IECore::ConstFloatVectorDataPtr OFXImageNode::computeTiledChannelData( const std
 
 			if( comp >= 0 )
 			{
-				for( int y = renderWindowI.y1; y < renderWindowI.y2; ++y )
+				for( int y = rwI.y1; y < rwI.y2; ++y )
 				{
 					int tileY = y - tileOrigin.y;
 					if( tileY < 0 || tileY >= ts ) continue;
-					for( int x = renderWindowI.x1; x < renderWindowI.x2; ++x )
+					for( int x = rwI.x1; x < rwI.x2; ++x )
 					{
 						int tileX = x - tileOrigin.x;
 						if( tileX < 0 || tileX >= ts ) continue;
-						OfxRGBAColourF *pixel = outputImage->pixel( x, y );
+						OfxRGBAColourF *pixel = static_cast<GafferOFX::Image*>( sharedOutput )->pixel( x, y );
 						if( pixel )
 						{
 							tile[tileY * ts + tileX] = (&pixel->r)[comp];
@@ -1163,11 +990,11 @@ IECore::ConstFloatVectorDataPtr OFXImageNode::computeTiledChannelData( const std
 					}
 				}
 			}
+			sharedOutput->releaseReference();
 		}
-	}
 
-	// Clear frame cache to free source clip's temporal cache
-	if( sourceClip ) sourceClip->clearFrameCache();
+		m_rendering = false;
+	}
 
 	return tileData;
 }
@@ -1274,15 +1101,10 @@ void OFXImageNode::hashOfxRenderBuffer( const Gaffer::Context *context, IECore::
 
 	// Include the frame in the hash so that time-varying OFX plugins
 	// (whether they declare _frameVarying or not) correctly invalidate
-	// the cache across frames.  Call getClipPreferences here to give
-	// plugins a chance to set up frame-dependent state.
+	// the cache across frames.  getClipPreferences is called once during
+	// createPluginInstance (not here — hashing must be side-effect-free).
 	if( m_instance )
 	{
-		if( !m_clipPreferencesFetched )
-		{
-			m_instance->getClipPreferences();
-			m_clipPreferencesFetched = true;
-		}
 		h.append( context->getFrame() );
 	}
 }
@@ -1296,62 +1118,29 @@ IECore::ConstCompoundObjectPtr OFXImageNode::computeOfxRenderBuffer( const Gaffe
 		return result;
 	}
 
-	// Get input image data
 	ImagePlug::GlobalScope globalScope( context );
 
 	GafferOFX::ClipInstance* sourceClip = dynamic_cast<GafferOFX::ClipInstance*>( m_instance->getClip( "Source" ) );
 	GafferOFX::ClipInstance* outputClip = dynamic_cast<GafferOFX::ClipInstance*>( m_instance->getClip( "Output" ) );
 
 	OfxTime frame = context->getFrame();
-	OfxPointD renderScale;
-	renderScale.x = renderScale.y = 1.0;
+	OfxPointD renderScale = { 1.0, 1.0 };
 
 	Box2i dataWindow;
 	Format format;
-	int width = 0, height = 0;
-	auto frameBuffer = std::unique_ptr<OfxRGBAColourF[]>();
-
 	const bool hasInput = inPlug()->getInput() != nullptr;
-
-	if( sourceClip )
-	{
-		sourceClip->setConnected( hasInput );
-	}
 
 	if( hasInput && sourceClip )
 	{
-		// Filter: use input image data
 		format = inPlug()->formatPlug()->getValue();
 		dataWindow = inPlug()->dataWindowPlug()->getValue();
-		ConstStringVectorDataPtr channelNamesData = inPlug()->channelNamesPlug()->getValue();
-
-		width = dataWindow.size().x;
-		height = dataWindow.size().y;
-
-		if( width <= 0 || height <= 0 )
+		if( dataWindow.size().x <= 0 || dataWindow.size().y <= 0 )
 		{
 			dataWindow = Box2i( V2i( 0, 0 ), V2i( (int)format.width(), (int)format.height() ) );
-			width = dataWindow.size().x;
-			height = dataWindow.size().y;
 		}
-
-		frameBuffer = std::make_unique<OfxRGBAColourF[]>( width * height );
-
-		for( int i = 0; i < width * height; ++i )
-		{
-			frameBuffer[i].r = 0.0f;
-			frameBuffer[i].g = 0.0f;
-			frameBuffer[i].b = 0.0f;
-			frameBuffer[i].a = 1.0f;
-		}
-
-		readPlugToRGBA( inPlug(), frameBuffer.get(), dataWindow, width );
-
-		sourceClip->setExternalBuffer( frameBuffer.get(), width, height );
 	}
 	else
 	{
-		// Generator: use OFX plugin's RoD to determine output size
 		OfxRectD rod;
 		if( outputClip )
 		{
@@ -1366,116 +1155,27 @@ IECore::ConstCompoundObjectPtr OFXImageNode::computeOfxRenderBuffer( const Gaffe
 			V2i( (int)rod.x1, (int)rod.y1 ),
 			V2i( (int)rod.x2, (int)rod.y2 )
 		);
-		width = dataWindow.size().x;
-		height = dataWindow.size().y;
-		if( width <= 0 || height <= 0 )
+		if( dataWindow.size().x <= 0 || dataWindow.size().y <= 0 )
 		{
 			dataWindow = Box2i( V2i( 0, 0 ), V2i( 1920, 1080 ) );
-			width = 1920;
-			height = 1080;
 		}
-		format = Format( width, height );
+		format = Format( dataWindow.size().x, dataWindow.size().y );
 	}
 
+	// Tiled path: just compute metadata (dataWindow + pixelAspect), no full-frame render.
 	if( m_tiledRenderSupported && hasInput )
 	{
-		// Tiled path: no full-frame render.  Just compute metadata
-		// (dataWindow + pixelAspect) from the input or plugin RoD.
-
-		Format fmt;
-		Box2i dw;
-
-		const bool hasInput = inPlug()->getInput() != nullptr;
-		if( hasInput )
-		{
-			fmt = inPlug()->formatPlug()->getValue();
-			dw = inPlug()->dataWindowPlug()->getValue();
-		}
-		else if( outputClip )
-		{
-			OfxRectD rod;
-			m_instance->getRegionOfDefinitionAction( frame, renderScale, rod );
-			dw = Box2i( V2i( (int)rod.x1, (int)rod.y1 ), V2i( (int)rod.x2, (int)rod.y2 ) );
-			if( dw.size().x <= 0 || dw.size().y <= 0 )
-			{
-				dw = Box2i( V2i( 0, 0 ), V2i( 1920, 1080 ) );
-			}
-			fmt = Format( dw.size().x, dw.size().y );
-		}
-		else
-		{
-			dw = Box2i( V2i( 0, 0 ), V2i( 1920, 1080 ) );
-			fmt = Format( 1920, 1080 );
-		}
-
-		result->members()["dataWindow"] = new Box2iData( dw );
+		Format fmt = hasInput ? inPlug()->formatPlug()->getValue()
+		          : Format( dataWindow.size().x, dataWindow.size().y );
+		result->members()["dataWindow"] = new Box2iData( dataWindow );
 		result->members()["pixelAspect"] = new FloatData( fmt.getPixelAspect() );
 		return result;
 	}
 
-	// ----- Feed additional input clips (Mask, UV, etc.) -----
-	// Keep a vector of all per-clip frame buffers so they stay alive
-	// throughout the render.
-	struct ClipBuffer
-	{
-		GafferOFX::ClipInstance *clip;
-		std::unique_ptr<OfxRGBAColourF[]> buffer;
+	OfxRectI renderWindow = {
+		dataWindow.min.x, dataWindow.min.y,
+		dataWindow.max.x, dataWindow.max.y
 	};
-	std::vector<ClipBuffer> extraClipBuffers;
-
-	for( const auto &plugName : m_clipPlugNames )
-	{
-		// Capitalise first letter to match OFX clip name
-		std::string ofxClipName = plugName;
-		if( !ofxClipName.empty() && islower( ofxClipName[0] ) )
-		{
-			ofxClipName[0] = toupper( ofxClipName[0] );
-		}
-
-		auto *clip = dynamic_cast<GafferOFX::ClipInstance*>( m_instance->getClip( ofxClipName ) );
-		if( !clip )
-		{
-			continue;
-		}
-
-		auto *plug = getChild<GafferImage::ImagePlug>( plugName );
-		if( !plug || !plug->getInput() )
-		{
-			clip->setConnected( false );
-			continue;
-		}
-
-		clip->setConnected( true );
-
-		Box2i clipDw = plug->dataWindowPlug()->getValue();
-		if( clipDw.size().x <= 0 || clipDw.size().y <= 0 )
-		{
-			continue;
-		}
-
-		int clipWidth = clipDw.size().x;
-		int clipHeight = clipDw.size().y;
-
-		auto buf = std::make_unique<OfxRGBAColourF[]>( clipWidth * clipHeight );
-		readPlugToRGBA( plug, buf.get(), clipDw, clipWidth );
-
-		clip->setExternalBuffer( buf.get(), clipWidth, clipHeight );
-		OfxRectD clipRod;
-		clipRod.x1 = clipDw.min.x;
-		clipRod.y1 = clipDw.min.y;
-		clipRod.x2 = clipDw.max.x;
-		clipRod.y2 = clipDw.max.y;
-		clip->setRenderWindow( clipRod );
-
-		extraClipBuffers.push_back( { clip, std::move( buf ) } );
-	}
-
-	// Set up render parameters
-	OfxRectI renderWindow;
-	renderWindow.x1 = dataWindow.min.x;
-	renderWindow.y1 = dataWindow.min.y;
-	renderWindow.x2 = dataWindow.max.x;
-	renderWindow.y2 = dataWindow.max.y;
 
 	// Check if the effect is identity (e.g. FrameHold pass-through at a different frame)
 	{
@@ -1485,200 +1185,164 @@ IECore::ConstCompoundObjectPtr OFXImageNode::computeOfxRenderBuffer( const Gaffe
 		{
 			if( identityClip == "Source" && hasInput && sourceClip )
 			{
-				// Read source at identityTime and return as output
-				Gaffer::ContextPtr idContext = new Gaffer::Context( *context );
-				idContext->setFrame( identityTime );
-				Gaffer::Context::Scope idScope( idContext.get() );
+				// Read source at identityTime and return as output via pull
+				Gaffer::Context::EditableScope idEdit( context );
+				idEdit.setFrame( identityTime );
 
-				GafferImage::Format idFormat = inPlug()->formatPlug()->getValue();
+				Format idFormat = inPlug()->formatPlug()->getValue();
 				Box2i idDw = inPlug()->dataWindowPlug()->getValue();
-				int idWidth = idDw.size().x;
-				int idHeight = idDw.size().y;
-				if( idWidth > 0 && idHeight > 0 )
+				int idW = idDw.size().x;
+				int idH = idDw.size().y;
+				if( idW > 0 && idH > 0 )
 				{
-					auto idBuf = std::make_unique<OfxRGBAColourF[]>( idWidth * idHeight );
-					readPlugToRGBA( inPlug(), idBuf.get(), idDw, idWidth );
-
 					FloatVectorDataPtr rData = new FloatVectorData();
 					FloatVectorDataPtr gData = new FloatVectorData();
 					FloatVectorDataPtr bData = new FloatVectorData();
 					FloatVectorDataPtr aData = new FloatVectorData();
+					rData->writable().resize( idW * idH );
+					gData->writable().resize( idW * idH );
+					bData->writable().resize( idW * idH );
+					aData->writable().resize( idW * idH );
+
+					GafferImage::Sampler rSamp( inPlug(), "R", idDw );
+					GafferImage::Sampler gSamp( inPlug(), "G", idDw );
+					GafferImage::Sampler bSamp( inPlug(), "B", idDw );
+					IECore::ConstStringVectorDataPtr chNames = inPlug()->channelNamesPlug()->getValue();
+					bool hasA = false;
+					for( const auto &c : chNames->readable() ) { if( c == "A" ) { hasA = true; break; } }
+					std::unique_ptr<GafferImage::Sampler> aSamp;
+					if( hasA ) aSamp = std::make_unique<GafferImage::Sampler>( inPlug(), "A", idDw );
+
 					vector<float> &rVec = rData->writable();
 					vector<float> &gVec = gData->writable();
 					vector<float> &bVec = bData->writable();
 					vector<float> &aVec = aData->writable();
-					rVec.resize( idWidth * idHeight );
-					gVec.resize( idWidth * idHeight );
-					bVec.resize( idWidth * idHeight );
-					aVec.resize( idWidth * idHeight );
-					for( int i = 0; i < idWidth * idHeight; ++i )
+
+					for( int y = idDw.min.y; y < idDw.max.y; ++y )
 					{
-						rVec[i] = idBuf[i].r;
-						gVec[i] = idBuf[i].g;
-						bVec[i] = idBuf[i].b;
-						aVec[i] = idBuf[i].a;
+						int row = ( y - idDw.min.y ) * idW;
+						for( int x = idDw.min.x; x < idDw.max.x; ++x )
+						{
+							int idx = row + ( x - idDw.min.x );
+							rVec[idx] = rSamp.sample( x, y );
+							gVec[idx] = gSamp.sample( x, y );
+							bVec[idx] = bSamp.sample( x, y );
+							aVec[idx] = aSamp ? aSamp->sample( x, y ) : 1.0f;
+						}
 					}
+
 					result->members()["R"] = rData;
 					result->members()["G"] = gData;
 					result->members()["B"] = bData;
 					result->members()["A"] = aData;
-				result->members()["dataWindow"] = new Box2iData( idDw );
-				result->members()["pixelAspect"] = new FloatData( idFormat.getPixelAspect() );
+					result->members()["dataWindow"] = new Box2iData( idDw );
+					result->members()["pixelAspect"] = new FloatData( idFormat.getPixelAspect() );
 				}
 				return result;
 			}
 		}
 	}
 
-	// ---- Temporal clip access: pre-fetch frames needed by the plugin ----
-	if( hasInput && sourceClip && m_instance->temporalAccess() )
+	// ---- Clip property setup (no pre-fetch) ----
 	{
-		OFX::Host::ImageEffect::RangeMap rangeMap;
-		if( m_instance->getFrameNeededAction( frame, rangeMap ) == kOfxStatOK )
-		{
-			auto srcIt = rangeMap.find( sourceClip );
-			if( srcIt != rangeMap.end() && !srcIt->second.empty() )
+		auto setClipProps = []( GafferOFX::ClipInstance *clip ) {
+			if( clip )
 			{
-				std::map<OfxTime, std::unique_ptr<OfxRGBAColourF[]>> cache;
-				int cacheWidth = dataWindow.size().x;
-				int cacheHeight = dataWindow.size().y;
-
-				for( const auto &range : srcIt->second )
-				{
-					for( OfxTime t = range.min; t <= range.max; t += 1.0 )
-					{
-						if( cache.find( t ) != cache.end() )
-							continue;
-
-						// Current frame is already in external buffer, don't re-fetch
-						if( t == frame )
-							continue;
-
-						auto buf = std::make_unique<OfxRGBAColourF[]>( cacheWidth * cacheHeight );
-						// Fill with opaque black as fallback (matching current frame initialization)
-						for( int i = 0; i < cacheWidth * cacheHeight; ++i )
-						{
-							buf[i].r = 0.0f;
-							buf[i].g = 0.0f;
-							buf[i].b = 0.0f;
-							buf[i].a = 1.0f;
-						}
-
-						// Read the input plug at the requested time
-						Gaffer::ContextPtr tContext = new Gaffer::Context( *context );
-						tContext->setFrame( t );
-						Gaffer::Context::Scope tScope( tContext.get() );
-
-						readPlugToRGBA( inPlug(), buf.get(), dataWindow, cacheWidth );
-						cache[t] = std::move( buf );
-					}
-				}
-
-				if( !cache.empty() )
-				{
-					sourceClip->setFrameCache( std::move( cache ), cacheWidth, cacheHeight, dataWindow );
-				}
+				clip->getProps().setStringProperty( kOfxImageEffectPropPixelDepth, kOfxBitDepthFloat );
+				clip->getProps().setStringProperty( kOfxImageEffectPropComponents, kOfxImageComponentRGBA );
 			}
+		};
+		setClipProps( outputClip );
+		setClipProps( sourceClip );
+		for( const auto &plugName : m_clipPlugNames )
+		{
+			std::string ofxClipName = plugName;
+			if( !ofxClipName.empty() && islower( ofxClipName[0] ) )
+				ofxClipName[0] = toupper( ofxClipName[0] );
+			setClipProps( dynamic_cast<GafferOFX::ClipInstance*>( m_instance->getClip( ofxClipName ) ) );
 		}
 	}
 
-	// Set the render window on clips so getRegionOfDefinition returns correct bounds
-	OfxRectD renderWindowD;
-	renderWindowD.x1 = dataWindow.min.x;
-	renderWindowD.y1 = dataWindow.min.y;
-	renderWindowD.x2 = dataWindow.max.x;
-	renderWindowD.y2 = dataWindow.max.y;
-
-	if( hasInput && sourceClip )
-	{
-		sourceClip->setRenderWindow( renderWindowD );
-	}
-	if( outputClip )
-	{
-		outputClip->setRenderWindow( renderWindowD );
-	}
-
-	// Get region of interest and render
-	OfxRectD regionOfInterest;
-	regionOfInterest.x1 = dataWindow.min.x;
-	regionOfInterest.y1 = dataWindow.min.y;
-	regionOfInterest.x2 = dataWindow.max.x;
-	regionOfInterest.y2 = dataWindow.max.y;
-
+	// Get RoI for each clip and build clipRoIs map
 	std::map<OFX::Host::ImageEffect::ClipInstance *, OfxRectD> rois;
+	OfxRectD regionOfInterest = {
+		(double)dataWindow.min.x, (double)dataWindow.min.y,
+		(double)dataWindow.max.x, (double)dataWindow.max.y
+	};
 	m_instance->getRegionOfInterestAction( frame, renderScale, regionOfInterest, rois );
 
-		// Initialize output clip properties before render
-		if( outputClip )
+	std::map<std::string, OfxRectD> clipRoIs;
+	for( auto &[clipPtr, roi] : rois )
+	{
+		if( clipPtr )
+			clipRoIs[clipPtr->getName()] = roi;
+	}
+
+	// Check if the plugin supports GL rendering.  GL-capable plugins
+	// are dispatched to the dedicated OFXRenderWorker for context affinity;
+	// CPU-only plugins render inline with zero GL interaction.
+	bool pluginSupportsGL = false;
+	try
+	{
+		std::string val = m_instance->getPlugin()->getDescriptor().getProps().getStringProperty(
+			kOfxImageEffectPropOpenGLRenderSupported
+		);
+		pluginSupportsGL = ( val == "true" || val == "needed" );
+	}
+	catch( const std::exception & ) {}
+
+	int w = renderWindow.x2 - renderWindow.x1;
+	int h = renderWindow.y2 - renderWindow.y1;
+
+	m_rendering = true;
+
+	Gaffer::ConstContextPtr ctxCopy = new Gaffer::Context( *Gaffer::Context::current() );
+	m_instance->setProjectFormat( (double)dataWindow.size().x, (double)dataWindow.size().y );
+
+	RenderInvocation inv;
+	inv.time = frame;
+	inv.renderWindow = renderWindow;
+	inv.renderScale.x = renderScale.x;
+	inv.renderScale.y = renderScale.y;
+	inv.context = ctxCopy;
+	inv.clipRoIs = clipRoIs;
+
+	// Shared render function used by both CPU (inline) and GL (worker) paths.
+	auto renderFunc = [&]()
+	{
+		RenderInvocationGuard guard( inv );
+		m_instance->beginRenderAction( frame, frame, 1.0, false, renderScale, true, true );
+		m_instance->renderAction( frame, kOfxImageFieldNone, renderWindow, renderScale, true, true, false );
+		m_instance->endRenderAction( frame, frame, 1.0, false, renderScale, true, true );
+	};
+
+	if( pluginSupportsGL )
+	{
+		// GL path: dispatch to dedicated worker for context affinity.
+		// The worker owns the EGL context; makeCurrent on any other
+		// thread would steal it permanently.
+		OFXRenderWorker::instance().execute( [&]()
 		{
-			outputClip->getProps().setStringProperty( kOfxImageEffectPropPixelDepth, kOfxBitDepthFloat );
-			outputClip->getProps().setStringProperty( kOfxImageEffectPropComponents, kOfxImageComponentRGBA );
-		}
-		if( sourceClip )
-		{
-			sourceClip->getProps().setStringProperty( kOfxImageEffectPropPixelDepth, kOfxBitDepthFloat );
-			sourceClip->getProps().setStringProperty( kOfxImageEffectPropComponents, kOfxImageComponentRGBA );
-		}
-
-		// Let the plugin customize clip preferences
-		m_instance->getClipPreferences();
-
-		// Pre-allocate the output image
-		if( outputClip )
-		{
-			outputClip->getImage( frame, nullptr );
-		}
-
-		// Dispatch the render to our dedicated worker thread.
-		// This keeps renders off the main thread (no UI freeze).
-		//
-		// The EGL/GLX context is made current on the worker thread.  GL
-		// plugins (openGLRenderSupported=true) receive contextAttachedAction
-		// exactly once, render into our FBO, and we read back via glReadPixels.
-		// CPU-only plugins render via clipGetImage into the pre-allocated CPU
-		// buffer and skip the GL setup.
-		//
-		// The EGL context is created as compatibility profile, so deprecated
-		// GL queries (glGetString(GL_EXTENSIONS), etc.) succeed.
-		OFXRenderWorker::instance().execute( [this, frame, renderScale, &renderWindow, outputClip, sourceClip]() {
-
-			// ---- Detect GL support ----
-			bool pluginSupportsGL = false;
-			try
-			{
-				std::string val = m_instance->getPlugin()->getDescriptor().getProps().getStringProperty(
-					kOfxImageEffectPropOpenGLRenderSupported
-				);
-				pluginSupportsGL = ( val == "true" || val == "needed" );
-			}
-			catch( const std::exception & ) {}
-
-			int w = renderWindow.x2 - renderWindow.x1;
-			int h = renderWindow.y2 - renderWindow.y1;
-
-			// ---- GL context setup ----
 			GLContextManager &gl = GLContextManager::instance();
-			bool useGL = gl.makeCurrent();  // EGL/GLX hardware context
+			bool useGL = gl.makeCurrent();
+
+			// Always notify GL-capable plugins that GL is available,
+			// even if our EGL context is not functional.  Plugins like
+			// Shadertoy create their own OSMesa context internally
+			// during contextAttachedAction and will not render without
+			// openGLEnabled=1.
+			if( !m_glContextAttached )
+			{
+				m_glContextAttached = true;
+				m_instance->getProps().setIntProperty( kOfxImageEffectPropOpenGLEnabled, 1 );
+				m_instance->contextAttachedAction();
+			}
 
 			if( useGL )
 			{
 				bool pluginDispatchOK = gl.pluginDispatchOK();
-				if( pluginSupportsGL && !pluginDispatchOK )
+				if( pluginDispatchOK )
 				{
-					// Plugin wants GL but host dispatch is broken (e.g.
-					// non-GLVND libGL in process).  Fall back to CPU path.
-				}
-				if( pluginSupportsGL && pluginDispatchOK )
-				{
-					// Per-instance: contextAttachedAction exactly once.
-					if( !m_glContextAttached )
-					{
-						m_glContextAttached = true;
-						m_instance->getProps().setIntProperty( kOfxImageEffectPropOpenGLEnabled, 1 );
-						m_instance->contextAttachedAction();
-					}
-
-					// Set up an RGBA32F FBO matching the render window.
 					unsigned int fbo = 0, tex = 0;
 					if( w != (int)gl.outputTexWidth() || h != (int)gl.outputTexHeight() )
 					{
@@ -1704,116 +1368,58 @@ IECore::ConstCompoundObjectPtr OFXImageNode::computeOfxRenderBuffer( const Gaffe
 					}
 
 					GLenum fbStatus = GLContextManager::glCheckFramebufferStatusF( GL_FRAMEBUFFER );
-					if( fbStatus != GL_FRAMEBUFFER_COMPLETE )
-					{
-					}
+					if( fbStatus != GL_FRAMEBUFFER_COMPLETE ) {}
 
 					glViewport( 0, 0, w, h );
 					glClearColor( 0.25f, 0.5f, 0.75f, 1.0f );
 					glClear( GL_COLOR_BUFFER_BIT );
 				}
-				else
-				{
-					// CPU-only plugin — no GL setup needed.
-					// They render via clipGetImage into the pre-allocated
-					// CPU buffer.
-				}
 			}
 
-			// ---- Plugin render ----
-			m_rendering = true;
-			m_instance->beginRenderAction( frame, frame, 1.0, false, renderScale, true, true );
-			m_instance->renderAction( frame, kOfxImageFieldNone, renderWindow, renderScale, true, true, false );
-			m_instance->endRenderAction( frame, frame, 1.0, false, renderScale, true, true );
-			m_rendering = false;
+			// Run render action (on the worker thread — GL context is valid here)
+			renderFunc();
 
-			// ---- GL readback (only if plugin rendered into our FBO) ----
+			// ---- GL readback (if plugin rendered into our FBO) ----
 			if( useGL && pluginSupportsGL )
 			{
-				// Sentinel probe: did the plugin draw into our FBO?
-			{
 				GLContextManager::glBindFramebufferF( GL_FRAMEBUFFER, gl.outputFBO() );
-				float probe[4];
-					glReadPixels( 0, 0, 1, 1, GL_RGBA, GL_FLOAT, probe );
-					auto approxEq = []( float a, float b, float eps ) {
-						return ( a - b ) < eps && ( b - a ) < eps;
-					};
-					bool sentinelIntact = (
-						approxEq( probe[0], 0.25f, 0.001f ) &&
-						approxEq( probe[1], 0.50f, 0.001f ) &&
-						approxEq( probe[2], 0.75f, 0.001f )
-					);
-					if( sentinelIntact )
-					{
-						return;
-					}
-				}
 
-				// Read back GL pixels into the output clip's buffer
-				if( outputClip )
+				// Sentinel: check if the clear color is still intact.
+				// If the plugin rendered into our FBO, pixels should differ.
+				float probe[4];
+				glReadPixels( 0, 0, 1, 1, GL_RGBA, GL_FLOAT, probe );
+				auto approxEq = []( float a, float b, float eps ) {
+					return ( a - b ) < eps && ( b - a ) < eps;
+				};
+				if( !approxEq( probe[0], 0.25f, 0.001f ) ||
+				    !approxEq( probe[1], 0.50f, 0.001f ) ||
+				    !approxEq( probe[2], 0.75f, 0.001f ) )
 				{
-					GLContextManager::glBindFramebufferF( GL_FRAMEBUFFER, gl.outputFBO() );
+					// Plugin rendered to our FBO.  Read pixels directly
+					// into result members (inv.outputImage may be NULL
+					// if the plugin used loadTexture instead of getImage).
 					glFinish();
 					glPixelStorei( GL_PACK_ALIGNMENT, 1 );
 
-					GafferOFX::Image* outputImage = outputClip->getOutputImage();
-					if( outputImage )
-					{
-						OfxRectI bounds = outputImage->getBounds();
-						OfxRGBAColourF* pixelData = outputImage->pixel( bounds.x1, bounds.y1 );
-						if( pixelData )
-						{
-							glReadPixels( 0, 0, w, h, GL_RGBA, GL_FLOAT, pixelData );
-						}
-					}
-				}
-			}
-		} );
+					int numPixels = w * h;
+					vector<float> pixelBuffer( numPixels * 4 );
+					glReadPixels( 0, 0, w, h, GL_RGBA, GL_FLOAT, pixelBuffer.data() );
 
-		// Clear frame cache after render
-		if( sourceClip )
-		{
-			sourceClip->clearFrameCache();
-		}
-
-		if( outputClip )
-		{
-				GafferOFX::Image* outputImage = outputClip->getOutputImage();
-				if( outputImage )
-				{
-					OfxRectI outputBounds = outputImage->getBounds();
-					int cpuOutWidth = outputBounds.x2 - outputBounds.x1;
-					int cpuOutHeight = outputBounds.y2 - outputBounds.y1;
-
-					// De-interleave output buffer into separate channel FloatVectorData
 					FloatVectorDataPtr rData = new FloatVectorData();
 					FloatVectorDataPtr gData = new FloatVectorData();
 					FloatVectorDataPtr bData = new FloatVectorData();
 					FloatVectorDataPtr aData = new FloatVectorData();
-					vector<float> &rVec = rData->writable();
-					vector<float> &gVec = gData->writable();
-					vector<float> &bVec = bData->writable();
-					vector<float> &aVec = aData->writable();
+					rData->writable().resize( numPixels );
+					gData->writable().resize( numPixels );
+					bData->writable().resize( numPixels );
+					aData->writable().resize( numPixels );
 
-					rVec.resize( cpuOutWidth * cpuOutHeight );
-					gVec.resize( cpuOutWidth * cpuOutHeight );
-					bVec.resize( cpuOutWidth * cpuOutHeight );
-					aVec.resize( cpuOutWidth * cpuOutHeight );
-
-					for( int y = outputBounds.y1; y < outputBounds.y2; ++y )
+					for( int i = 0; i < numPixels; ++i )
 					{
-						for( int x = outputBounds.x1; x < outputBounds.x2; ++x )
-						{
-							OfxRGBAColourF* pixel = outputImage->pixel( x, y );
-							if( pixel )
-							{
-								int idx = ( y - outputBounds.y1 ) * cpuOutWidth + ( x - outputBounds.x1 );
-								rVec[idx] = pixel->r;
-								gVec[idx] = pixel->g;
-								bVec[idx] = pixel->b;
-								aVec[idx] = pixel->a;
-							}
-						}
+						rData->writable()[i] = pixelBuffer[i * 4];
+						gData->writable()[i] = pixelBuffer[i * 4 + 1];
+						bData->writable()[i] = pixelBuffer[i * 4 + 2];
+						aData->writable()[i] = pixelBuffer[i * 4 + 3];
 					}
 
 					result->members()["R"] = rData;
@@ -1821,16 +1427,80 @@ IECore::ConstCompoundObjectPtr OFXImageNode::computeOfxRenderBuffer( const Gaffe
 					result->members()["B"] = bData;
 					result->members()["A"] = aData;
 				}
+				else if( inv.outputImage )
+				{
+					// CPU fallback: plugin wrote to getImage(Output)
+					glFinish();
+					glPixelStorei( GL_PACK_ALIGNMENT, 1 );
+					OfxRectI bounds = inv.outputImage->getBounds();
+					if( auto *pixelData = static_cast<GafferOFX::Image*>( inv.outputImage )->pixel( bounds.x1, bounds.y1 ) )
+					{
+						glReadPixels( 0, 0, w, h, GL_RGBA, GL_FLOAT, pixelData );
+					}
+				}
 			}
+		} );
 
-	// Store data window and pixel aspect
+	}
+	else
+	{
+		// CPU path: no GL interaction, render inline on the compute thread.
+		// Serialized by m_renderMutex; re-entrant via TLS invocation stack.
+		renderFunc();
+	}
 
-	Box2iDataPtr dataWindowData = new Box2iData( dataWindow );
-	result->members()["dataWindow"] = dataWindowData;
+	// ---- De-interleave output into result (compute thread, worker is done) ----
+	{
+		auto *outputImg = inv.outputImage;
+		if( outputImg )
+		{
+			OfxRectI ob = outputImg->getBounds();
+			int ow = ob.x2 - ob.x1;
+			int oh = ob.y2 - ob.y1;
+			if( ow > 0 && oh > 0 )
+			{
+				FloatVectorDataPtr rData = new FloatVectorData();
+				FloatVectorDataPtr gData = new FloatVectorData();
+				FloatVectorDataPtr bData = new FloatVectorData();
+				FloatVectorDataPtr aData = new FloatVectorData();
+				rData->writable().resize( ow * oh );
+				gData->writable().resize( ow * oh );
+				bData->writable().resize( ow * oh );
+				aData->writable().resize( ow * oh );
 
-	FloatDataPtr parData = new FloatData( format.getPixelAspect() );
-	result->members()["pixelAspect"] = parData;
+				vector<float> &rVec = rData->writable();
+				vector<float> &gVec = gData->writable();
+				vector<float> &bVec = bData->writable();
+				vector<float> &aVec = aData->writable();
 
+				for( int y = ob.y1; y < ob.y2; ++y )
+				{
+					int row = ( y - ob.y1 ) * ow;
+					for( int x = ob.x1; x < ob.x2; ++x )
+					{
+						if( auto *pixel = static_cast<GafferOFX::Image*>( outputImg )->pixel( x, y ) )
+						{
+							int idx = row + ( x - ob.x1 );
+							rVec[idx] = pixel->r;
+							gVec[idx] = pixel->g;
+							bVec[idx] = pixel->b;
+							aVec[idx] = pixel->a;
+						}
+					}
+				}
+
+				result->members()["R"] = rData;
+				result->members()["G"] = gData;
+				result->members()["B"] = bData;
+				result->members()["A"] = aData;
+			}
+		}
+	}
+
+	m_rendering = false;
+
+	result->members()["dataWindow"] = new Box2iData( dataWindow );
+	result->members()["pixelAspect"] = new FloatData( format.getPixelAspect() );
 	return result;
 }
 
