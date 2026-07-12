@@ -1038,6 +1038,78 @@ class OFXImageNodeTest( GafferTest.TestCase ) :
 				tile = fb["out"].channelData( "R", imath.V2i( tx, ty ) )
 				self.assertEqual( len( tile ), ts * ts )
 
+	# -----------------------------------------------------------------------
+	# Cancellation tests — verify that a cancelled compute never populates
+	# the cache with black/garbage data.
+	# -----------------------------------------------------------------------
+
+	def testCancellationDoesNotPoisonCache( self ) :
+
+		# Tiled CPU path: BasicGain is a tiled CPU filter.
+		# A cancelled Gaffer pull inside fetchInputImage should propagate
+		# IECore.Cancelled, and subsequent renders should return correct data.
+		s = Gaffer.ScriptNode()
+
+		cb = GafferImage.Checkerboard()
+		s.addChild( cb )
+		cb["format"].setValue( GafferImage.Format( 128, 128 ) )
+
+		n = GafferOFX.OFXImageNode()
+		s.addChild( n )
+		n["in"].setInput( cb["out"] )
+		n["pluginId"].setValue( "uk.co.thefoundry.BasicGainPlugin" )
+		self.assertTrue( n.createPluginInstance() )
+
+		# Warmup render — fill the input cache so the actual test
+		# exercises the OFX pull path, not the upstream Gaffer cache.
+		warmup = n["out"].channelData( "R", imath.V2i( 0 ) )
+		self.assertGreater( len( warmup ), 0 )
+
+		# Cancel the next compute.
+		canceller = IECore.Canceller()
+		canceller.cancel()
+		ctx = Gaffer.Context( s.context(), canceller )
+		with ctx :
+			with self.assertRaises( IECore.Cancelled ) :
+				n["out"].channelData( "R", imath.V2i( 0 ) )
+
+		# After the cancelled compute, the cache should NOT contain a
+		# black/stale tile.  A subsequent pull should return correct values.
+		tile = n["out"].channelData( "R", imath.V2i( 0 ) )
+		nonZero = sum( 1 for v in tile if abs( v ) > 1e-6 )
+		self.assertGreater( nonZero, 0 )
+
+		# Verify the node's rendering flag was correctly reset.
+		self.assertFalse( n.rendering() )
+
+	def testCancellationFullFrame( self ) :
+
+		# Full-frame path (non-tiled): ColorBars is a generator without
+		# tiling.  Cancellation should also leave no stale cache entry.
+		s = Gaffer.ScriptNode()
+
+		n = GafferOFX.OFXImageNode()
+		s.addChild( n )
+		n["pluginId"].setValue( "net.sf.openfx.ColorBars" )
+		self.assertTrue( n.createPluginInstance() )
+
+		# Warmup
+		dw = n["out"]["dataWindow"].getValue()
+		self.assertGreater( dw.size().x, 0 )
+
+		canceller = IECore.Canceller()
+		canceller.cancel()
+		ctx = Gaffer.Context( s.context(), canceller )
+		with ctx :
+			with self.assertRaises( IECore.Cancelled ) :
+				n["out"].channelData( "R", imath.V2i( 0 ) )
+
+		# Subsequent render should be correct
+		tile = n["out"].channelData( "R", imath.V2i( 0 ) )
+		nonZero = sum( 1 for v in tile if abs( v ) > 1e-6 )
+		self.assertGreater( nonZero, 0 )
+
+		self.assertFalse( n.rendering() )
 
 if __name__ == "__main__" :
 	unittest.main()

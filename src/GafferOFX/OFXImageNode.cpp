@@ -106,6 +106,11 @@ public:
 		m_ready = true;
 		m_cv.notify_one();
 		m_cv.wait( lock, [this]() { return !m_ready; } );
+		if( m_exception )
+		{
+			auto ex = std::move( m_exception );
+			std::rethrow_exception( ex );
+		}
 	}
 
 	~OFXRenderWorker()
@@ -134,7 +139,14 @@ private:
 		{
 			m_cv.wait( lock, [this]() { return m_ready; } );
 			if( m_done ) break;
-			m_task();
+			try
+			{
+				m_task();
+			}
+			catch( ... )
+			{
+				m_exception = std::current_exception();
+			}
 			m_ready = false;
 			m_cv.notify_one();
 		}
@@ -144,6 +156,7 @@ private:
 	std::mutex m_mutex;
 	std::condition_variable m_cv;
 	std::function<void()> m_task;
+	std::exception_ptr m_exception;
 	bool m_ready = false;
 	bool m_done = false;
 };
@@ -154,6 +167,14 @@ using namespace IECore;
 using namespace GafferImage;
 using namespace Gaffer;
 using namespace GafferOFX;
+
+// RAII guard that sets m_rendering = true and resets on scope exit.
+struct RenderingGuard
+{
+	std::atomic<bool> &flag;
+	RenderingGuard( std::atomic<bool> &f ) : flag( f ) { flag = true; }
+	~RenderingGuard() { flag = false; }
+};
 
 //////////////////////////////////////////////////////////////////////////
 // OFXImageNode implementation
@@ -180,7 +201,12 @@ void OFXImageNode::plugSet( Gaffer::Plug *plug )
 		destroyInteract();
 		if( m_glContextAttached )
 		{
-			m_instance->contextDetachedAction();
+			// Marshal detach through worker so the GL context is current.
+			// Only dispatch if the old effect instance has GL support.
+			OFXRenderWorker::instance().execute( [this]() {
+				GLContextManager::instance().makeCurrent();
+				m_instance->contextDetachedAction();
+			} );
 			m_glContextAttached = false;
 		}
 		m_instance.reset();
@@ -205,6 +231,8 @@ void OFXImageNode::plugSet( Gaffer::Plug *plug )
 		m_instance->beginInstanceChangedAction( kOfxChangeUserEdited );
 		m_instance->paramInstanceChangedAction( plug->getName().string(), kOfxChangeUserEdited, time, renderScale );
 		m_instance->endInstanceChangedAction( kOfxChangeUserEdited );
+		// Params can legitimately change clip prefs; re-evaluate.
+		m_instance->getClipPreferences();
 	}
 }
 
@@ -925,7 +953,7 @@ IECore::ConstFloatVectorDataPtr OFXImageNode::computeTiledChannelData( const std
 	// m_renderMutex and re-entrant via the TLS invocation stack.  GL
 	// plugins never reach this path (gated by m_tiledRenderSupported).
 	{
-		m_rendering = true;
+		RenderingGuard _rg( m_rendering );
 
 		Gaffer::ConstContextPtr ctxCopy = new Gaffer::Context( *Gaffer::Context::current() );
 		OfxRectI rwI = renderWindowI;
@@ -946,12 +974,13 @@ IECore::ConstFloatVectorDataPtr OFXImageNode::computeTiledChannelData( const std
 		inv.clipRoIs = clipRoIs;
 
 		OFX::Host::ImageEffect::Image *sharedOutput = nullptr;
+		OfxStatus renderStatus = kOfxStatOK;
 
 		{
 			RenderInvocationGuard guard( inv );
 
 			m_instance->beginRenderAction( frame, frame, 1.0, false, renderScale, true, true );
-			m_instance->renderAction( frame, kOfxImageFieldNone, renderWindowI, renderScale, true, true, false );
+			renderStatus = m_instance->renderAction( frame, kOfxImageFieldNone, renderWindowI, renderScale, true, true, false );
 			m_instance->endRenderAction( frame, frame, 1.0, false, renderScale, true, true );
 
 			// Read output tile while invocation is still active
@@ -961,6 +990,18 @@ IECore::ConstFloatVectorDataPtr OFXImageNode::computeTiledChannelData( const std
 				if( sharedOutput )
 					sharedOutput->addReference();
 			}
+		}
+
+		// Propagate cancellation / check render status before touching data
+		if( inv.exception )
+		{
+			if( sharedOutput ) sharedOutput->releaseReference();
+			std::rethrow_exception( inv.exception );
+		}
+		if( renderStatus != kOfxStatOK && renderStatus != kOfxStatReplyDefault )
+		{
+			if( sharedOutput ) sharedOutput->releaseReference();
+			throw IECore::Exception( "OFX renderAction failed" );
 		}
 
 		// De-interleave output into tileData
@@ -992,8 +1033,6 @@ IECore::ConstFloatVectorDataPtr OFXImageNode::computeTiledChannelData( const std
 			}
 			sharedOutput->releaseReference();
 		}
-
-		m_rendering = false;
 	}
 
 	return tileData;
@@ -1282,19 +1321,21 @@ IECore::ConstCompoundObjectPtr OFXImageNode::computeOfxRenderBuffer( const Gaffe
 	// are dispatched to the dedicated OFXRenderWorker for context affinity;
 	// CPU-only plugins render inline with zero GL interaction.
 	bool pluginSupportsGL = false;
+	bool glIsNeeded = false;
 	try
 	{
 		std::string val = m_instance->getPlugin()->getDescriptor().getProps().getStringProperty(
 			kOfxImageEffectPropOpenGLRenderSupported
 		);
 		pluginSupportsGL = ( val == "true" || val == "needed" );
+		glIsNeeded = ( val == "needed" );
 	}
 	catch( const std::exception & ) {}
 
 	int w = renderWindow.x2 - renderWindow.x1;
 	int h = renderWindow.y2 - renderWindow.y1;
 
-	m_rendering = true;
+	RenderingGuard _rg( m_rendering );
 
 	Gaffer::ConstContextPtr ctxCopy = new Gaffer::Context( *Gaffer::Context::current() );
 	m_instance->setProjectFormat( (double)dataWindow.size().x, (double)dataWindow.size().y );
@@ -1308,17 +1349,45 @@ IECore::ConstCompoundObjectPtr OFXImageNode::computeOfxRenderBuffer( const Gaffe
 	inv.clipRoIs = clipRoIs;
 
 	// Shared render function used by both CPU (inline) and GL (worker) paths.
+	OfxStatus renderStatus = kOfxStatOK;
 	auto renderFunc = [&]()
 	{
 		RenderInvocationGuard guard( inv );
 		m_instance->beginRenderAction( frame, frame, 1.0, false, renderScale, true, true );
-		m_instance->renderAction( frame, kOfxImageFieldNone, renderWindow, renderScale, true, true, false );
+		renderStatus = m_instance->renderAction( frame, kOfxImageFieldNone, renderWindow, renderScale, true, true, false );
 		m_instance->endRenderAction( frame, frame, 1.0, false, renderScale, true, true );
 	};
 
 	if( pluginSupportsGL )
 	{
 		// GL path: dispatch to dedicated worker for context affinity.
+		// Prefetch input images on the compute thread first — the worker
+		// must never pull Gaffer directly, as that could deadlock when
+		// another thread holds m_renderMutex for a different node.
+		// Use clip->getImage() with the full RoI so the resolveFetchRegion
+		// floor/ceil + RoD math is consistent between prefetch and render.
+		{
+			RenderInvocationGuard guard( inv );
+			for( const auto &[clipName, roI] : clipRoIs )
+			{
+				if( clipName == "Output" )
+					continue;
+				GafferOFX::ClipInstance *clip = dynamic_cast<GafferOFX::ClipInstance*>(
+					m_instance->getClip( clipName )
+				);
+				if( !clip || clip->plugName().empty() )
+					continue;
+				const GafferImage::ImagePlug *plug = m_instance->node()->getChild<GafferImage::ImagePlug>( clip->plugName() );
+				if( !plug || !plug->getInput() )
+					continue;
+				OfxRectD roiD = roI;
+				if( auto *img = static_cast<GafferOFX::Image*>( clip->getImage( frame, &roiD ) ) )
+					inv.prefetched[clipName] = img;
+			}
+			if( inv.exception )
+				std::rethrow_exception( inv.exception );
+		}
+
 		// The worker owns the EGL context; makeCurrent on any other
 		// thread would steal it permanently.
 		OFXRenderWorker::instance().execute( [&]()
@@ -1326,12 +1395,15 @@ IECore::ConstCompoundObjectPtr OFXImageNode::computeOfxRenderBuffer( const Gaffe
 			GLContextManager &gl = GLContextManager::instance();
 			bool useGL = gl.makeCurrent();
 
-			// Always notify GL-capable plugins that GL is available,
-			// even if our EGL context is not functional.  Plugins like
-			// Shadertoy create their own OSMesa context internally
-			// during contextAttachedAction and will not render without
-			// openGLEnabled=1.
-			if( !m_glContextAttached )
+			// Require-GL plugins get a hard failure if no context.
+			if( glIsNeeded && !useGL )
+			{
+				throw IECore::Exception(
+					"OFX plugin requires OpenGL but no GL context is available"
+				);
+			}
+
+			if( !m_glContextAttached && useGL && gl.pluginDispatchOK() )
 			{
 				m_glContextAttached = true;
 				m_instance->getProps().setIntProperty( kOfxImageEffectPropOpenGLEnabled, 1 );
@@ -1398,6 +1470,9 @@ IECore::ConstCompoundObjectPtr OFXImageNode::computeOfxRenderBuffer( const Gaffe
 					// Plugin rendered to our FBO.  Read pixels directly
 					// into result members (inv.outputImage may be NULL
 					// if the plugin used loadTexture instead of getImage).
+					// NOTE: do NOT also read from inv.outputImage here —
+					// the sentinel intact means no GL render, and the CPU
+					// de-interleave below handles the CPU-output path.
 					glFinish();
 					glPixelStorei( GL_PACK_ALIGNMENT, 1 );
 
@@ -1427,17 +1502,9 @@ IECore::ConstCompoundObjectPtr OFXImageNode::computeOfxRenderBuffer( const Gaffe
 					result->members()["B"] = bData;
 					result->members()["A"] = aData;
 				}
-				else if( inv.outputImage )
-				{
-					// CPU fallback: plugin wrote to getImage(Output)
-					glFinish();
-					glPixelStorei( GL_PACK_ALIGNMENT, 1 );
-					OfxRectI bounds = inv.outputImage->getBounds();
-					if( auto *pixelData = static_cast<GafferOFX::Image*>( inv.outputImage )->pixel( bounds.x1, bounds.y1 ) )
-					{
-						glReadPixels( 0, 0, w, h, GL_RGBA, GL_FLOAT, pixelData );
-					}
-				}
+				// Sentinel intact && inv.outputImage means the plugin
+				// wrote to getImage(Output) on the CPU — the de-interleave
+				// below handles this case.  Do NOT glReadPixels into it.
 			}
 		} );
 
@@ -1449,7 +1516,19 @@ IECore::ConstCompoundObjectPtr OFXImageNode::computeOfxRenderBuffer( const Gaffe
 		renderFunc();
 	}
 
+	// ---- Propagate cancellation / check render status ----
+	// Order is critical: cancellation from a failed Gaffer pull must surface
+	// as IECore::Cancelled (silent retry), not as a generic render failure
+	// (red node + error dialog on every viewer pan).
+	if( inv.exception )
+		std::rethrow_exception( inv.exception );
+
+	if( renderStatus != kOfxStatOK && renderStatus != kOfxStatReplyDefault )
+		throw IECore::Exception( "OFX renderAction failed" );
+
 	// ---- De-interleave output into result (compute thread, worker is done) ----
+	// Skip if GL readback already populated result (sentinel-differed path).
+	if( !result->member<FloatVectorData>( "R" ) )
 	{
 		auto *outputImg = inv.outputImage;
 		if( outputImg )
@@ -1496,8 +1575,6 @@ IECore::ConstCompoundObjectPtr OFXImageNode::computeOfxRenderBuffer( const Gaffe
 			}
 		}
 	}
-
-	m_rendering = false;
 
 	result->members()["dataWindow"] = new Box2iData( dataWindow );
 	result->members()["pixelAspect"] = new FloatData( format.getPixelAspect() );

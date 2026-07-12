@@ -42,6 +42,8 @@
 #include "Gaffer/Node.h"
 #include "Gaffer/Context.h"
 
+#include <exception>
+#include <map>
 #include <unordered_set>
 #include <vector>
 
@@ -61,11 +63,15 @@ struct GAFFEROFX_API RenderInvocation
 	Gaffer::ConstContextPtr context;
 	std::map<std::string, OfxRectD> clipRoIs;
 	OFX::Host::ImageEffect::Image *outputImage = nullptr;
+	std::exception_ptr exception;
+	std::map<std::string, OFX::Host::ImageEffect::Image*> prefetched;
 
 	~RenderInvocation()
 	{
 		if( outputImage )
 			outputImage->releaseReference();
+		for( auto &[name, img] : prefetched )
+			img->releaseReference();
 	}
 };
 

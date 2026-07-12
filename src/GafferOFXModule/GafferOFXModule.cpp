@@ -264,5 +264,6 @@ BOOST_PYTHON_MODULE( _GafferOFX )
 		.def( "hasOverlay", &OFXImageNode::hasOverlay )
 		.def( "getInteract", &OFXImageNode::getInteract, return_value_policy<reference_existing_object>() )
 		.def( "destroyInteract", &OFXImageNode::destroyInteract )
+		.def( "rendering", &OFXImageNode::rendering )
 	;
 }

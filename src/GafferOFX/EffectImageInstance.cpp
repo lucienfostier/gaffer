@@ -717,8 +717,10 @@ OFX::Host::ImageEffect::Image *EffectImageInstance::fetchInputImage(
 					readPlugToRGBA( plug, pixelData, imgRegion, width );
 				} );
 			}
-			catch( const std::exception & )
+			catch( ... )
 			{
+				if( auto *activeInv = currentInvocation() )
+					activeInv->exception = std::current_exception();
 				image->releaseReference();
 				return nullptr;
 			}
@@ -738,8 +740,10 @@ OFX::Host::ImageEffect::Image *EffectImageInstance::fetchInputImage(
 					readPlugToRGBA( plug, pixelData, imgRegion, width );
 				} );
 			}
-			catch( const std::exception & )
+			catch( ... )
 			{
+				if( auto *activeInv = currentInvocation() )
+					activeInv->exception = std::current_exception();
 				image->releaseReference();
 				return nullptr;
 			}

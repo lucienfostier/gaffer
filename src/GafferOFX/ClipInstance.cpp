@@ -69,7 +69,7 @@ GafferOFX::Image::Image( ClipInstance &clip, OfxTime time, int view, const OfxRe
 		height = bounds->y2 - bounds->y1;
 	}
 
-	m_data.reset( new OfxRGBAColourF[width * height] );
+	m_data.reset( new OfxRGBAColourF[width * height]() );
 
 	OfxRectI imageBounds;
 	if( bounds )
@@ -277,17 +277,34 @@ OfxRectD ClipInstance::getRegionOfDefinition(OfxTime time) const
 	if( plug && plug->getInput() )
 	{
 		// Scope the invocation context (if any) to read the data window.
+		// Override frame for temporal accesses so getRegionOfDefinition
+		// reports the correct data window at clip time, not render time.
 		auto *inv = EffectImageInstance::currentInvocation();
 		if( inv && inv->context )
 		{
-			Gaffer::Context::Scope scope( inv->context.get() );
-			Imath::Box2i dw = plug->dataWindowPlug()->getValue();
-			OfxRectD v;
-			v.x1 = dw.min.x;
-			v.y1 = dw.min.y;
-			v.x2 = dw.max.x;
-			v.y2 = dw.max.y;
-			return v;
+			if( time == inv->context->getFrame() )
+			{
+				Gaffer::Context::Scope scope( inv->context.get() );
+				Imath::Box2i dw = plug->dataWindowPlug()->getValue();
+				OfxRectD v;
+				v.x1 = dw.min.x;
+				v.y1 = dw.min.y;
+				v.x2 = dw.max.x;
+				v.y2 = dw.max.y;
+				return v;
+			}
+			else
+			{
+				Gaffer::Context::EditableScope edit( inv->context.get() );
+				edit.setFrame( time );
+				Imath::Box2i dw = plug->dataWindowPlug()->getValue();
+				OfxRectD v;
+				v.x1 = dw.min.x;
+				v.y1 = dw.min.y;
+				v.x2 = dw.max.x;
+				v.y2 = dw.max.y;
+				return v;
+			}
 		}
 		else
 		{
@@ -371,14 +388,16 @@ OFX::Host::ImageEffect::Image* ClipInstance::getImage(OfxTime time, const OfxRec
 		if( !inv )
 			return nullptr;
 
-		// Output clip: use invocation's render window (or optionalBounds union)
-		OfxRectI imageBounds = region;
+		// Output clip: allocate the union of optionalBounds and renderWindow
+		// to ensure the buffer covers both the plugin's request and the
+		// invocation's render window.
+		OfxRectI imageBounds;
 		if( optionalBounds )
 		{
-			imageBounds.x1 = (int)optionalBounds->x1;
-			imageBounds.y1 = (int)optionalBounds->y1;
-			imageBounds.x2 = (int)optionalBounds->x2;
-			imageBounds.y2 = (int)optionalBounds->y2;
+			imageBounds.x1 = std::min( (int)optionalBounds->x1, inv->renderWindow.x1 );
+			imageBounds.y1 = std::min( (int)optionalBounds->y1, inv->renderWindow.y1 );
+			imageBounds.x2 = std::max( (int)optionalBounds->x2, inv->renderWindow.x2 );
+			imageBounds.y2 = std::max( (int)optionalBounds->y2, inv->renderWindow.y2 );
 		}
 		else
 		{
@@ -407,7 +426,23 @@ OFX::Host::ImageEffect::Image* ClipInstance::getImage(OfxTime time, const OfxRec
 		return inv->outputImage;
 	}
 
-	// Input clip: pull on demand from Gaffer
+	// Input clip: check prefetched first (set up by compute thread before
+	// GL dispatch to avoid Gaffer pulls inside the worker).
+	auto *inv = EffectImageInstance::currentInvocation();
+	if( inv )
+	{
+		auto it = inv->prefetched.find( m_name );
+		if( it != inv->prefetched.end() )
+		{
+			OfxRectI bounds = it->second->getBounds();
+			if( region.x1 >= bounds.x1 && region.y1 >= bounds.y1 &&
+			    region.x2 <= bounds.x2 && region.y2 <= bounds.y2 )
+			{
+				it->second->addReference();
+				return it->second;
+			}
+		}
+	}
 	return m_effect->fetchInputImage( *this, time, region );
 }
 
