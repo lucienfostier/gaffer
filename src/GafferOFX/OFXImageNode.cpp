@@ -57,19 +57,52 @@
 #include "GafferImage/Sampler.h"
 
 #include "IECore/BoxOps.h"
+#include "IECore/NullObject.h"
 
 #ifdef OFX_SUPPORTS_OPENGLRENDER
 #include "ofxGPURender.h"
 #endif
 
 #include <algorithm>
+#include <atomic>
 #include <cctype>
+#include <chrono>
+#include <cstdlib>
 #include <exception>
-#include <vector>
-#include <thread>
-#include <mutex>
-#include <condition_variable>
 #include <functional>
+#include <mutex>
+#include <sstream>
+#include <thread>
+#include <unordered_map>
+#include <condition_variable>
+#include <vector>
+
+// Instrumentation for tile concurrency measurement.
+namespace
+{
+
+// Per-thread render depth so nested pulls don't inflate concurrency.
+// g_activeThreads counts how many threads have t_tileDepth > 0.
+thread_local int t_tileDepth = 0;
+std::atomic<int> g_activeThreads{ 0 };
+std::atomic<int> g_threadHighWater{ 0 };
+
+// Render-once assertion: count renderAction invocations per
+// (node, frame, tileOrigin) tuple.  Reset by a new top-level pull.
+std::unordered_map<std::string, int> g_renderCounts;
+std::mutex g_renderCountsMutex;
+
+// Env-var spin for scaling check: GAFFEROFX_TILE_SPIN_MS
+int tileSpinMs()
+{
+	static int ms = []() {
+		const char *env = std::getenv( "GAFFEROFX_TILE_SPIN_MS" );
+		return env ? std::atoi( env ) : 0;
+	}();
+	return ms;
+}
+
+} // namespace
 
 //////////////////////////////////////////////////////////////////////////
 // Dedicated render worker thread
@@ -168,12 +201,14 @@ using namespace GafferImage;
 using namespace Gaffer;
 using namespace GafferOFX;
 
-// RAII guard that sets m_rendering = true and resets on scope exit.
-struct RenderingGuard
+// RAII guard that increments m_rendering and decrements on scope exit.
+// Concurrent tiles each hold their own increment, so m_rendering > 0
+// while any tile is rendering.
+struct RenderingCounter
 {
-	std::atomic<bool> &flag;
-	RenderingGuard( std::atomic<bool> &f ) : flag( f ) { flag = true; }
-	~RenderingGuard() { flag = false; }
+	std::atomic<int> &counter;
+	RenderingCounter( std::atomic<int> &c ) : counter( c ) { ++counter; }
+	~RenderingCounter() { --counter; }
 };
 
 //////////////////////////////////////////////////////////////////////////
@@ -191,6 +226,7 @@ OFXImageNode::OFXImageNode( const std::string &name )
 	addChild( new StringPlug( "pluginId" ) );
 	addChild( new Plug( "parameters", Plug::In, Plug::Default & ~Plug::AcceptsInputs ) );
 	addChild( new CompoundObjectPlug( "__ofxRenderBuffer", Plug::Out, new CompoundObject, Plug::Default & ~Plug::Serialisable ) );
+        addChild( new ObjectPlug( "__ofxTileBuffer", Plug::Out, IECore::NullObject::defaultNullObject(), Plug::Default & ~Plug::Serialisable ) );
 	plugSetSignal().connect( [this]( Gaffer::Plug *plug ) { plugSet( plug ); } );
 }
 
@@ -214,10 +250,10 @@ void OFXImageNode::plugSet( Gaffer::Plug *plug )
 	}
 	else if( m_instance && parametersPlug()->isAncestorOf( plug ) )
 	{
-		if( m_rendering )
-		{
-			return;
-		}
+	if( m_rendering > 0 )
+	{
+		return;
+	}
 		if( m_settingFromPlugin )
 		{
 			return;
@@ -334,16 +370,63 @@ bool OFXImageNode::createPluginInstance()
 				pluginSupportsGL = ( val == "true" || val == "needed" );
 			}
 			catch( const std::exception & ) {}
-			if( !pluginSupportsGL && m_instance->supportsTiles() )
+			std::string pluginId = m_instance->getPlugin()->getIdentifier();
+			bool isCImg = pluginId.find( "net.sf.cimg." ) == 0 || pluginId.find( "eu.cimg." ) == 0;
+			bool supportsTiles = false;
+			try { supportsTiles = m_instance->supportsTiles(); } catch( const std::exception & ) {}
+			if( !pluginSupportsGL && supportsTiles && !isCImg )
 			{
-				std::string pluginId = m_instance->getPlugin()->getIdentifier();
-				bool isCImg = pluginId.find( "net.sf.cimg." ) == 0 || pluginId.find( "eu.cimg." ) == 0;
-				if( !isCImg )
-				{
-					m_tiledRenderSupported = true;
-				}
+				m_tiledRenderSupported = true;
 			}
+			std::cerr << "OFXImageNode: tiled=" << m_tiledRenderSupported
+			          << " for \"" << pluginId << "\""
+			          << " gl=" << pluginSupportsGL
+			          << " tiles=" << supportsTiles
+			          << " cimg=" << isCImg
+			          << std::endl;
 		}
+
+		// Determine render thread safety level for tiled rendering.
+		m_renderThreadSafety = RenderSafety::InstanceSafe;  // safe default
+		if( m_tiledRenderSupported )
+		{
+			std::string val;
+			try
+			{
+				val = m_instance->getPlugin()->getDescriptor().getProps().getStringProperty(
+					kOfxImageEffectPluginRenderThreadSafety
+				);
+			}
+			catch( const std::exception & )
+			{
+				val = "(no property)";
+			}
+
+			// Env override for stress testing.
+			if( const char *env = std::getenv( "GAFFEROFX_THREAD_SAFETY" ) )
+			{
+				val = env;
+				std::cerr << "OFXImageNode: env override GAFFEROFX_THREAD_SAFETY=" << env << std::endl;
+			}
+
+			if( val == kOfxImageEffectRenderFullySafe || val == "fully" )
+				m_renderThreadSafety = RenderSafety::FullySafe;
+			else if( val == kOfxImageEffectRenderUnsafe || val == "unsafe" )
+				m_renderThreadSafety = RenderSafety::Unsafe;
+			else
+				m_renderThreadSafety = RenderSafety::InstanceSafe;
+
+			std::cerr << "OFXImageNode: tile render thread safety for \""
+			          << m_instance->getPlugin()->getIdentifier() << "\" = "
+			          << val << " → "
+			          << ( m_renderThreadSafety == RenderSafety::FullySafe ? "FullySafe" :
+			               m_renderThreadSafety == RenderSafety::Unsafe ? "Unsafe" : "InstanceSafe" )
+			          << std::endl;
+		}
+
+		// Set clip pixel depth/component properties once at instantiation
+		// instead of every render.  These never change per-tile.
+		setAllClipProps();
 
 		// Dynamic getConnected() looks up plug input at call time
 
@@ -409,6 +492,33 @@ void OFXImageNode::createClipPlugs()
 	}
 }
 
+void OFXImageNode::setAllClipProps()
+{
+	if( !m_instance )
+		return;
+
+	auto setClip = [this]( const char *name )
+	{
+		auto *clip = dynamic_cast<GafferOFX::ClipInstance*>( m_instance->getClip( name ) );
+		if( clip )
+		{
+			clip->getProps().setStringProperty( kOfxImageEffectPropPixelDepth, kOfxBitDepthFloat );
+			clip->getProps().setStringProperty( kOfxImageEffectPropComponents, kOfxImageComponentRGBA );
+		}
+	};
+
+	setClip( "Output" );
+	setClip( "Source" );
+
+	for( const auto &plugName : m_clipPlugNames )
+	{
+		std::string ofxClipName = plugName;
+		if( !ofxClipName.empty() && islower( ofxClipName[0] ) )
+			ofxClipName[0] = toupper( ofxClipName[0] );
+		setClip( ofxClipName.c_str() );
+	}
+}
+
 Gaffer::StringPlug* OFXImageNode::pluginIdPlug()
 {
 	return getChild<StringPlug>( g_firstPlugIndex );
@@ -439,6 +549,16 @@ const CompoundObjectPlug *OFXImageNode::ofxRenderBufferPlug() const
 	return getChild<CompoundObjectPlug>( g_firstPlugIndex + 2 );
 }
 
+ObjectPlug *OFXImageNode::tileBufferPlug()
+{
+	return getChild<ObjectPlug>( g_firstPlugIndex + 3 );
+}
+
+const ObjectPlug *OFXImageNode::tileBufferPlug() const
+{
+	return getChild<ObjectPlug>( g_firstPlugIndex + 3 );
+}
+
 void OFXImageNode::affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const
 {
 	ImageProcessor::affects( input, outputs );
@@ -455,9 +575,9 @@ void OFXImageNode::affects( const Gaffer::Plug *input, AffectedPlugsContainer &o
 		outputs.push_back( ofxRenderBufferPlug() );
 	}
 
-	if( m_tiledRenderSupported )
+	if( m_tiledRenderSupported && inPlug()->getInput() )
 	{
-		// ---- Tiled path: per-tile channelData renders directly ----
+		// ---- Tiled path: per-tile via __ofxTileBuffer ----
 		//
 		// Input format/dataWindow/channelNames metadata affects the
 		// render buffer (used for output format/dataWindow/channelNames).
@@ -466,14 +586,12 @@ void OFXImageNode::affects( const Gaffer::Plug *input, AffectedPlugsContainer &o
 			outputs.push_back( ofxRenderBufferPlug() );
 		}
 
-		// Input channel data directly affects output channel data
-		// (bypassing __ofxRenderBuffer, enabling per-tile renders).
-		if( input == inPlug()->channelDataPlug() )
+		// Input channel data and clip plugs drive __ofxTileBuffer.
+		if( input == inPlug()->channelDataPlug() || input == inPlug()->dataWindowPlug() )
 		{
-			outputs.push_back( outPlug()->channelDataPlug() );
+			outputs.push_back( tileBufferPlug() );
 		}
 
-		// Dynamic clip plugs affect output channel data directly.
 		for( const auto &name : m_clipPlugNames )
 		{
 			if( auto *imgPlug = getChild<GafferImage::ImagePlug>( name ) )
@@ -483,24 +601,24 @@ void OFXImageNode::affects( const Gaffer::Plug *input, AffectedPlugsContainer &o
 				{
 					outputs.push_back( ofxRenderBufferPlug() );
 				}
-				if( input == imgPlug->channelDataPlug() )
+				if( input == imgPlug->channelDataPlug() || input == imgPlug->dataWindowPlug() )
 				{
-					outputs.push_back( outPlug()->channelDataPlug() );
+					outputs.push_back( tileBufferPlug() );
 				}
 			}
 		}
 
-		// Parameters and plugin ID affect both the render buffer
-		// (for metadata) and channel data (for per-tile renders).
-		if( parametersPlug()->isAncestorOf( input ) )
-		{
-			outputs.push_back( ofxRenderBufferPlug() );
-			outputs.push_back( outPlug()->channelDataPlug() );
-		}
+		// Parameters and plugin ID drive both metadata and tile buffer.
 		if( input == pluginIdPlug() )
 		{
 			outputs.push_back( ofxRenderBufferPlug() );
-			outputs.push_back( outPlug()->channelDataPlug() );
+			outputs.push_back( tileBufferPlug() );
+		}
+
+		if( parametersPlug()->isAncestorOf( input ) )
+		{
+			outputs.push_back( ofxRenderBufferPlug() );
+			outputs.push_back( tileBufferPlug() );
 		}
 
 		// Render buffer affects metadata outputs only (not channelData).
@@ -509,6 +627,12 @@ void OFXImageNode::affects( const Gaffer::Plug *input, AffectedPlugsContainer &o
 			outputs.push_back( outPlug()->formatPlug() );
 			outputs.push_back( outPlug()->dataWindowPlug() );
 			outputs.push_back( outPlug()->channelNamesPlug() );
+		}
+
+		// Tile buffer drives per-tile channel data.
+		if( input == tileBufferPlug() )
+		{
+			outputs.push_back( outPlug()->channelDataPlug() );
 		}
 	}
 	else
@@ -562,6 +686,10 @@ void OFXImageNode::hash( const Gaffer::ValuePlug *output, const Gaffer::Context 
 	{
 		hashOfxRenderBuffer( context, h );
 	}
+	else if( output == tileBufferPlug() )
+	{
+		hashTileBuffer( context, h );
+	}
 	else
 	{
 		ImageProcessor::hash( output, context, h );
@@ -574,6 +702,13 @@ void OFXImageNode::compute( Gaffer::ValuePlug *output, const Gaffer::Context *co
 	{
 		IECore::ConstCompoundObjectPtr renderBuffer = computeOfxRenderBuffer( context );
 		static_cast<Gaffer::CompoundObjectPlug *>( output )->setValue( renderBuffer );
+	}
+	else if( output == tileBufferPlug() )
+	{
+		IECore::ConstObjectPtr tileBuf = computeTileBuffer( context );
+		if( !tileBuf )
+			tileBuf = IECore::NullObject::defaultNullObject();
+		static_cast<Gaffer::ObjectPlug *>( output )->setValue( tileBuf );
 	}
 	else
 	{
@@ -719,68 +854,15 @@ void OFXImageNode::hashChannelData( const GafferImage::ImagePlug *output, const 
 		}
 		else if( m_tiledRenderSupported )
 		{
-			// Tiled path: each tile has its own cache key based on
-			// params, input data, frame, tile origin, and channel.
-			const Imath::V2i tileOrigin = context->get<V2i>( ImagePlug::tileOriginContextName );
-			h.append( tileOrigin );
+			// Strip channelName before hashing tileBufferPlug so the
+			// tile buffer hash (and all its upstream deps) is computed
+			// identically for all four channels at this tile origin.
+			// The channelName is appended afterwards for cache-key
+			// uniqueness per channel.
+			Context::EditableScope tileScope( context );
+			tileScope.remove( ImagePlug::channelNameContextName );
+			tileBufferPlug()->hash( h );
 			h.append( context->get<std::string>( ImagePlug::channelNameContextName ) );
-
-			pluginIdPlug()->hash( h );
-			for( const auto &child : parametersPlug()->children() )
-			{
-				if( auto *valuePlug = runTimeCast<const ValuePlug>( child.get() ) )
-				{
-					valuePlug->hash( h );
-				}
-			}
-			h.append( context->getFrame() );
-
-			// Hash the full input data window to capture all pixels
-			// the plugin might read for this tile.  This is conservative
-			// (over-invalidates) but correct.  A future optimization
-			// could call getRegionOfInterestAction to narrow the hash.
-			Box2i dataWindow = inPlug()->dataWindowPlug()->getValue();
-			if( dataWindow.size().x > 0 && dataWindow.size().y > 0 )
-			{
-				IECore::ConstStringVectorDataPtr channelNamesData = inPlug()->channelNamesPlug()->getValue();
-				const auto &channels = channelNamesData->readable();
-				for( int y = dataWindow.min.y; y < dataWindow.max.y; y += ImagePlug::tileSize() )
-				{
-					for( int x = dataWindow.min.x; x < dataWindow.max.x; x += ImagePlug::tileSize() )
-					{
-						V2i srcTileOrigin( x, y );
-						for( const auto &ch : channels )
-						{
-							h.append( inPlug()->channelDataHash( ch, srcTileOrigin ) );
-						}
-					}
-				}
-			}
-
-			// Hash connected clip plugs' data windows
-			for( const auto &name : m_clipPlugNames )
-			{
-				if( auto *imgPlug = getChild<GafferImage::ImagePlug>( name ) )
-				{
-					if( !imgPlug->getInput() ) continue;
-					Box2i clipDw = imgPlug->dataWindowPlug()->getValue();
-					if( clipDw.size().x > 0 && clipDw.size().y > 0 )
-					{
-						IECore::ConstStringVectorDataPtr clipChannels = imgPlug->channelNamesPlug()->getValue();
-						for( int yy = clipDw.min.y; yy < clipDw.max.y; yy += ImagePlug::tileSize() )
-						{
-							for( int xx = clipDw.min.x; xx < clipDw.max.x; xx += ImagePlug::tileSize() )
-							{
-								V2i clipTileOrigin( xx, yy );
-								for( const auto &ch : clipChannels->readable() )
-								{
-									h.append( imgPlug->channelDataHash( ch, clipTileOrigin ) );
-								}
-							}
-						}
-					}
-				}
-			}
 		}
 		else
 		{
@@ -803,7 +885,29 @@ IECore::ConstFloatVectorDataPtr OFXImageNode::computeChannelData( const std::str
 
 	if( m_tiledRenderSupported && inPlug()->getInput() )
 	{
-		return computeTiledChannelData( channelName, tileOrigin, context );
+		// Tiled path: pull __ofxTileBuffer (keyed by tileOrigin, NOT
+		// channelName) so all four channels compute once per tile.
+		// Use EditableScope to remove channelName from context before
+		// pulling, otherwise we'd get distinct cache entries per channel.
+		Context::EditableScope tileScope( context );
+		tileScope.remove( ImagePlug::channelNameContextName );
+
+		IECore::ConstCompoundObjectPtr tileBuf = IECore::runTimeCast<const IECore::CompoundObject>( tileBufferPlug()->getValue() );
+
+		if( !tileBuf )
+		{
+			return ImagePlug::emptyTile();
+		}
+
+		auto *chData = tileBuf->member<FloatVectorData>( channelName );
+		if( !chData )
+		{
+			return ImagePlug::emptyTile();
+		}
+
+		// Return shared data — tile buffer is const once computed,
+		// and the convention matches ImagePlug::emptyTile().
+		return IECore::ConstFloatVectorDataPtr( chData );
 	}
 
 	// ---- Full-frame path (non-tiled plugins) ----
@@ -875,17 +979,37 @@ IECore::ConstFloatVectorDataPtr OFXImageNode::computeChannelData( const std::str
 	return tileData;
 }
 
-// -----------------------------------------------------------------------
-// readPlugToRGBA moved to EffectImageInstance.cpp
-// -----------------------------------------------------------------------
 
-IECore::ConstFloatVectorDataPtr OFXImageNode::computeTiledChannelData( const std::string &channelName, const Imath::V2i &tileOrigin, const Gaffer::Context *context ) const
+void OFXImageNode::hashTileBuffer( const Gaffer::Context *context, IECore::MurmurHash &h ) const
 {
-	std::lock_guard<std::mutex> lock( m_renderMutex );
+	ImagePlug::GlobalScope globalScope( context );
 
-	OfxTime frame = context->getFrame();
-	OfxPointD renderScale = { 1.0, 1.0 };
+	if( !m_instance )
+	{
+		pluginIdPlug()->hash( h );
+		inPlug()->formatPlug()->hash( h );
+		return;
+	}
 
+	const Imath::V2i tileOrigin = context->get<V2i>( ImagePlug::tileOriginContextName );
+	const OfxTime frame = context->getFrame();
+	const OfxPointD renderScale = { 1.0, 1.0 };
+
+	// Hash identity: tile origin, frame, plugin ID, params.
+	h.append( tileOrigin );
+	h.append( frame );
+	pluginIdPlug()->hash( h );
+	for( const auto &child : parametersPlug()->children() )
+	{
+		if( auto *valuePlug = runTimeCast<const ValuePlug>( child.get() ) )
+			valuePlug->hash( h );
+	}
+
+	// Data window affects the render box — a window shift inside a tile
+	// produces a different pixel boundary even if input pixels are the same.
+	inPlug()->dataWindowPlug()->hash( h );
+
+	// Build render box for this tile to determine which input tiles to hash.
 	int ts = ImagePlug::tileSize();
 	Box2i dataWindow = inPlug()->dataWindowPlug()->getValue();
 	Box2i tileBound( tileOrigin, tileOrigin + V2i( ts, ts ) );
@@ -894,148 +1018,67 @@ IECore::ConstFloatVectorDataPtr OFXImageNode::computeTiledChannelData( const std
 		V2i( std::min( tileBound.max.x, dataWindow.max.x ), std::min( tileBound.max.y, dataWindow.max.y ) )
 	);
 	if( renderBox.size().x <= 0 || renderBox.size().y <= 0 )
-	{
-		return new FloatVectorData();
-	}
+		return;
+
 	OfxRectD renderWindowD = { (double)renderBox.min.x, (double)renderBox.min.y,
 	                           (double)renderBox.max.x, (double)renderBox.max.y };
-	OfxRectI renderWindowI = { renderBox.min.x, renderBox.min.y,
-	                           renderBox.max.x, renderBox.max.y };
 
-	// Get region of interest for this tile
+	// Get region of interest for this tile to narrow input hashing.
 	std::map<OFX::Host::ImageEffect::ClipInstance *, OfxRectD> rois;
 	m_instance->getRegionOfInterestAction( frame, renderScale, renderWindowD, rois );
 
-	// Convert RoIs to name-based map for the invocation
-	std::map<std::string, OfxRectD> clipRoIs;
-	for( auto &[clipPtr, roi] : rois )
+	// Hash input channel data for tiles intersecting each clip's RoI.
+	// The inPlug (Source) is always the primary input.
+	auto hashInputRegion = [&]( const GafferImage::ImagePlug *plug, const OfxRectD &roiD )
 	{
-		if( clipPtr )
-			clipRoIs[clipPtr->getName()] = roi;
-	}
+		if( !plug || !plug->getInput() )
+			return;
+		Box2i roiI(
+			V2i( (int)std::floor( roiD.x1 ), (int)std::floor( roiD.y1 ) ),
+			V2i( (int)std::ceil(  roiD.x2 ), (int)std::ceil(  roiD.y2 ) )
+		);
+		// Clamp to the plug's data window — include it in the hash
+		// so a window shift inside the RoI invalidates the cache.
+		Box2i clipDw = plug->dataWindowPlug()->getValue();
+		plug->dataWindowPlug()->hash( h );
+		roiI = Box2i(
+			V2i( std::max( roiI.min.x, clipDw.min.x ), std::max( roiI.min.y, clipDw.min.y ) ),
+			V2i( std::min( roiI.max.x, clipDw.max.x ), std::min( roiI.max.y, clipDw.max.y ) )
+		);
+		if( roiI.size().x <= 0 || roiI.size().y <= 0 )
+			return;
 
-	// Set up output clip pixel depth
-	{
-		auto *outputClip = dynamic_cast<GafferOFX::ClipInstance*>( m_instance->getClip( "Output" ) );
-		if( outputClip )
+		IECore::ConstStringVectorDataPtr channelNamesData = plug->channelNamesPlug()->getValue();
+		const auto &channels = channelNamesData->readable();
+		for( int yy = roiI.min.y; yy < roiI.max.y; yy += ImagePlug::tileSize() )
 		{
-			outputClip->getProps().setStringProperty( kOfxImageEffectPropPixelDepth, kOfxBitDepthFloat );
-			outputClip->getProps().setStringProperty( kOfxImageEffectPropComponents, kOfxImageComponentRGBA );
+			for( int xx = roiI.min.x; xx < roiI.max.x; xx += ImagePlug::tileSize() )
+			{
+				V2i srcTileOrigin( xx, yy );
+				for( const auto &ch : channels )
+					h.append( plug->channelDataHash( ch, srcTileOrigin ) );
+			}
 		}
-		auto *sourceClip = dynamic_cast<GafferOFX::ClipInstance*>( m_instance->getClip( "Source" ) );
-		if( sourceClip )
-		{
-			sourceClip->getProps().setStringProperty( kOfxImageEffectPropPixelDepth, kOfxBitDepthFloat );
-			sourceClip->getProps().setStringProperty( kOfxImageEffectPropComponents, kOfxImageComponentRGBA );
-		}
-	}
+	};
 
-	// Build half-open clip properties set for extra clips
+	// Source clip
+	auto it = rois.find( m_instance->getClip( "Source" ) );
+	if( it != rois.end() )
+		hashInputRegion( inPlug(), it->second );
+
+	// Extra clip plugs
 	for( const auto &plugName : m_clipPlugNames )
 	{
-		std::string ofxClipName = plugName;
-		if( !ofxClipName.empty() && islower( ofxClipName[0] ) )
-			ofxClipName[0] = toupper( ofxClipName[0] );
-
-		auto *clip = dynamic_cast<GafferOFX::ClipInstance*>( m_instance->getClip( ofxClipName ) );
-		if( clip )
+		if( auto *imgPlug = getChild<GafferImage::ImagePlug>( plugName ) )
 		{
-			clip->getProps().setStringProperty( kOfxImageEffectPropPixelDepth, kOfxBitDepthFloat );
-			clip->getProps().setStringProperty( kOfxImageEffectPropComponents, kOfxImageComponentRGBA );
+			std::string ofxClipName = plugName;
+			if( !ofxClipName.empty() && islower( ofxClipName[0] ) )
+				ofxClipName[0] = toupper( ofxClipName[0] );
+			auto ci = rois.find( m_instance->getClip( ofxClipName ) );
+			if( ci != rois.end() )
+				hashInputRegion( imgPlug, ci->second );
 		}
 	}
-
-	FloatVectorDataPtr tileData = new FloatVectorData();
-	vector<float> &tile = tileData->writable();
-	tile.resize( ImagePlug::tilePixels(), 0.0f );
-
-	// Render inline on the compute thread — CPU renders are serialized by
-	// m_renderMutex and re-entrant via the TLS invocation stack.  GL
-	// plugins never reach this path (gated by m_tiledRenderSupported).
-	{
-		RenderingGuard _rg( m_rendering );
-
-		Gaffer::ConstContextPtr ctxCopy = new Gaffer::Context( *Gaffer::Context::current() );
-		OfxRectI rwI = renderWindowI;
-		OFX::Host::ImageEffect::ClipInstance *outputClip = dynamic_cast<GafferOFX::ClipInstance*>(
-			m_instance->getClip( "Output" )
-		);
-
-		double pw = dataWindow.size().x;
-		double ph = dataWindow.size().y;
-		m_instance->setProjectFormat( pw, ph );
-
-		RenderInvocation inv;
-		inv.time = frame;
-		inv.renderWindow = rwI;
-		inv.renderScale.x = renderScale.x;
-		inv.renderScale.y = renderScale.y;
-		inv.context = ctxCopy;
-		inv.clipRoIs = clipRoIs;
-
-		OFX::Host::ImageEffect::Image *sharedOutput = nullptr;
-		OfxStatus renderStatus = kOfxStatOK;
-
-		{
-			RenderInvocationGuard guard( inv );
-
-			m_instance->beginRenderAction( frame, frame, 1.0, false, renderScale, true, true );
-			renderStatus = m_instance->renderAction( frame, kOfxImageFieldNone, renderWindowI, renderScale, true, true, false );
-			m_instance->endRenderAction( frame, frame, 1.0, false, renderScale, true, true );
-
-			// Read output tile while invocation is still active
-			if( outputClip )
-			{
-				sharedOutput = inv.outputImage;
-				if( sharedOutput )
-					sharedOutput->addReference();
-			}
-		}
-
-		// Propagate cancellation / check render status before touching data
-		if( inv.exception )
-		{
-			if( sharedOutput ) sharedOutput->releaseReference();
-			std::rethrow_exception( inv.exception );
-		}
-		if( renderStatus != kOfxStatOK && renderStatus != kOfxStatReplyDefault )
-		{
-			if( sharedOutput ) sharedOutput->releaseReference();
-			throw IECore::Exception( "OFX renderAction failed" );
-		}
-
-		// De-interleave output into tileData
-		if( sharedOutput )
-		{
-			int comp = -1;
-			if( channelName == "R" ) comp = 0;
-			else if( channelName == "G" ) comp = 1;
-			else if( channelName == "B" ) comp = 2;
-			else if( channelName == "A" ) comp = 3;
-
-			if( comp >= 0 )
-			{
-				for( int y = rwI.y1; y < rwI.y2; ++y )
-				{
-					int tileY = y - tileOrigin.y;
-					if( tileY < 0 || tileY >= ts ) continue;
-					for( int x = rwI.x1; x < rwI.x2; ++x )
-					{
-						int tileX = x - tileOrigin.x;
-						if( tileX < 0 || tileX >= ts ) continue;
-						OfxRGBAColourF *pixel = static_cast<GafferOFX::Image*>( sharedOutput )->pixel( x, y );
-						if( pixel )
-						{
-							tile[tileY * ts + tileX] = (&pixel->r)[comp];
-						}
-					}
-				}
-			}
-			sharedOutput->releaseReference();
-		}
-	}
-
-	return tileData;
 }
 
 void OFXImageNode::hashOfxRenderBuffer( const Gaffer::Context *context, IECore::MurmurHash &h ) const
@@ -1147,6 +1190,189 @@ void OFXImageNode::hashOfxRenderBuffer( const Gaffer::Context *context, IECore::
 		h.append( context->getFrame() );
 	}
 }
+
+Gaffer::ValuePlug::CachePolicy OFXImageNode::computeCachePolicy( const Gaffer::ValuePlug *output ) const
+{
+	if( output == tileBufferPlug() || output == ofxRenderBufferPlug() )
+		return ValuePlug::CachePolicy::TaskCollaboration;
+	return ImageProcessor::computeCachePolicy( output );
+}
+
+IECore::ConstCompoundObjectPtr OFXImageNode::computeTileBuffer( const Gaffer::Context *context ) const
+{
+	// Copy the context BEFORE GlobalScope strips tile-level entries.
+	// The render invocation needs tileOrigin in its context so that
+	// fetchInputImage pulls the correct upstream tiles.
+	Gaffer::ConstContextPtr ctxCopy = new Gaffer::Context( *context );
+
+	const Imath::V2i tileOrigin = context->get<V2i>( ImagePlug::tileOriginContextName );
+
+	// Enter GlobalScope so metadata pulls (dataWindow) are NOT
+	// fragmented by tileOrigin.
+	ImagePlug::GlobalScope globalScope( context );
+
+	OfxTime frame = context->getFrame();
+	OfxPointD renderScale = { 1.0, 1.0 };
+
+	int ts = ImagePlug::tileSize();
+	Box2i dataWindow = inPlug()->dataWindowPlug()->getValue();
+	Box2i tileBound( tileOrigin, tileOrigin + V2i( ts, ts ) );
+	Box2i renderBox(
+		V2i( std::max( tileBound.min.x, dataWindow.min.x ), std::max( tileBound.min.y, dataWindow.min.y ) ),
+		V2i( std::min( tileBound.max.x, dataWindow.max.x ), std::min( tileBound.max.y, dataWindow.max.y ) )
+	);
+	if( renderBox.size().x <= 0 || renderBox.size().y <= 0 )
+	{
+		// setValue(nullptr) is illegal; the dispatch site substitutes
+		// NullObject, but returning null here is cleaner for early exit.
+		return nullptr;
+	}
+
+	// Build result container with empty tile-sized buffers.
+	CompoundObjectPtr result = new CompoundObject();
+	int numPixels = ts * ts;
+	FloatVectorDataPtr rData = new FloatVectorData();
+	FloatVectorDataPtr gData = new FloatVectorData();
+	FloatVectorDataPtr bData = new FloatVectorData();
+	FloatVectorDataPtr aData = new FloatVectorData();
+	rData->writable().resize( numPixels, 0.0f );
+	gData->writable().resize( numPixels, 0.0f );
+	bData->writable().resize( numPixels, 0.0f );
+	aData->writable().resize( numPixels, 0.0f );
+	result->members()["R"] = rData;
+	result->members()["G"] = gData;
+	result->members()["B"] = bData;
+	result->members()["A"] = aData;
+	result->members()["renderBox"] = new Box2iData( renderBox );
+
+	OfxRectD renderWindowD = { (double)renderBox.min.x, (double)renderBox.min.y,
+	                           (double)renderBox.max.x, (double)renderBox.max.y };
+	OfxRectI renderWindowI = { renderBox.min.x, renderBox.min.y,
+	                           renderBox.max.x, renderBox.max.y };
+
+	// RoI/isIdentity actions stay outside the lock (assumption: pure
+	// param math for openfx-misc plugins).
+	std::map<OFX::Host::ImageEffect::ClipInstance *, OfxRectD> rois;
+	m_instance->getRegionOfInterestAction( frame, renderScale, renderWindowD, rois );
+
+	std::map<std::string, OfxRectD> clipRoIs;
+	for( auto &[clipPtr, roi] : rois )
+	{
+		if( clipPtr )
+			clipRoIs[clipPtr->getName()] = roi;
+	}
+
+	// All metadata pulls and the RoI action are done.  Now acquire
+	// the render lock for the dangerous section (beginRender/render/
+	// endRender + output extraction).  FullySafe: no lock.
+	// InstanceSafe: per-instance mutex.  Unsafe: global mutex.
+	std::unique_lock<std::mutex> renderLock( m_renderMutex, std::defer_lock );
+	std::unique_lock<std::mutex> globalLock( m_globalRenderMutex, std::defer_lock );
+	if( m_renderThreadSafety == RenderSafety::InstanceSafe )
+		renderLock.lock();
+	else if( m_renderThreadSafety == RenderSafety::Unsafe )
+		globalLock.lock();
+
+	RenderingCounter _rc( m_rendering );
+
+	RenderInvocation inv;
+	inv.time = frame;
+	inv.renderWindow = renderWindowI;
+	inv.renderScale.x = renderScale.x;
+	inv.renderScale.y = renderScale.y;
+	inv.projectWidth = dataWindow.size().x;
+	inv.projectHeight = dataWindow.size().y;
+	inv.context = ctxCopy;
+	inv.clipRoIs = clipRoIs;
+
+	// Instrumentation: optional spin to make render cost dominate
+	{
+		int ms = tileSpinMs();
+		if( ms > 0 )
+			std::this_thread::sleep_for( std::chrono::milliseconds( ms ) );
+	}
+
+	OfxStatus renderStatus = kOfxStatOK;
+	{
+		// Tile concurrency measurement: thread-local depth so
+		// nested invocations don't inflate the thread count.
+		bool topLevel = ( t_tileDepth++ == 0 );
+		if( topLevel )
+		{
+			int a = ++g_activeThreads;
+			for( int hw = g_threadHighWater.load(); a > hw && !g_threadHighWater.compare_exchange_weak( hw, a ); ) {}
+		}
+		std::cerr << "[tile] " << std::this_thread::get_id()
+		          << " " << ( topLevel ? "enter" : "nest" ) << " " << tileOrigin
+		          << " threads=" << g_activeThreads.load()
+		          << std::endl;
+
+		// Render-once assertion: key = addr(frame)(tileOrigin)
+		{
+			std::lock_guard<std::mutex> lock( g_renderCountsMutex );
+			std::string key = std::to_string( reinterpret_cast<uintptr_t>( this ) )
+			                + "@" + std::to_string( frame )
+			                + "@" + std::to_string( tileOrigin.x ) + "," + std::to_string( tileOrigin.y );
+			int &count = g_renderCounts[key];
+			if( ++count > 1 )
+				std::cerr << "[tile] RENDER-ONCE VIOLATION: " << key << " rendered " << count << " times!" << std::endl;
+		}
+
+		RenderInvocationGuard guard( inv );
+		m_instance->beginRenderAction( frame, frame, 1.0, false, renderScale, true, true );
+		renderStatus = m_instance->renderAction( frame, kOfxImageFieldNone, renderWindowI, renderScale, true, true, false );
+		m_instance->endRenderAction( frame, frame, 1.0, false, renderScale, true, true );
+
+		std::cerr << "[tile] " << std::this_thread::get_id()
+		          << " exit highWater=" << g_threadHighWater.load()
+		          << std::endl;
+		if( topLevel )
+			--g_activeThreads;
+		--t_tileDepth;
+	}
+
+	// Propagation order: exception first, then status.
+	if( inv.exception )
+		std::rethrow_exception( inv.exception );
+	if( renderStatus != kOfxStatOK && renderStatus != kOfxStatReplyDefault )
+		throw IECore::Exception( "OFX renderAction failed" );
+
+	// De-interleave output into result
+	auto *outputImg = inv.outputImage;
+	if( outputImg )
+	{
+		OfxRectI ob = outputImg->getBounds();
+		if( ob.x2 > ob.x1 && ob.y2 > ob.y1 )
+		{
+			vector<float> &rVec = rData->writable();
+			vector<float> &gVec = gData->writable();
+			vector<float> &bVec = bData->writable();
+			vector<float> &aVec = aData->writable();
+
+			for( int y = renderBox.min.y; y < renderBox.max.y; ++y )
+			{
+				int tileRow = ( y - tileOrigin.y ) * ts;
+				for( int x = renderBox.min.x; x < renderBox.max.x; ++x )
+				{
+					if( auto *pixel = static_cast<GafferOFX::Image*>( outputImg )->pixel( x, y ) )
+					{
+						int tileIdx = tileRow + ( x - tileOrigin.x );
+						if( tileIdx >= 0 && tileIdx < numPixels )
+						{
+							rVec[tileIdx] = pixel->r;
+							gVec[tileIdx] = pixel->g;
+							bVec[tileIdx] = pixel->b;
+							aVec[tileIdx] = pixel->a;
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return result;
+}
+
 IECore::ConstCompoundObjectPtr OFXImageNode::computeOfxRenderBuffer( const Gaffer::Context *context ) const
 {
 	std::lock_guard<std::mutex> lock( m_renderMutex );
@@ -1282,26 +1508,6 @@ IECore::ConstCompoundObjectPtr OFXImageNode::computeOfxRenderBuffer( const Gaffe
 		}
 	}
 
-	// ---- Clip property setup (no pre-fetch) ----
-	{
-		auto setClipProps = []( GafferOFX::ClipInstance *clip ) {
-			if( clip )
-			{
-				clip->getProps().setStringProperty( kOfxImageEffectPropPixelDepth, kOfxBitDepthFloat );
-				clip->getProps().setStringProperty( kOfxImageEffectPropComponents, kOfxImageComponentRGBA );
-			}
-		};
-		setClipProps( outputClip );
-		setClipProps( sourceClip );
-		for( const auto &plugName : m_clipPlugNames )
-		{
-			std::string ofxClipName = plugName;
-			if( !ofxClipName.empty() && islower( ofxClipName[0] ) )
-				ofxClipName[0] = toupper( ofxClipName[0] );
-			setClipProps( dynamic_cast<GafferOFX::ClipInstance*>( m_instance->getClip( ofxClipName ) ) );
-		}
-	}
-
 	// Get RoI for each clip and build clipRoIs map
 	std::map<OFX::Host::ImageEffect::ClipInstance *, OfxRectD> rois;
 	OfxRectD regionOfInterest = {
@@ -1335,13 +1541,14 @@ IECore::ConstCompoundObjectPtr OFXImageNode::computeOfxRenderBuffer( const Gaffe
 	int w = renderWindow.x2 - renderWindow.x1;
 	int h = renderWindow.y2 - renderWindow.y1;
 
-	RenderingGuard _rg( m_rendering );
+	RenderingCounter _rc( m_rendering );
 
 	Gaffer::ConstContextPtr ctxCopy = new Gaffer::Context( *Gaffer::Context::current() );
-	m_instance->setProjectFormat( (double)dataWindow.size().x, (double)dataWindow.size().y );
 
 	RenderInvocation inv;
 	inv.time = frame;
+	inv.projectWidth = dataWindow.size().x;
+	inv.projectHeight = dataWindow.size().y;
 	inv.renderWindow = renderWindow;
 	inv.renderScale.x = renderScale.x;
 	inv.renderScale.y = renderScale.y;
@@ -1375,9 +1582,13 @@ IECore::ConstCompoundObjectPtr OFXImageNode::computeOfxRenderBuffer( const Gaffe
 				GafferOFX::ClipInstance *clip = dynamic_cast<GafferOFX::ClipInstance*>(
 					m_instance->getClip( clipName )
 				);
-				if( !clip || clip->plugName().empty() )
+				if( !clip || clipName == "Output" )
 					continue;
-				const GafferImage::ImagePlug *plug = m_instance->node()->getChild<GafferImage::ImagePlug>( clip->plugName() );
+				const GafferImage::ImagePlug *plug = nullptr;
+				if( clipName == "Source" )
+					plug = inPlug();
+				else if( !clip->plugName().empty() )
+					plug = m_instance->node()->getChild<GafferImage::ImagePlug>( clip->plugName() );
 				if( !plug || !plug->getInput() )
 					continue;
 				OfxRectD roiD = roI;

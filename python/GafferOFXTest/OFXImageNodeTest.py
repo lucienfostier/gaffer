@@ -35,6 +35,7 @@
 ##########################################################################
 
 import unittest
+import os
 
 import imath
 
@@ -462,11 +463,20 @@ class OFXImageNodeTest( GafferTest.TestCase ) :
 
 	def testAffects( self ) :
 
+		# Use a connected node to exercise the tiled affects path.
+		s = Gaffer.ScriptNode()
+		cb = GafferImage.Checkerboard()
+		s.addChild( cb )
+		cb["format"].setValue( GafferImage.Format( 256, 256 ) )
+
 		n = GafferOFX.OFXImageNode()
+		s.addChild( n )
+		n["in"].setInput( cb["out"] )
 		n["pluginId"].setValue( "net.sf.openfx.Invert" )
 		self.assertTrue( n.createPluginInstance() )
 
 		rb = n["__ofxRenderBuffer"]
+		tb = n["__ofxTileBuffer"]
 
 		# For tiled CPU plugins (net.sf.openfx.Invert is CPU + SupportsTiles=1):
 		# Input format/dataWindow/channelNames metadata affects the render buffer.
@@ -474,26 +484,27 @@ class OFXImageNodeTest( GafferTest.TestCase ) :
 		self.assertIn( rb, n.affects( n["in"]["dataWindow"] ) )
 		self.assertIn( rb, n.affects( n["in"]["channelNames"] ) )
 
-		# Input channelData directly affects output channelData (per-tile path),
-		# NOT the render buffer (which is full-frame metadata only).
+		# Input channelData drives __ofxTileBuffer (not render buffer).
 		self.assertNotIn( rb, n.affects( n["in"]["channelData"] ) )
-		self.assertIn( n["out"]["channelData"], n.affects( n["in"]["channelData"] ) )
+		self.assertIn( tb, n.affects( n["in"]["channelData"] ) )
 
-		# Mask clip plugs' channelData affects output channelData directly.
+		# Tile buffer drives output channelData.
+		self.assertIn( n["out"]["channelData"], n.affects( tb ) )
+
+		# Mask clip plugs' channelData drives __ofxTileBuffer.
 		self.assertNotIn( rb, n.affects( n["mask"]["channelData"] ) )
-		self.assertIn( n["out"]["channelData"], n.affects( n["mask"]["channelData"] ) )
+		self.assertIn( tb, n.affects( n["mask"]["channelData"] ) )
 
 		# Mask clip metadata affects the render buffer.
 		self.assertIn( rb, n.affects( n["mask"]["format"] ) )
 		self.assertIn( rb, n.affects( n["mask"]["dataWindow"] ) )
 		self.assertIn( rb, n.affects( n["mask"]["channelNames"] ) )
 
-		# Plugin ID and parameters affect both the render buffer (metadata)
-		# and the output channel data (per-tile render).
+		# Plugin ID and parameters drive both tile buffer and render buffer.
+		self.assertIn( tb, n.affects( n["pluginId"] ) )
 		self.assertIn( rb, n.affects( n["pluginId"] ) )
-		self.assertIn( n["out"]["channelData"], n.affects( n["pluginId"] ) )
+		self.assertIn( tb, n.affects( n["parameters"]["mix"] ) )
 		self.assertIn( rb, n.affects( n["parameters"]["mix"] ) )
-		self.assertIn( n["out"]["channelData"], n.affects( n["parameters"]["mix"] ) )
 
 		# Render buffer affects metadata outputs only (not channelData
 		# for tiled path).
@@ -1110,6 +1121,25 @@ class OFXImageNodeTest( GafferTest.TestCase ) :
 		self.assertGreater( nonZero, 0 )
 
 		self.assertFalse( n.rendering() )
+
+	def testParallelTileRendering( self ) :
+
+		if os.cpu_count() == 1 :
+			self.skipTest( "single-core" )
+
+		s = Gaffer.ScriptNode()
+		c = GafferImage.Constant()
+		s.addChild( c )
+		c["format"].setValue( GafferImage.Format( 2048, 2048 ) )
+
+		n = GafferOFX.OFXImageNode()
+		s.addChild( n )
+		n["in"].setInput( c["out"] )
+		n["pluginId"].setValue( "net.sf.openfx.Invert" )
+		self.assertTrue( n.createPluginInstance() )
+
+		# ImageAlgo.image uses parallelProcessTiles internally.
+		GafferImage.ImageAlgo.image( n["out"] )
 
 if __name__ == "__main__" :
 	unittest.main()

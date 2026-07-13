@@ -83,6 +83,9 @@ class GAFFEROFX_API OFXImageNode : public GafferImage::ImageProcessor
 		Gaffer::CompoundObjectPlug *ofxRenderBufferPlug();
 		const Gaffer::CompoundObjectPlug *ofxRenderBufferPlug() const;
 
+		Gaffer::ObjectPlug *tileBufferPlug();
+		const Gaffer::ObjectPlug *tileBufferPlug() const;
+
 	protected :
 
 		void hashViewNames( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
@@ -93,6 +96,9 @@ class GAFFEROFX_API OFXImageNode : public GafferImage::ImageProcessor
 		void hashChannelData( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
 
 		void hashOfxRenderBuffer( const Gaffer::Context *context, IECore::MurmurHash &h ) const;
+		void hashTileBuffer( const Gaffer::Context *context, IECore::MurmurHash &h ) const;
+
+		Gaffer::ValuePlug::CachePolicy computeCachePolicy( const Gaffer::ValuePlug *output ) const override;
 
 		IECore::ConstStringVectorDataPtr computeViewNames( const Gaffer::Context *context, const GafferImage::ImagePlug *parent ) const override;
 		GafferImage::Format computeFormat( const Gaffer::Context *context, const GafferImage::ImagePlug *parent ) const override;
@@ -104,7 +110,8 @@ class GAFFEROFX_API OFXImageNode : public GafferImage::ImageProcessor
 		IECore::ConstFloatVectorDataPtr computeChannelData( const std::string &channelName, const Imath::V2i &tileOrigin, const Gaffer::Context *context, const GafferImage::ImagePlug *parent ) const override;
 
 		IECore::ConstCompoundObjectPtr computeOfxRenderBuffer( const Gaffer::Context *context ) const;
-		IECore::ConstFloatVectorDataPtr computeTiledChannelData( const std::string &channelName, const Imath::V2i &tileOrigin, const Gaffer::Context *context ) const;
+		IECore::ConstCompoundObjectPtr computeTileBuffer( const Gaffer::Context *context ) const;
+
 
 	public :
 
@@ -112,23 +119,29 @@ class GAFFEROFX_API OFXImageNode : public GafferImage::ImageProcessor
 		class GafferOFXInteractInstance* getInteract();
 		void destroyInteract();
 
-		bool rendering() const { return m_rendering; }
+		int rendering() const { return m_rendering; }
 		bool settingFromPlugin() const { return m_settingFromPlugin; }
 		void setSettingFromPlugin( bool v ) const { m_settingFromPlugin = v; }
+
+		/// Render thread safety level read from plugin descriptor at instantiation.
+		enum class RenderSafety { Unknown, FullySafe, InstanceSafe, Unsafe };
 
 	private :
 
 		void plugSet( Gaffer::Plug *plug );
 		void removeClipPlugs();
 		void createClipPlugs();
+		void setAllClipProps();
 
 		static size_t g_firstPlugIndex;
 		mutable std::unique_ptr<GafferOFX::EffectImageInstance> m_instance;
 		mutable std::atomic<bool> m_glContextAttached = false;
-		mutable std::atomic<bool> m_rendering = false;
+		mutable std::atomic<int> m_rendering = 0;
 		mutable bool m_settingFromPlugin = false;
 		mutable bool m_tiledRenderSupported = false;
+		mutable RenderSafety m_renderThreadSafety = RenderSafety::Unknown;
 		mutable std::mutex m_renderMutex;
+		mutable std::mutex m_globalRenderMutex;
 		std::vector<std::string> m_clipPlugNames;
 		std::unique_ptr<GafferOFXInteractInstance> m_interactInstance;
 

@@ -60,6 +60,8 @@ struct GAFFEROFX_API RenderInvocation
 	OfxTime time;
 	OfxRectI renderWindow;
 	OfxPointD renderScale;
+	double projectWidth = 0;
+	double projectHeight = 0;
 	Gaffer::ConstContextPtr context;
 	std::map<std::string, OfxRectD> clipRoIs;
 	OFX::Host::ImageEffect::Image *outputImage = nullptr;
@@ -165,17 +167,9 @@ class GAFFEROFX_API EffectImageInstance : public OFX::Host::ImageEffect::Instanc
 
 		public:
 
-			void setProjectFormat( double width, double height )
-			{
-				m_projectWidth = width;
-				m_projectHeight = height;
-			}
-
 		private:
 
 		const Gaffer::Node* m_node;
-		double m_projectWidth = 0;
-		double m_projectHeight = 0;
 		std::unordered_set<std::string> m_interactedParams;
 		
 };
