@@ -80,6 +80,54 @@ bool createPluginInstanceWrapper( OFXImageNode& node )
 
 }
 
+OfxStatus callVMessage( const char *type, const char *id, const char *fmt, ... )
+{
+	va_list args;
+	va_start( args, fmt );
+	OfxStatus s = Host::instance().vmessage( type, id, fmt, args );
+	va_end( args );
+	return s;
+}
+
+OfxStatus callPersistentMessage( const char *type, const char *id, const char *fmt, ... )
+{
+	va_list args;
+	va_start( args, fmt );
+	OfxStatus s = Host::instance().setPersistentMessage( type, id, fmt, args );
+	va_end( args );
+	return s;
+}
+
+OfxStatus hostMessageWrapper( const std::string &type, const std::string &id, const std::string &message )
+{
+	return callVMessage( type.c_str(), id.c_str(), "%s", message.c_str() );
+}
+
+OfxStatus hostMessageFormattedWrapper( const std::string &type, const std::string &id, const std::string &fmt, const boost::python::object &arg )
+{
+	// Simple formatting test helper - supports one %s/%d substitution via python formatting already done,
+	// so just forward fmt as message with arg string.
+	// For true printf formatting, we test via hostMessage with pre-formatted python string.
+	// This wrapper formats as "%s" + arg to verify va_list handling.
+	std::string m = boost::python::extract<std::string>( boost::python::str( arg ) );
+	return callVMessage( type.c_str(), id.c_str(), fmt.c_str(), m.c_str() );
+}
+
+OfxStatus hostPersistentMessageWrapper( const std::string &type, const std::string &id, const std::string &message )
+{
+	return callPersistentMessage( type.c_str(), id.c_str(), "%s", message.c_str() );
+}
+
+OfxStatus hostClearPersistentMessageWrapper()
+{
+	return Host::instance().clearPersistentMessage();
+}
+
+std::string hostPersistentMessageGetter()
+{
+	return Host::instance().persistentMessage();
+}
+
 std::pair<double, double> effectInstanceProjectSizeWrapper( OFXImageNode& node )
 {
 	if( !createPluginInstanceWrapper( node ) )
@@ -233,6 +281,16 @@ BOOST_PYTHON_MODULE( _GafferOFX )
 		.staticmethod("pluginIDs")
 		.def("pluginBundles", &pluginBundlesWrapper)
 		.staticmethod("pluginBundles")
+		.def("message", &hostMessageWrapper)
+		.staticmethod("message")
+		.def("messageFormatted", &hostMessageFormattedWrapper)
+		.staticmethod("messageFormatted")
+		.def("setPersistentMessage", &hostPersistentMessageWrapper)
+		.staticmethod("setPersistentMessage")
+		.def("clearPersistentMessage", &hostClearPersistentMessageWrapper)
+		.staticmethod("clearPersistentMessage")
+		.def("persistentMessage", &hostPersistentMessageGetter)
+		.staticmethod("persistentMessage")
 	;
 
 	class_<GLContextManager, boost::noncopyable>( "GLContextManager", no_init )
