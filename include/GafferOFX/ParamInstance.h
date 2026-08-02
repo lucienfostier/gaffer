@@ -1,0 +1,240 @@
+//////////////////////////////////////////////////////////////////////////
+//
+//  Copyright ( c ) 2025, Lucien Fostier. All rights reserved.
+//
+//  Redistribution and use in source and binary forms, with or without
+//  modification, are permitted provided that the following conditions are
+//  met:
+//
+//      * Redistributions of source code must retain the above
+//        copyright notice, this list of conditions and the following
+//        disclaimer.
+//
+//      * Redistributions in binary form must reproduce the above
+//        copyright notice, this list of conditions and the following
+//        disclaimer in the documentation and/or other materials provided with
+//        the distribution.
+//
+//      * Neither the name of John Haddon nor the names of
+//        any other contributors to this software may be used to endorse or
+//        promote products derived from this software without specific prior
+//        written permission.
+//
+//  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
+//  IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
+//  THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+//  PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+//  CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+//  EXEMPLARY, OR CONSEQUENTIAL DAMAGES ( INCLUDING, BUT NOT LIMITED TO,
+//  PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+//  PROFITS; OR BUSINESS INTERRUPTION ) HOWEVER CAUSED AND ON ANY THEORY OF
+//  LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT ( INCLUDING
+//  NEGLIGENCE OR OTHERWISE ) ARISING IN ANY WAY OUT OF THE USE OF THIS
+//  SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+//
+//////////////////////////////////////////////////////////////////////////
+
+#pragma once
+
+#include "GafferOFX/EffectImageInstance.h"
+
+#include "HostSupport/ofxhParam.h"
+
+namespace GafferOFX
+{
+
+/// Thrown when param plugs are out of date vs descriptor.
+/// Carries param name + expected/actual for "reload the plugin" error.
+class StalePlugsException : public IECore::Exception
+{
+	public :
+		StalePlugsException( const std::string &paramName, const std::string &expected, const std::string &actual );
+};
+
+class PushbuttonInstance : public OFX::Host::Param::PushbuttonInstance
+{
+	protected :
+		GafferOFX::EffectImageInstance*   m_effect;
+		OFX::Host::Param::Descriptor& m_descriptor;
+		Gaffer::Plug *m_plug = nullptr;
+	public :
+		PushbuttonInstance( GafferOFX::EffectImageInstance* effect, const std::string& name, OFX::Host::Param::Descriptor& descriptor );
+};
+
+
+class IntegerInstance : public OFX::Host::Param::IntegerInstance
+{
+	protected : 
+		GafferOFX::EffectImageInstance*   m_effect;
+		OFX::Host::Param::Descriptor& m_descriptor;
+		Gaffer::Plug *m_plug = nullptr;
+	public :
+		IntegerInstance( GafferOFX::EffectImageInstance* effect, const std::string& name, OFX::Host::Param::Descriptor& descriptor );
+		OfxStatus get( int& ) override;
+		OfxStatus get( OfxTime time, int& ) override;
+		OfxStatus set( int ) override;
+		OfxStatus set( OfxTime time, int ) override;
+};
+
+class DoubleInstance : public OFX::Host::Param::DoubleInstance
+{
+	protected : 
+		GafferOFX::EffectImageInstance*   m_effect;
+		OFX::Host::Param::Descriptor& m_descriptor;
+		Gaffer::Plug *m_plug = nullptr;
+	public :
+		DoubleInstance( GafferOFX::EffectImageInstance* effect, const std::string& name, OFX::Host::Param::Descriptor& descriptor );
+		OfxStatus get( double& ) override;
+		OfxStatus get( OfxTime time, double& ) override;
+		OfxStatus set( double ) override;
+		OfxStatus set( OfxTime time, double ) override;
+		OfxStatus derive( OfxTime time, double& ) override;
+		OfxStatus integrate( OfxTime time1, OfxTime time2, double& ) override;
+};
+
+class BooleanInstance : public OFX::Host::Param::BooleanInstance
+{
+	protected : 
+		GafferOFX::EffectImageInstance*   m_effect;
+		OFX::Host::Param::Descriptor& m_descriptor;
+		Gaffer::Plug *m_plug = nullptr;
+	public :
+		BooleanInstance( GafferOFX::EffectImageInstance* effect, const std::string& name, OFX::Host::Param::Descriptor& descriptor );
+		OfxStatus get( bool& ) override;
+		OfxStatus get( OfxTime time, bool& ) override;
+		OfxStatus set( bool ) override;
+		OfxStatus set( OfxTime time, bool ) override;
+};
+
+class ChoiceInstance : public OFX::Host::Param::ChoiceInstance
+{
+	protected : 
+		GafferOFX::EffectImageInstance*   m_effect;
+		OFX::Host::Param::Descriptor& m_descriptor;
+		Gaffer::Plug *m_plug = nullptr;
+	public :
+		ChoiceInstance( GafferOFX::EffectImageInstance* effect,  const std::string& name, OFX::Host::Param::Descriptor& descriptor );
+		OfxStatus get( int& ) override;
+		OfxStatus get( OfxTime time, int& ) override;
+		OfxStatus set( int ) override;
+		OfxStatus set( OfxTime time, int ) override;
+};
+
+class RGBAInstance : public OFX::Host::Param::RGBAInstance
+{
+	protected : 
+		GafferOFX::EffectImageInstance*   m_effect;
+		OFX::Host::Param::Descriptor& m_descriptor;
+		Gaffer::Plug *m_plug = nullptr;
+	public :
+		RGBAInstance( GafferOFX::EffectImageInstance* effect, const std::string& name, OFX::Host::Param::Descriptor& descriptor );
+		OfxStatus get( double&, double&, double&, double& ) override;
+		OfxStatus get( OfxTime time,  double&, double&, double&, double& ) override;
+		OfxStatus set( double, double, double, double ) override;
+		OfxStatus set( OfxTime time,  double, double, double, double ) override;
+};
+
+
+class RGBInstance : public OFX::Host::Param::RGBInstance
+{
+	protected : 
+		GafferOFX::EffectImageInstance*   m_effect;
+		OFX::Host::Param::Descriptor& m_descriptor;
+		Gaffer::Plug *m_plug = nullptr;
+	public :
+		RGBInstance( GafferOFX::EffectImageInstance* effect, const std::string& name, OFX::Host::Param::Descriptor& descriptor );
+		OfxStatus get( double&, double&, double& ) override;
+		OfxStatus get( OfxTime time, double&, double&, double& ) override;
+		OfxStatus set( double, double, double ) override;
+		OfxStatus set( OfxTime time,  double, double, double ) override;
+};
+
+class Double2DInstance : public OFX::Host::Param::Double2DInstance
+{
+	protected : 
+		GafferOFX::EffectImageInstance*   m_effect;
+		OFX::Host::Param::Descriptor& m_descriptor;
+		Gaffer::Plug *m_plug = nullptr;
+	public :
+		Double2DInstance( GafferOFX::EffectImageInstance* effect, const std::string& name, OFX::Host::Param::Descriptor& descriptor );
+		OfxStatus get( double&, double& ) override;
+		OfxStatus get( OfxTime time, double&, double& ) override;
+		OfxStatus set( double, double ) override;
+		OfxStatus set( OfxTime time, double, double ) override;
+};
+
+class Integer2DInstance : public OFX::Host::Param::Integer2DInstance
+{
+	protected : 
+		GafferOFX::EffectImageInstance*   m_effect;
+		OFX::Host::Param::Descriptor& m_descriptor;
+		Gaffer::Plug *m_plug = nullptr;
+	public :
+		Integer2DInstance( GafferOFX::EffectImageInstance* effect,  const std::string& name, OFX::Host::Param::Descriptor& descriptor );
+		OfxStatus get( int&, int& ) override;
+		OfxStatus get( OfxTime time, int&, int& ) override;
+		OfxStatus set( int, int ) override;
+		OfxStatus set( OfxTime time, int, int ) override;
+};
+
+class Double3DInstance : public OFX::Host::Param::Double3DInstance
+{
+	protected : 
+		GafferOFX::EffectImageInstance*   m_effect;
+		OFX::Host::Param::Descriptor& m_descriptor;
+		Gaffer::Plug *m_plug = nullptr;
+	public :
+		Double3DInstance( GafferOFX::EffectImageInstance* effect, const std::string& name, OFX::Host::Param::Descriptor& descriptor );
+		OfxStatus get( double&, double&, double& ) override;
+		OfxStatus get( OfxTime time, double&, double&, double& ) override;
+		OfxStatus set( double, double, double ) override;
+		OfxStatus set( OfxTime time, double, double, double ) override;
+};
+
+class Integer3DInstance : public OFX::Host::Param::Integer3DInstance
+{
+	protected : 
+		GafferOFX::EffectImageInstance*   m_effect;
+		OFX::Host::Param::Descriptor& m_descriptor;
+		Gaffer::Plug *m_plug = nullptr;
+	public :
+		Integer3DInstance( GafferOFX::EffectImageInstance* effect,  const std::string& name, OFX::Host::Param::Descriptor& descriptor );
+		OfxStatus get( int&, int&, int& ) override;
+		OfxStatus get( OfxTime time, int&, int&, int& ) override;
+		OfxStatus set( int, int, int ) override;
+		OfxStatus set( OfxTime time, int, int, int ) override;
+};
+
+class StringInstance : public OFX::Host::Param::StringInstance
+{
+	protected : 
+		GafferOFX::EffectImageInstance*   m_effect;
+		OFX::Host::Param::Descriptor& m_descriptor;
+		Gaffer::Plug *m_plug = nullptr;
+	public :
+		StringInstance( GafferOFX::EffectImageInstance* effect,  const std::string& name, OFX::Host::Param::Descriptor& descriptor );
+		OfxStatus get( std::string& ) override;
+		OfxStatus get( OfxTime time, std::string& ) override;
+		OfxStatus set( const char* ) override;
+		OfxStatus set( OfxTime time, const char* ) override;
+};
+
+class ParametricInstance : public OFX::Host::Param::ParametricInstance
+{
+	protected :
+		GafferOFX::EffectImageInstance*   m_effect;
+		OFX::Host::Param::Descriptor& m_descriptor;
+		Gaffer::Plug *m_plug = nullptr;
+	public :
+		ParametricInstance( GafferOFX::EffectImageInstance* effect, const std::string& name, OFX::Host::Param::Descriptor& descriptor );
+		OfxStatus getValue( int curveIndex, double time, double parametricPosition, double* returnValue ) override;
+		OfxStatus getNControlPoints( int curveIndex, double time, int* count ) override;
+		OfxStatus getNthControlPoint( int curveIndex, double time, int nthCtl, double* key, double* value ) override;
+		OfxStatus setNthControlPoint( int curveIndex, double time, int nthCtl, double key, double value, bool addAnimationKey ) override;
+		OfxStatus addControlPoint( int curveIndex, double time, double key, double value, bool addAnimationKey ) override;
+		OfxStatus deleteControlPoint( int curveIndex, int nthCtl ) override;
+		OfxStatus deleteAllControlPoints( int curveIndex ) override;
+};
+
+}
+
