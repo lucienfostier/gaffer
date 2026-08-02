@@ -80,6 +80,89 @@ bool createPluginInstanceWrapper( OFXImageNode& node )
 
 }
 
+bool loadPluginWrapper( OFXImageNode& node, const std::string &pluginId, bool keepExistingValues )
+{
+	IECorePython::ScopedGILRelease gilRelease;
+	return node.loadPlugin( pluginId, keepExistingValues );
+}
+
+// Test-only hooks for the action-gate unit test. Underscore-prefixed
+// by convention; not public API. Used by testActionGate to drive
+// EffectImageInstance::pushAction/popAction/allowParamSet without a
+// live plugin dispatch.
+void pushTestActionWrapper( const std::string &action )
+{
+	EffectImageInstance::pushAction( action );
+}
+
+void popTestActionWrapper()
+{
+	EffectImageInstance::popAction();
+}
+
+std::string currentTestActionWrapper()
+{
+	return EffectImageInstance::currentAction();
+}
+
+bool testAllowParamSetWrapper( OFXImageNode &node, const std::string &paramName )
+{
+	const EffectImageInstance *instance = node.effectInstance();
+	if( !instance )
+	{
+		return false;
+	}
+	return const_cast<EffectImageInstance*>( instance )->allowParamSet( paramName );
+}
+
+OfxStatus callVMessage( const char *type, const char *id, const char *fmt, ... )
+{
+	va_list args;
+	va_start( args, fmt );
+	OfxStatus s = Host::instance().vmessage( type, id, fmt, args );
+	va_end( args );
+	return s;
+}
+
+OfxStatus callPersistentMessage( const char *type, const char *id, const char *fmt, ... )
+{
+	va_list args;
+	va_start( args, fmt );
+	OfxStatus s = Host::instance().setPersistentMessage( type, id, fmt, args );
+	va_end( args );
+	return s;
+}
+
+OfxStatus hostMessageWrapper( const std::string &type, const std::string &id, const std::string &message )
+{
+	return callVMessage( type.c_str(), id.c_str(), "%s", message.c_str() );
+}
+
+OfxStatus hostMessageFormattedWrapper( const std::string &type, const std::string &id, const std::string &fmt, const boost::python::object &arg )
+{
+	// Simple formatting test helper - supports one %s/%d substitution via python formatting already done,
+	// so just forward fmt as message with arg string.
+	// For true printf formatting, we test via hostMessage with pre-formatted python string.
+	// This wrapper formats as "%s" + arg to verify va_list handling.
+	std::string m = boost::python::extract<std::string>( boost::python::str( arg ) );
+	return callVMessage( type.c_str(), id.c_str(), fmt.c_str(), m.c_str() );
+}
+
+OfxStatus hostPersistentMessageWrapper( const std::string &type, const std::string &id, const std::string &message )
+{
+	return callPersistentMessage( type.c_str(), id.c_str(), "%s", message.c_str() );
+}
+
+OfxStatus hostClearPersistentMessageWrapper()
+{
+	return Host::instance().clearPersistentMessage();
+}
+
+std::string hostPersistentMessageGetter()
+{
+	return Host::instance().persistentMessage();
+}
+
 std::pair<double, double> effectInstanceProjectSizeWrapper( OFXImageNode& node )
 {
 	if( !createPluginInstanceWrapper( node ) )
@@ -233,6 +316,16 @@ BOOST_PYTHON_MODULE( _GafferOFX )
 		.staticmethod("pluginIDs")
 		.def("pluginBundles", &pluginBundlesWrapper)
 		.staticmethod("pluginBundles")
+		.def("message", &hostMessageWrapper)
+		.staticmethod("message")
+		.def("messageFormatted", &hostMessageFormattedWrapper)
+		.staticmethod("messageFormatted")
+		.def("setPersistentMessage", &hostPersistentMessageWrapper)
+		.staticmethod("setPersistentMessage")
+		.def("clearPersistentMessage", &hostClearPersistentMessageWrapper)
+		.staticmethod("clearPersistentMessage")
+		.def("persistentMessage", &hostPersistentMessageGetter)
+		.staticmethod("persistentMessage")
 	;
 
 	class_<GLContextManager, boost::noncopyable>( "GLContextManager", no_init )
@@ -263,10 +356,17 @@ BOOST_PYTHON_MODULE( _GafferOFX )
 
 	DependencyNodeClass<OFXImageNode>()
 		.def( "createPluginInstance", &createPluginInstanceWrapper )
+		.def( "loadPlugin", &loadPluginWrapper, ( arg( "pluginId" ), arg( "keepExistingValues" ) = true ) )
 		.def( "effectInstanceProjectSize", &effectInstanceProjectSizeWrapper )
 		.def( "hasOverlay", &OFXImageNode::hasOverlay )
 		.def( "getInteract", &OFXImageNode::getInteract, return_value_policy<reference_existing_object>() )
 		.def( "destroyInteract", &OFXImageNode::destroyInteract )
 		.def( "rendering", &OFXImageNode::rendering )
+		// Test-only; underscore = not public API (see wrappers above).
+		.def( "_testAllowParamSet", &testAllowParamSetWrapper )
 	;
+
+	def( "_pushTestAction", &pushTestActionWrapper );
+	def( "_popTestAction", &popTestActionWrapper );
+	def( "_currentTestAction", &currentTestActionWrapper );
 }
