@@ -44,7 +44,12 @@
 #include "GafferOFX/OFXInteractInstance.h"
 
 #include "IECorePython/RunTimeTypedBinding.h"
+#include "IECorePython/ScopedGILLock.h"
 #include "IECorePython/ScopedGILRelease.h"
+
+#include <cstring>
+#include <string>
+#include <vector>
 
 using namespace boost::python;
 using namespace GafferBindings;
@@ -78,6 +83,174 @@ bool createPluginInstanceWrapper( OFXImageNode& node )
 	IECorePython::ScopedGILRelease gilRelease;
 	return node.createPluginInstance();
 
+}
+
+bool loadPluginWrapper( OFXImageNode& node, const std::string &pluginId, bool keepExistingValues )
+{
+	IECorePython::ScopedGILRelease gilRelease;
+	return node.loadPlugin( pluginId, keepExistingValues );
+}
+
+// Test-only hooks for the action-gate unit test. Underscore-prefixed
+// by convention; not public API. Used by testActionGate to drive
+// EffectImageInstance::pushAction/popAction/paramSetPolicy without a
+// live plugin dispatch. Policy is 0/1/2 (Deny/Write/Swallow).
+void pushTestActionWrapper( const std::string &action )
+{
+	EffectImageInstance::pushAction( action );
+}
+
+void popTestActionWrapper()
+{
+	EffectImageInstance::popAction();
+}
+
+std::string currentTestActionWrapper()
+{
+	return EffectImageInstance::currentAction();
+}
+
+int testParamSetPolicyWrapper( OFXImageNode &node, const std::string &paramName )
+{
+	const EffectImageInstance *instance = node.effectInstance();
+	if( !instance )
+	{
+		return 0;
+	}
+	return static_cast<int>( const_cast<EffectImageInstance*>( instance )->paramSetPolicy( paramName ) );
+}
+
+OfxStatus callVMessage( const char *type, const char *id, const char *fmt, ... )
+{
+	va_list args;
+	va_start( args, fmt );
+	OfxStatus s = Host::instance().vmessage( type, id, fmt, args );
+	va_end( args );
+	return s;
+}
+
+OfxStatus callPersistentMessage( const char *type, const char *id, const char *fmt, ... )
+{
+	va_list args;
+	va_start( args, fmt );
+	OfxStatus s = Host::instance().setPersistentMessage( type, id, fmt, args );
+	va_end( args );
+	return s;
+}
+
+OfxStatus hostMessageWrapper( const std::string &type, const std::string &id, const std::string &message )
+{
+	return callVMessage( type.c_str(), id.c_str(), "%s", message.c_str() );
+}
+
+OfxStatus hostMessageFormattedWrapper( const std::string &type, const std::string &id, const std::string &fmt, const boost::python::object &arg )
+{
+	// Test-only va_list plumbing check: exactly one plain %s conversion.
+	// Anything else would read missing or mistyped arguments.
+	int conversions = 0;
+	for( size_t i = 0; i < fmt.size(); ++i )
+	{
+		if( fmt[i] != '%' )
+		{
+			continue;
+		}
+		if( i + 1 < fmt.size() && fmt[i + 1] == '%' )
+		{
+			++i;
+			continue;
+		}
+		++conversions;
+		if( conversions > 1 || i + 1 >= fmt.size() || fmt[i + 1] != 's' )
+		{
+			throw IECore::Exception( "messageFormatted supports a single %s conversion only" );
+		}
+	}
+	if( conversions != 1 )
+	{
+		throw IECore::Exception( "messageFormatted supports a single %s conversion only" );
+	}
+	std::string m = boost::python::extract<std::string>( boost::python::str( arg ) );
+	return callVMessage( type.c_str(), id.c_str(), fmt.c_str(), m.c_str() );
+}
+
+OfxStatus hostPersistentMessageWrapper( const std::string &type, const std::string &id, const std::string &message )
+{
+	return callPersistentMessage( type.c_str(), id.c_str(), "%s", message.c_str() );
+}
+
+OfxStatus hostClearPersistentMessageWrapper()
+{
+	return Host::instance().clearPersistentMessage();
+}
+
+std::string hostPersistentMessageGetter()
+{
+	return Host::instance().persistentMessage();
+}
+
+// Message hook callable stored here (Python-owned). The C++ hook below
+// acquires the GIL before invoking it - messages can arrive on any thread
+// (e.g. the render worker). Contract: hook( type, id, message ) returns
+// True (reply yes), False (reply no) or None (default handling: yes for
+// questions, OK otherwise). Hook errors fall back to the default.
+// Intentionally leaked so destruction cannot run after Py_Finalize().
+boost::python::object *g_messageHook = new boost::python::object;
+bool g_hasMessageHook = false;
+
+OfxStatus messageHookWrapper( const char *type, const char *id, const std::string &message )
+{
+	IECorePython::ScopedGILLock gilLock;
+	try
+	{
+		if( !g_hasMessageHook )
+		{
+			throw IECore::Exception( "No message hook" );
+		}
+		boost::python::object result = ( *g_messageHook )(
+			type ? type : "",
+			id ? id : "",
+			message
+		);
+		if( result.is_none() )
+		{
+			throw IECore::Exception( "Default handling" );
+		}
+		if( boost::python::extract<bool>( result )() )
+		{
+			return kOfxStatReplyYes;
+		}
+		return kOfxStatReplyNo;
+	}
+	catch( boost::python::error_already_set & )
+	{
+		// A Python exception must never escape into the plugin. Log it
+		// (clearing the error indicator) and fall back to the default.
+		PyErr_Print();
+	}
+	catch( ... )
+	{
+	}
+	if( type && strcmp( type, kOfxMessageQuestion ) == 0 )
+	{
+		return kOfxStatReplyYes;
+	}
+	return kOfxStatOK;
+}
+
+void setMessageHookWrapper( boost::python::object hook )
+{
+	if( hook.is_none() )
+	{
+		g_hasMessageHook = false;
+		*g_messageHook = boost::python::object();
+		Host::instance().setMessageHook( Host::MessageHook() );
+	}
+	else
+	{
+		*g_messageHook = hook;
+		g_hasMessageHook = true;
+		Host::instance().setMessageHook( &messageHookWrapper );
+	}
 }
 
 std::pair<double, double> effectInstanceProjectSizeWrapper( OFXImageNode& node )
@@ -181,17 +354,25 @@ OfxStatus interactPenUpAction( GafferOFXInteractInstance &self, double time, con
 OfxStatus interactKeyDownAction( GafferOFXInteractInstance &self, double time, const boost::python::object &renderScaleObj, int key, std::string keyString )
 {
 	OfxPointD renderScale = pointDFromObject( renderScaleObj );
-	char *ks = const_cast<char*>( keyString.c_str() );
+	// The OFX API takes char* (a plugin could theoretically write through
+	// it), so hand it a mutable copy rather than const-casting the
+	// std::string buffer, whose writability is not guaranteed.
+	std::vector<char> ks( keyString.begin(), keyString.end() );
+	ks.push_back( '\0' );
 	IECorePython::ScopedGILRelease gilRelease;
-	return self.keyDownAction( time, renderScale, key, ks );
+	return self.keyDownAction( time, renderScale, key, ks.data() );
 }
 
 OfxStatus interactKeyUpAction( GafferOFXInteractInstance &self, double time, const boost::python::object &renderScaleObj, int key, std::string keyString )
 {
 	OfxPointD renderScale = pointDFromObject( renderScaleObj );
-	char *ks = const_cast<char*>( keyString.c_str() );
+	// The OFX API takes char* (a plugin could theoretically write through
+	// it), so hand it a mutable copy rather than const-casting the
+	// std::string buffer, whose writability is not guaranteed.
+	std::vector<char> ks( keyString.begin(), keyString.end() );
+	ks.push_back( '\0' );
 	IECorePython::ScopedGILRelease gilRelease;
-	return self.keyUpAction( time, renderScale, key, ks );
+	return self.keyUpAction( time, renderScale, key, ks.data() );
 }
 
 OfxStatus interactGainFocusAction( GafferOFXInteractInstance &self, double time, const boost::python::object &renderScaleObj )
@@ -210,7 +391,7 @@ OfxStatus interactLoseFocusAction( GafferOFXInteractInstance &self, double time,
 
 void interactNotifyPluginEdited( GafferOFXInteractInstance &self )
 {
-	// Release GIL before calling into plugin code — some plugins
+	// Release GIL before calling into plugin code - some plugins
 	// (e.g. Sapphire) spin on GL or spawn threads that may need
 	// the GIL internally.  Holding the GIL during native plugin
 	// dispatch can deadlock or crash the Python UI thread.
@@ -226,13 +407,25 @@ BOOST_PYTHON_MODULE( _GafferOFX )
 	to_python_converter<OfxPointI, OfxPointI_to_tuple>();
 	to_python_converter<std::pair<double, double>, PairToTuple>();
 
-	class_<Host>("Host", no_init)
+	class_<Host, boost::noncopyable>( "Host", no_init )
 		.def("findOFXPlugins", &Host::findOFXPlugins)
 		.staticmethod("findOFXPlugins")
 		.def("pluginIDs", &pluginIDsWrapper)
 		.staticmethod("pluginIDs")
 		.def("pluginBundles", &pluginBundlesWrapper)
 		.staticmethod("pluginBundles")
+		.def("message", &hostMessageWrapper)
+		.staticmethod("message")
+		.def("_messageFormatted", &hostMessageFormattedWrapper)
+		.staticmethod("_messageFormatted")
+		.def("setPersistentMessage", &hostPersistentMessageWrapper)
+		.staticmethod("setPersistentMessage")
+		.def("clearPersistentMessage", &hostClearPersistentMessageWrapper)
+		.staticmethod("clearPersistentMessage")
+		.def("persistentMessage", &hostPersistentMessageGetter)
+		.staticmethod("persistentMessage")
+		.def("setMessageHook", &setMessageHookWrapper)
+		.staticmethod("setMessageHook")
 	;
 
 	class_<GLContextManager, boost::noncopyable>( "GLContextManager", no_init )
@@ -263,10 +456,20 @@ BOOST_PYTHON_MODULE( _GafferOFX )
 
 	DependencyNodeClass<OFXImageNode>()
 		.def( "createPluginInstance", &createPluginInstanceWrapper )
+		.def( "loadPlugin", &loadPluginWrapper, ( arg( "pluginId" ), arg( "keepExistingValues" ) = true ) )
 		.def( "effectInstanceProjectSize", &effectInstanceProjectSizeWrapper )
 		.def( "hasOverlay", &OFXImageNode::hasOverlay )
 		.def( "getInteract", &OFXImageNode::getInteract, return_value_policy<reference_existing_object>() )
 		.def( "destroyInteract", &OFXImageNode::destroyInteract )
 		.def( "rendering", &OFXImageNode::rendering )
+		.def( "supportsGL", &OFXImageNode::supportsGL )
+		.def( "instanceGeneration", &OFXImageNode::instanceGeneration )
+		.def( "persistentMessage", &OFXImageNode::persistentMessage )
+		// Test-only; underscore = not public API (see wrappers above).
+		.def( "_testParamSetPolicy", &testParamSetPolicyWrapper )
 	;
+
+	def( "_pushTestAction", &pushTestActionWrapper );
+	def( "_popTestAction", &popTestActionWrapper );
+	def( "_currentTestAction", &currentTestActionWrapper );
 }
