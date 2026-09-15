@@ -325,6 +325,12 @@ options.Add(
 	"",
 )
 
+options.Add(
+	"OFX_ROOT",
+	"The directory in which the OpenFX library is installed. Used to build GafferOFX",
+	"",
+)
+
 # general variables
 
 options.Add(
@@ -810,6 +816,7 @@ for option, envVar in {
 	"DELIGHT_ROOT" : "DELIGHT",
 	"ONNX_ROOT" : "ONNX_ROOT",
 	"RENDERMAN_ROOT" : "RMANTREE",
+	"OFX_ROOT" : "OFX_ROOT",
 }.items() :
 	if commandEnv[option] != "" :
 		commandEnv["ENV"][envVar] = commandEnv[option]
@@ -1233,6 +1240,36 @@ libraries = {
 
 	"GafferMLUITest" : {
 		"requiredOptions" : [ "ONNX_ROOT" ],
+	},
+
+	"GafferOFX" : {
+		"envAppends" : {
+			"CXXFLAGS" : [ systemIncludeArgument, "$OFX_ROOT/include/openfx", systemIncludeArgument, "$OFX_ROOT/include/openfx/HostSupport" ],
+			"CPPDEFINES" : [ "OFX_SUPPORTS_OPENGLRENDER", "OFX_SUPPORTS_PARAMETRIC" ],
+			"LIBPATH" : [ "$OFX_ROOT/lib" ],
+			"LIBS" : [ "Gaffer", "GafferImage", "OfxGafferHost", "GL", "EGL", "X11", "expat" ],
+		},
+		"pythonEnvAppends" : {
+			"CXXFLAGS" : [ systemIncludeArgument, "$OFX_ROOT/include/openfx", systemIncludeArgument, "$OFX_ROOT/include/openfx/HostSupport" ],
+			"CPPDEFINES" : [ "OFX_SUPPORTS_OPENGLRENDER", "OFX_SUPPORTS_PARAMETRIC" ],
+			"LIBPATH" : [ "$OFX_ROOT/lib" ],
+			"LIBS" : [ "GafferBindings", "GafferImage", "GafferOFX", "OfxGafferHost", "GL", "EGL", "X11", "expat" ],
+		},
+		"requiredOptions" : [ "OFX_ROOT" ] if env["PLATFORM"] == "linux" else [],
+		# TODO: Windows support — OFX host requires EGL/GLX and OfxGafferHost (POSIX dlopen, X11). Needs WGL port.
+		# TODO: macOS support — OFX host requires EGL/CGL and OfxGafferHost (POSIX). Needs CGL/EAGL port.
+	},
+
+	"GafferOFXTest" : {
+		"requiredOptions" : [ "OFX_ROOT" ] if env["PLATFORM"] == "linux" else [],
+	},
+
+	"GafferOFXUI" : {
+		"requiredOptions" : [ "OFX_ROOT" ] if env["PLATFORM"] == "linux" else [],
+	},
+
+	"GafferOFXUITest" : {
+		"requiredOptions" : [ "OFX_ROOT" ] if env["PLATFORM"] == "linux" else [],
 	},
 
 	"IECoreArnold" : {
@@ -1670,6 +1707,10 @@ else :
 
 	libraries["IECoreRenderMan"]["envAppends"]["LIBS"].extend( [ "dl" ] )
 	libraries["GafferCycles"]["envAppends"]["LIBS"].extend( [ "dl" ] )
+	if env["PLATFORM"] == "linux" :
+		libraries["GafferOFX"]["envAppends"]["LIBS"].extend( [ "dl" ] )
+		libraries["GafferOFX"]["envAppends"]["LIBS"].append( "GLEW$GLEW_LIB_SUFFIX" )
+		libraries["GafferOFX"]["pythonEnvAppends"]["LIBS"].append( "GLEW$GLEW_LIB_SUFFIX" )
 
 # Optionally add vTune requirements
 
