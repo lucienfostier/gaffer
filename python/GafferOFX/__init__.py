@@ -46,4 +46,7 @@ del os, pathlib # Don't pollute the namespace
 
 from ._GafferOFX import *
 
+# Test-only hooks (underscore-prefixed, excluded from `import *` above).
+from ._GafferOFX import _pushTestAction, _popTestAction, _currentTestAction
+
 __import__( "IECore" ).loadConfig( "GAFFER_STARTUP_PATHS", subdirectory = "GafferOFX" )
