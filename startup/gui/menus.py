@@ -590,6 +590,84 @@ if os.environ.get( "ONNX_ROOT" ) and moduleSearchPath.find( "GafferML" ) :
 	nodeMenu.append( "/ML/Inference", GafferML.Inference, searchText = "Inference" )
 	nodeMenu.append( "/ML/Tensor To Mesh", GafferML.TensorToMesh, searchText = "TensorToMesh" )
 
+# OFX nodes
+
+if os.environ.get( "OFX_ROOT" ) and moduleSearchPath.find( "GafferOFX" ) :
+
+	import GafferOFX
+	import GafferOFXUI
+
+	# Call findOFXPlugins if it hasn't been called yet
+	plugins = GafferOFX.Host.pluginIDs()
+	if not plugins :
+		GafferOFX.Host.findOFXPlugins()
+		plugins = GafferOFX.Host.pluginIDs()
+
+	# Initialise the shared EGL context now, before Qt creates any GLX
+	# context (e.g. ImageView widgets). Late initialisation after Qt GLX
+	# setup fails eglInitialize permanently for the session, disabling
+	# all GL renders. Early initialisation is unaffected.
+	if plugins :
+		GafferOFX.GLContextManager.instance()
+
+	def __ofxPluginLabel( pluginId ) :
+		label = pluginId.rsplit( ".", 1 )[-1]
+		label = re.sub( r"(?<=[a-z])(?=[A-Z])", " ", label )
+		label = re.sub( r"(?<=[A-Z])(?=[A-Z][a-z])", " ", label )
+		label = label.replace( "Plugin", "" ).replace( "Ofx", "" ).strip()
+		return label if label else pluginId
+
+	def __ofxNodeCreator( nodeName, pluginId ) :
+		node = GafferOFX.OFXImageNode( nodeName )
+		node["pluginId"].setValue( pluginId )
+		node.createPluginInstance()
+		return node
+
+	if plugins :
+		bundles = GafferOFX.Host.pluginBundles()
+		byBundle = {}
+		for pluginId in plugins :
+			bundleName = bundles.get( pluginId, "" )
+			if not bundleName :
+				bundleName = "Other"
+			byBundle.setdefault( bundleName, [] ).append( pluginId )
+		for bundleName in sorted( byBundle ) :
+			pluginIds = byBundle[bundleName]
+			if len( pluginIds ) == 1 :
+				pluginId = pluginIds[0]
+				label = __ofxPluginLabel( pluginId )
+				nodeName = pluginId.rsplit( ".", 1 )[-1]
+				nodeMenu.append(
+					"/OFX/" + label,
+					functools.partial( __ofxNodeCreator, nodeName, pluginId ),
+					searchText = label,
+				)
+			else :
+				for pluginId in sorted( pluginIds ) :
+					label = __ofxPluginLabel( pluginId )
+					nodeName = pluginId.rsplit( ".", 1 )[-1]
+					parts = pluginId.split( "." )
+					if len( parts ) >= 4 :
+						category = parts[-2]
+						categoryLabel = re.sub( r"(?<=[a-z])(?=[A-Z])", " ", category )
+						categoryLabel = re.sub( r"(?<=[A-Z])(?=[A-Z][a-z])", " ", categoryLabel )
+						menuPath = "/OFX/" + bundleName + "/" + categoryLabel + "/" + label
+					else :
+						menuPath = "/OFX/" + bundleName + "/" + label
+					nodeMenu.append(
+						menuPath,
+						functools.partial( __ofxNodeCreator, nodeName, pluginId ),
+						searchText = label,
+					)
+		nodeMenu.definition().append( "/OFX/__Divider__", { "divider" : True } )
+
+	nodeMenu.append( "/OFX/Custom OFXNode...", GafferOFX.OFXImageNode, searchText = "OFXImageNode" )
+
+	# Natron-style popups for plugin messages. Registered here (GUI-only
+	# startup) rather than at GafferOFXUI import so headless processes
+	# can never block on a modal dialogue.
+	GafferOFXUI.OFXImageNodeUI.registerMessageHook()
+
 # Utility nodes
 
 nodeMenu.append( "/Utility/Expression", Gaffer.Expression )
