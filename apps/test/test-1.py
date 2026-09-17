@@ -147,6 +147,20 @@ class test( Gaffer.Application ) :
 
 	def _run( self, args ) :
 
+		# Ensure OFX plugins are available for any test that uses OFXImageNode.
+		# No startup files run for the test application, so they must be
+		# found here. The guard avoids a costly re-describe when they have
+		# already been found.
+		try :
+			import GafferOFX
+			if not GafferOFX.Host.pluginIDs() :
+				GafferOFX.Host.findOFXPlugins()
+		except ImportError :
+			# GafferOFX not built - nothing to find.
+			pass
+		except Exception as exception :
+			IECore.msg( IECore.Msg.Level.Warning, "gaffer test", "OFX plugin discovery failed : %s" % exception )
+
 		import unittest
 
 		for i in range( 0, args["repeat"].value ) :
