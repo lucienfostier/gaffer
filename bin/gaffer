@@ -102,6 +102,25 @@ else
 	prependToPath "$rootDir/lib" DYLD_FRAMEWORK_PATH
 fi
 
+# GL dispatch fix for OFX rendering through EGL device contexts.
+# Required when the X display's GLX vendor differs from the EGL render
+# device (e.g. a Mesa-backed display under xrdp alongside a headless
+# NVIDIA GPU). Qt's GLX initialisation loads the display's libGLX, whose
+# gl* exports then capture symbol bindings for late-loaded modules
+# (GafferOFX, .ofx plugins), mis-dispatching GL calls made under the EGL
+# device context. Preloading GLVND's libGL.so.1 keeps the dispatch stub
+# in scope so worker-thread EGL contexts and UI-thread GLX contexts
+# resolve correctly. Harmless when vendors already match or when no X
+# display is present, so applied unconditionally. Only the presence
+# of the entry matters, not its position, so append (existing entries,
+# e.g. an ASan runtime which must stay first, keep their order). Skip
+# entirely when this build has no OFX support.
+if [[ `uname` = "Linux" && -f "$rootDir/lib/libGafferOFX.so" ]] ; then
+	if [[ ":${LD_PRELOAD}:" != *":libGL.so.1:"* ]] ; then
+		export LD_PRELOAD="${LD_PRELOAD:+$LD_PRELOAD:}libGL.so.1"
+	fi
+fi
+
 if [[ `uname` = "Darwin" ]] ; then
 	# Changes in Python 3.11 cause `sys.exec_prefix` to not be set correctly
 	# on macOS when Python is run from a symlink (like we do from $rootDir/bin).
