@@ -34,20 +34,19 @@
 #
 ##########################################################################
 
-import os
-import pathlib
+import unittest
 
-__import__( "Gaffer" )
-__import__( "GafferImage" )
+import Gaffer
+import GafferUI
+import GafferUITest
+import GafferOFX
+import GafferOFXUI
 
-if hasattr( os, "add_dll_directory" ) :
-	os.add_dll_directory( ( pathlib.Path( os.environ["OFX_ROOT"] ) / "lib" ).resolve() )
-del os, pathlib # Don't pollute the namespace
+class NodeUITest( GafferUITest.TestCase ) :
 
-from ._GafferOFX import *
+	def testLifetimes( self ) :
 
-# Test-only hooks (underscore-prefixed, excluded from `import *` above).
-from ._GafferOFX import _pushTestAction, _popTestAction, _currentTestAction
+		self.assertNodeUIsHaveExpectedLifetime( GafferOFX )
 
-__import__( "IECore" ).loadConfig( "GAFFER_STARTUP_PATHS", subdirectory = "GafferOFX" )
-
+if __name__ == "__main__":
+	unittest.main()

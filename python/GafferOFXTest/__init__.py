@@ -33,21 +33,9 @@
 #  SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 ##########################################################################
+from .OFXImageNodeTest import OFXImageNodeTest
+from .HostTest import HostTest
 
-import os
-import pathlib
-
-__import__( "Gaffer" )
-__import__( "GafferImage" )
-
-if hasattr( os, "add_dll_directory" ) :
-	os.add_dll_directory( ( pathlib.Path( os.environ["OFX_ROOT"] ) / "lib" ).resolve() )
-del os, pathlib # Don't pollute the namespace
-
-from ._GafferOFX import *
-
-# Test-only hooks (underscore-prefixed, excluded from `import *` above).
-from ._GafferOFX import _pushTestAction, _popTestAction, _currentTestAction
-
-__import__( "IECore" ).loadConfig( "GAFFER_STARTUP_PATHS", subdirectory = "GafferOFX" )
-
+if __name__ == "__main__":
+	import unittest
+	unittest.main()
