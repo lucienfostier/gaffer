@@ -34,19 +34,40 @@
 #
 ##########################################################################
 
-import os
-import pathlib
+import unittest
 
-__import__( "Gaffer" )
-__import__( "GafferImage" )
+import Gaffer
+import GafferUI
+import GafferUITest
+import GafferOFX
+import GafferOFXUI
 
-if hasattr( os, "add_dll_directory" ) :
-	os.add_dll_directory( ( pathlib.Path( os.environ["OFX_ROOT"] ) / "lib" ).resolve() )
-del os, pathlib # Don't pollute the namespace
+class NodeUITest( GafferUITest.TestCase ) :
 
-from ._GafferOFX import *
+	def testLifetimes( self ) :
 
-# Test-only hooks (underscore-prefixed, excluded from `import *` above).
-from ._GafferOFX import _pushTestAction, _popTestAction, _currentTestAction
+		self.assertNodeUIsHaveExpectedLifetime( GafferOFX )
 
-__import__( "IECore" ).loadConfig( "GAFFER_STARTUP_PATHS", subdirectory = "GafferOFX" )
+	def testGLRenderModeVisibility( self ) :
+
+		# Shown only for GL-capable plugins, via the supportsGL activator.
+		# Metadata.value() evaluates the activator on the node.
+		n = GafferOFX.OFXImageNode()
+		self.assertEqual(
+			Gaffer.Metadata.value( n["GLRenderMode"], "layout:visibilityActivator" ),
+			"supportsGL"
+		)
+		self.assertIn(
+			"layout:activator:supportsGL", Gaffer.Metadata.registeredValues( n )
+		)
+		self.assertFalse( Gaffer.Metadata.value( n, "layout:activator:supportsGL" ) )
+
+		s = Gaffer.ScriptNode()
+		gl = GafferOFX.OFXImageNode()
+		s.addChild( gl )
+		gl["pluginId"].setValue( "net.sf.openfx.Shadertoy" )
+		self.assertTrue( gl.createPluginInstance() )
+		self.assertTrue( Gaffer.Metadata.value( gl, "layout:activator:supportsGL" ) )
+
+if __name__ == "__main__":
+	unittest.main()
