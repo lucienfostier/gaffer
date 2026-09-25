@@ -2759,16 +2759,24 @@
          x="286"
          y="1774"
          inkscape:label="gafferSceneUIVisualiserTool" />
-      <rect
-         style="display:inline;opacity:1;fill:none;fill-opacity:1;stroke:none;stroke-width:0.917663;stroke-linejoin:bevel;stroke-miterlimit:4;stroke-dasharray:none;stroke-dashoffset:1.10173;stroke-opacity:1;paint-order:markers stroke fill"
-         id="gafferImageUIColorInspectorTool"
-         width="25"
-         height="25"
-         x="319"
-         y="1774"
-         inkscape:label="gafferImageUIColorInspectorTool"
-         sodipodi:insensitive="true" />
-    </g>
+       <rect
+          style="display:inline;opacity:1;fill:none;fill-opacity:1;stroke:none;stroke-width:0.917663;stroke-linejoin:bevel;stroke-miterlimit:4;stroke-dasharray:none;stroke-dashoffset:1.10173;stroke-opacity:1;paint-order:markers stroke fill"
+          id="gafferImageUIColorInspectorTool"
+          width="25"
+          height="25"
+          x="319"
+          y="1774"
+          inkscape:label="gafferImageUIColorInspectorTool"
+          sodipodi:insensitive="true" />
+       <rect
+          style="display:inline;opacity:1;fill:#009cde;fill-opacity:1;stroke:none;stroke-width:0.9;stroke-linejoin:bevel;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1;paint-order:markers stroke fill"
+          id="gafferOFXTool"
+          width="25"
+          height="25"
+          x="355"
+          y="1774"
+          inkscape:label="gafferOFXTool" />
+     </g>
     <g
        id="g3414"
        inkscape:label="browserIcons">

@@ -147,6 +147,16 @@ class test( Gaffer.Application ) :
 
 	def _run( self, args ) :
 
+		# Ensure OFX plugins are available for any test that uses OFXImageNode
+		# (primary load is startup/GafferOFX/OFX.py, fallback here when running
+		# `gaffer test` without startup or for tests outside GafferOFXTest).
+		try :
+			import GafferOFX
+			if not GafferOFX.Host.pluginIDs() :
+				GafferOFX.Host.findOFXPlugins()
+		except Exception :
+			pass
+
 		import unittest
 
 		for i in range( 0, args["repeat"].value ) :
