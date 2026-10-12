@@ -123,6 +123,17 @@ class execute( Gaffer.Application ) :
 
 	def _run( self, args ) :
 
+		# No startup files run for the execute application, so OFX plugins
+		# must be found here before loading the script.
+		try :
+			import GafferOFX
+			GafferOFX.Host.findOFXPlugins()
+		except ImportError :
+			# GafferOFX not built - nothing to find.
+			pass
+		except Exception as exception :
+			IECore.msg( IECore.Msg.Level.Warning, "gaffer execute", "OFX plugin discovery failed : %s" % exception )
+
 		scriptNode = Gaffer.ScriptNode()
 		scriptNode["fileName"].setValue( pathlib.Path( args["script"].value ).absolute() )
 		try :

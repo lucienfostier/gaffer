@@ -256,6 +256,10 @@ jobs:
         echo "::remove-matcher owner=unittest::"
       env:
         GAFFER_BUILD_VARIANT: ${{ matrix.name }}
+        # OFX test plugins ship inside the dependencies archive (OfxMiscPlugins
+        # project). Absent on platforms without OFX support — the scan then
+        # simply finds nothing, and GafferOFXTest isn't discovered there anyway.
+        OFX_PLUGIN_PATH: ${{ env.GAFFER_BUILD_DIR }}/ofxPlugins
 
     - name: Build and test Arnold extension
       run: |

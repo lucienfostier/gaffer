@@ -325,6 +325,12 @@ options.Add(
 	"",
 )
 
+options.Add(
+	"OFX_ROOT",
+	"The directory in which the OpenFX library is installed. Used to build GafferOFX",
+	"$BUILD_DIR" if sys.platform == "linux" else "",
+)
+
 # general variables
 
 options.Add(
@@ -810,6 +816,7 @@ for option, envVar in {
 	"DELIGHT_ROOT" : "DELIGHT",
 	"ONNX_ROOT" : "ONNX_ROOT",
 	"RENDERMAN_ROOT" : "RMANTREE",
+	"OFX_ROOT" : "OFX_ROOT",
 }.items() :
 	if commandEnv[option] != "" :
 		commandEnv["ENV"][envVar] = commandEnv[option]
@@ -1235,6 +1242,34 @@ libraries = {
 		"requiredOptions" : [ "ONNX_ROOT" ],
 	},
 
+	"GafferOFX" : {
+		"envAppends" : {
+			"CXXFLAGS" : [ systemIncludeArgument, "$OFX_ROOT/include/openfx", systemIncludeArgument, "$OFX_ROOT/include/openfx/HostSupport" ],
+			"CPPDEFINES" : [ "OFX_SUPPORTS_OPENGLRENDER", "OFX_SUPPORTS_PARAMETRIC" ],
+			"LIBPATH" : [ "$OFX_ROOT/lib" ],
+			"LIBS" : [ "Gaffer", "GafferImage", "OfxGafferHost", "GL", "EGL", "X11", "expat" ],
+		},
+		"pythonEnvAppends" : {
+			"CXXFLAGS" : [ systemIncludeArgument, "$OFX_ROOT/include/openfx", systemIncludeArgument, "$OFX_ROOT/include/openfx/HostSupport" ],
+			"CPPDEFINES" : [ "OFX_SUPPORTS_OPENGLRENDER", "OFX_SUPPORTS_PARAMETRIC" ],
+			"LIBPATH" : [ "$OFX_ROOT/lib" ],
+			"LIBS" : [ "GafferBindings", "GafferImage", "GafferOFX", "OfxGafferHost", "GL", "EGL", "X11", "expat" ],
+		},
+		"requiredOptions" : [ "OFX_ROOT" ],
+	},
+
+	"GafferOFXTest" : {
+		"requiredOptions" : [ "OFX_ROOT" ],
+	},
+
+	"GafferOFXUI" : {
+		"requiredOptions" : [ "OFX_ROOT" ],
+	},
+
+	"GafferOFXUITest" : {
+		"requiredOptions" : [ "OFX_ROOT" ],
+	},
+
 	"IECoreArnold" : {
 		"envAppends" : {
 			"LIBPATH" : [ "$ARNOLD_ROOT/bin" ] if env["PLATFORM"] != "win32" else [ "$ARNOLD_ROOT/bin", "$ARNOLD_ROOT/lib" ],
@@ -1398,7 +1433,9 @@ libraries = {
 				"IECoreScene$CORTEX_LIB_SUFFIX", "IECoreImage$CORTEX_LIB_SUFFIX", "IECoreVDB$CORTEX_LIB_SUFFIX",
 				"Gaffer", "GafferScene", "GafferDispatch", "GafferOSL",
 				"cycles_device", "cycles_session", "cycles_scene", "cycles_graph", "cycles_bvh", "cycles_kernel_cpu", "cycles_kernel_osl",
-				"cycles_integrator", "cycles_util", "cycles_subd", "extern_sky", "extern_cuew",
+				"cycles_integrator",
+				"cycles_device", "cycles_session", "cycles_scene", "cycles_graph", "cycles_bvh", "cycles_kernel_cpu", "cycles_kernel_osl",
+				"cycles_util", "cycles_subd", "extern_sky", "extern_cuew",
 				"OpenImageIO$OIIO_LIB_SUFFIX", "OpenImageIO_Util$OIIO_LIB_SUFFIX", "oslexec$OSL_LIB_SUFFIX", "oslcomp$OSL_LIB_SUFFIX", "oslquery$OSL_LIB_SUFFIX",
 				"openvdb$VDB_LIB_SUFFIX", "Alembic", "osdCPU", "OpenColorIO$OCIO_LIB_SUFFIX", "embree4", "openpgl", "zstd",
 			],
@@ -1668,6 +1705,10 @@ else :
 
 	libraries["IECoreRenderMan"]["envAppends"]["LIBS"].extend( [ "dl" ] )
 	libraries["GafferCycles"]["envAppends"]["LIBS"].extend( [ "dl" ] )
+	if env["PLATFORM"] == "linux" :
+		libraries["GafferOFX"]["envAppends"]["LIBS"].extend( [ "dl" ] )
+		libraries["GafferOFX"]["envAppends"]["LIBS"].append( "GLEW$GLEW_LIB_SUFFIX" )
+		libraries["GafferOFX"]["pythonEnvAppends"]["LIBS"].append( "GLEW$GLEW_LIB_SUFFIX" )
 
 # Optionally add vTune requirements
 
